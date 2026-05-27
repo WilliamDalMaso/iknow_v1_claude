@@ -226,12 +226,13 @@ def normalize_line_records(raw_lines: list[Any]) -> list[dict[str, Any]]:
                     "line_index": line_index,
                     "text": text,
                     "x0": value.get("x0"),
+                    "x1": value.get("x1"),
                     "top": value.get("top"),
                     "bottom": value.get("bottom"),
                 }
             )
         else:
-            records.append({"line_index": line_index, "text": str(value), "x0": None, "top": None, "bottom": None})
+            records.append({"line_index": line_index, "text": str(value), "x0": None, "x1": None, "top": None, "bottom": None})
     return records
 
 
@@ -295,10 +296,12 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
         source_line_ids = [item["line_id"] for item in paragraph_buffer]
         source_line_indexes = [item["line_index"] for item in paragraph_buffer]
         xs = [float(item["x0"]) for item in paragraph_buffer if item.get("x0") is not None]
+        x1s = [float(item["x1"]) for item in paragraph_buffer if item.get("x1") is not None]
         tops = [float(item["top"]) for item in paragraph_buffer if item.get("top") is not None]
         bottoms = [float(item["bottom"]) for item in paragraph_buffer if item.get("bottom") is not None]
         bbox = {
             "x0": min(xs) if xs else None,
+            "x1": max(x1s) if x1s else None,
             "top": min(tops) if tops else None,
             "bottom": max(bottoms) if bottoms else None,
         }
@@ -348,6 +351,7 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
                     "line_index": line_index,
                     "raw_text": raw_line,
                     "x0": record.get("x0"),
+                    "x1": record.get("x1"),
                     "top": record.get("top"),
                     "bottom": record.get("bottom"),
                     "cleanup_operations": operations,
@@ -370,10 +374,12 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
                 "source_line_ids": [line_id],
                 "source_line_indexes": [line_index],
                 "x0": record.get("x0"),
+                "x1": record.get("x1"),
                 "top": record.get("top"),
                 "bottom": record.get("bottom"),
                 "bbox": {
                     "x0": record.get("x0"),
+                    "x1": record.get("x1"),
                     "top": record.get("top"),
                     "bottom": record.get("bottom"),
                 },
@@ -930,11 +936,51 @@ def build_audit_html(
         if not isinstance(value, dict):
             return "-"
         parts = []
-        for key in ["x0", "top", "bottom"]:
+        for key in ["x0", "x1", "top", "bottom"]:
             raw_value = value.get(key)
             if raw_value is not None:
                 parts.append(f"{key}={float(raw_value):.1f}")
         return ", ".join(parts) or "-"
+
+    def safe_dom_id(value: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_-]+", "-", value)
+
+    def overlay_style(bbox: Any, page: dict[str, Any]) -> str | None:
+        if not isinstance(bbox, dict):
+            return None
+        required = [bbox.get("x0"), bbox.get("x1"), bbox.get("top"), bbox.get("bottom"), page.get("width"), page.get("height")]
+        if any(value is None for value in required):
+            return None
+        page_width = float(page["width"])
+        page_height_value = float(page["height"])
+        if page_width <= 0 or page_height_value <= 0:
+            return None
+        x0 = max(0.0, min(float(bbox["x0"]), page_width))
+        x1 = max(0.0, min(float(bbox["x1"]), page_width))
+        top = max(0.0, min(float(bbox["top"]), page_height_value))
+        bottom = max(0.0, min(float(bbox["bottom"]), page_height_value))
+        width = max(0.4, x1 - x0)
+        height = max(0.4, bottom - top)
+        return (
+            f"left:{(x0 / page_width) * 100:.4f}%;"
+            f"top:{(top / page_height_value) * 100:.4f}%;"
+            f"width:{(width / page_width) * 100:.4f}%;"
+            f"height:{(height / page_height_value) * 100:.4f}%;"
+        )
+
+    def overlay_class(label: str, has_override: bool) -> str:
+        classes = ["bbox-overlay"]
+        if label.startswith("main_paragraph"):
+            classes.append("overlay-paragraph")
+        elif label.startswith("structure"):
+            classes.append("overlay-structure")
+        elif label.startswith("page_artifact"):
+            classes.append("overlay-artifact")
+        elif label.startswith("unknown") or label == "missing_bucket":
+            classes.append("overlay-unknown")
+        if has_override:
+            classes.append("overlay-overridden")
+        return " ".join(classes)
 
     def bucket_label(candidate: dict[str, Any] | None) -> str:
         if not candidate:
@@ -960,6 +1006,7 @@ def build_audit_html(
         page_objects = objects_by_page.get(page_number, [])
         bucket_counts: Counter[str] = Counter()
         object_cards = []
+        overlay_boxes = []
         for obj in page_objects:
             candidate = candidate_by_object_id.get(obj["object_id"])
             label = bucket_label(candidate)
@@ -978,8 +1025,15 @@ def build_audit_html(
             )
             detector_bucket = override.get("original_bucket") if override else candidate.get("original_stream_type", label) if candidate else "-"
             override_bucket = override.get("corrected_bucket") if override else "-"
+            object_id = str(obj.get("object_id", ""))
+            dom_id = safe_dom_id(object_id)
+            style = overlay_style(obj.get("bbox"), page)
+            if style:
+                overlay_boxes.append(
+                    f"""<button type="button" class="{esc(overlay_class(label, bool(override)))}" style="{esc(style)}" data-object-id="{esc(object_id)}" aria-label="Highlight {esc(object_id)}" title="{esc(label)} · {esc(object_id)}"></button>"""
+                )
             object_cards.append(
-                f"""<article class="object-card" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}">
+                f"""<article class="object-card" id="card-{esc(dom_id)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}" tabindex="0">
                   <header>
                     <code>{esc(obj.get('object_id'))}</code>
                     <span class="{esc(bucket_class(label))}">{esc(label)}</span>
@@ -1036,7 +1090,12 @@ def build_audit_html(
               </div>
               <div class="page-review-grid">
                 <figure class="page-image-witness">
-                  <a href="{esc(page_image_href)}"><img src="{esc(page_image_href)}" alt="Rendered PDF page {page_number}"></a>
+                  <div class="page-image-stage">
+                    <a href="{esc(page_image_href)}"><img src="{esc(page_image_href)}" alt="Rendered PDF page {page_number}"></a>
+                    <div class="bbox-layer" aria-label="Extracted object bounding boxes">
+                      {''.join(overlay_boxes)}
+                    </div>
+                  </div>
                   <figcaption>Rendered PDF page {page_number}</figcaption>
                 </figure>
                 <div class="page-object-list">
@@ -1118,10 +1177,21 @@ def build_audit_html(
     .page-meta {{ display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 14px; border-top: 1px solid #d8d6cc; border-bottom: 1px solid #d8d6cc; }}
     .page-review-grid {{ display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); align-items: start; gap: 14px; padding: 14px; }}
     .page-image-witness {{ position: sticky; top: 12px; margin: 0; border: 1px solid #d8d6cc; background: #fbfbf8; padding: 10px; }}
+    .page-image-stage {{ position: relative; }}
     .page-image-witness img {{ display: block; width: 100%; height: auto; border: 1px solid #e3e0d6; background: white; }}
     .page-image-witness figcaption {{ margin-top: 8px; font-size: 0.9rem; color: #56616b; }}
+    .bbox-layer {{ position: absolute; inset: 1px; pointer-events: none; }}
+    .bbox-overlay {{ position: absolute; box-sizing: border-box; border: 2px solid #111; background: rgba(255,255,255,0.08); padding: 0; pointer-events: auto; cursor: pointer; }}
+    .bbox-overlay.hidden {{ display: none; }}
+    .overlay-paragraph {{ border-color: #1f7a4d; background: rgba(31,122,77,0.10); }}
+    .overlay-structure {{ border-color: #315a9f; background: rgba(49,90,159,0.10); }}
+    .overlay-artifact {{ border-color: #a46316; background: rgba(164,99,22,0.12); }}
+    .overlay-unknown {{ border-color: #a1382f; background: rgba(161,56,47,0.12); }}
+    .overlay-overridden {{ outline: 3px dashed #111; outline-offset: 2px; }}
+    .bbox-overlay.is-active, .bbox-overlay:hover, .bbox-overlay:focus {{ z-index: 4; box-shadow: 0 0 0 3px rgba(0,0,0,0.28); }}
     .page-object-list {{ min-width: 0; }}
     .object-card {{ padding: 14px; border-top: 1px solid #d8d6cc; }}
+    .object-card.is-active {{ background: #fff7d6; box-shadow: inset 4px 0 0 #111; }}
     .page-object-list .object-card:first-child {{ border-top: 0; }}
     .object-card.hidden {{ display: none; }}
     .object-card header {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }}
@@ -1272,6 +1342,27 @@ def build_audit_html(
     count: document.getElementById("review-count")
   }};
   const cards = Array.from(document.querySelectorAll(".object-card"));
+  const overlays = Array.from(document.querySelectorAll(".bbox-overlay"));
+  const overlayByObjectId = new Map(overlays.map(box => [box.dataset.objectId, box]));
+  const cardByObjectId = new Map(cards.map(card => [card.dataset.objectId, card]));
+  function setActiveObject(objectId, shouldScroll = false) {{
+    for (const card of cards) card.classList.toggle("is-active", card.dataset.objectId === objectId);
+    for (const box of overlays) box.classList.toggle("is-active", box.dataset.objectId === objectId);
+    if (shouldScroll) {{
+      const card = cardByObjectId.get(objectId);
+      if (card) card.scrollIntoView({{ behavior: "smooth", block: "center" }});
+    }}
+  }}
+  for (const card of cards) {{
+    card.addEventListener("mouseenter", () => setActiveObject(card.dataset.objectId));
+    card.addEventListener("focus", () => setActiveObject(card.dataset.objectId));
+    card.addEventListener("click", () => setActiveObject(card.dataset.objectId));
+  }}
+  for (const box of overlays) {{
+    box.addEventListener("mouseenter", () => setActiveObject(box.dataset.objectId));
+    box.addEventListener("focus", () => setActiveObject(box.dataset.objectId));
+    box.addEventListener("click", () => setActiveObject(box.dataset.objectId, true));
+  }}
   function applyReviewFilters() {{
     const bucket = controls.bucket.value;
     const subtype = controls.subtype.value;
@@ -1293,6 +1384,8 @@ def build_audit_html(
         (maxConfidence === null || confidence <= maxConfidence) &&
         (!warning || (card.dataset.warnings || "").toLowerCase().includes(warning));
       card.classList.toggle("hidden", !matches);
+      const overlay = overlayByObjectId.get(card.dataset.objectId);
+      if (overlay) overlay.classList.toggle("hidden", !matches);
       if (matches) visible += 1;
     }}
     controls.count.textContent = `${{visible}} of ${{cards.length}} object cards visible`;
@@ -1331,6 +1424,12 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
     page_image_files = sorted((output_dir / PAGE_IMAGES_DIR_NAME).glob("page_*.jpg"))
+    bbox_object_ids = {
+        row.get("object_id")
+        for row in layout_objects
+        if isinstance(row.get("bbox"), dict)
+        and all(row["bbox"].get(key) is not None for key in ["x0", "x1", "top", "bottom"])
+    }
 
     page_count = int(manifest.get("page_count", 0))
     add_check("page_inventory_matches_manifest", len(inventory) == page_count, f"{len(inventory)} inventory rows / {page_count} manifest pages")
@@ -1356,6 +1455,9 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
         "audit_links_page_images",
         all(f"{PAGE_IMAGES_DIR_NAME}/{page_image_filename(page_number)}" in audit_html for page_number in range(1, page_count + 1)),
     )
+    overlay_count = audit_html.count('class="bbox-overlay')
+    add_check("overlay_data_exists_for_bbox_objects", all(f'data-object-id="{object_id}"' in audit_html for object_id in bbox_object_ids))
+    add_check("audit_renders_overlay_elements", overlay_count >= len(bbox_object_ids), f"{overlay_count} overlays / {len(bbox_object_ids)} bbox objects")
     stream_object_ids = (
         {row.get("object_id") for row in main_paragraphs}
         | {row.get("object_id") for row in structure}

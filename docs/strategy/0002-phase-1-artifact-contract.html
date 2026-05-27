@@ -60,8 +60,8 @@
       </tr>
       <tr>
         <td><code>layout_objects.jsonl</code></td>
-        <td>Initial deterministic page objects with type guesses, confidence, raw text, and source line ids.</td>
-        <td>Begins object-level organization before retrieval.</td>
+        <td>Initial deterministic page objects with type guesses, confidence, raw text, source line ids, and bounding boxes when available. Complete boxes include <code>x0</code>, <code>x1</code>, <code>top</code>, and <code>bottom</code>.</td>
+        <td>Begins object-level organization before retrieval and provides visual overlay evidence.</td>
       </tr>
       <tr>
         <td><code>clean_objects.jsonl</code></td>
@@ -149,6 +149,7 @@
     <li>No output is named canonical before audit promotion.</li>
     <li>Rendered page image count matches source page count.</li>
     <li>The audit page links each inspected page to its rendered page image.</li>
+    <li>The audit page draws overlay boxes for objects with complete bounding boxes.</li>
     <li>Repeated page furniture is detected from deterministic repetition, position, and page-number evidence.</li>
     <li>Artifact false-positive risks are visible before any canonical exclusion is allowed.</li>
     <li>Review overrides are validated, evidence-bound, and candidate-only.</li>

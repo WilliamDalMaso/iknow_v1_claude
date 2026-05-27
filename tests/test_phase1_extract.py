@@ -171,9 +171,9 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
         "book",
         1,
         [
-            "CHAPTER I",
-            "This is the first line",
-            "of a paragraph.",
+            {"text": "CHAPTER I", "x0": 40, "x1": 120, "top": 20, "bottom": 34},
+            {"text": "This is the first line", "x0": 60, "x1": 180, "top": 50, "bottom": 64},
+            {"text": "of a paragraph.", "x0": 40, "x1": 140, "top": 66, "bottom": 80},
         ],
     )
     paragraphs, structure, artifacts, unknown, _ = build_reconstruction_streams(
@@ -227,6 +227,8 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "review_overrides_applied.jsonl" in html
     assert "page_images/page_0001.jpg" in html
     assert "Rendered PDF page 1" in html
+    assert "bbox-overlay" in html
+    assert "data-object-id=\"book:p0001:obj001\"" in html
     assert "Detector bucket" in html
     assert "Override bucket" in html
     assert "Final candidate bucket" in html
