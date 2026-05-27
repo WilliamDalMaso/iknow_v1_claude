@@ -21,6 +21,7 @@
     "Do not choose OpenAI models silently; model choice must be explicit before model-assisted extraction or review.",
     "Do not use Markdown as the durable project documentation format, except README.md as a GitHub-facing adapter.",
     "Do not call Phase 1 outputs canonical until they pass audit, comparison, and review.",
+    "Do not hide review corrections inside detector logic; store them as explicit review override artifacts.",
     "Stage, commit, and push meaningful checkpoints when the repo state should be preserved."
   ],
   "phase1_candidate_first_rule": {

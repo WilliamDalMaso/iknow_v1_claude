@@ -95,6 +95,14 @@
     boundaries, small page ranges, and low repetition counts.
   </p>
 
+  <h2>Review Overrides</h2>
+  <p>
+    Reviewer corrections live in <code>review_overrides.jsonl</code>. Overrides can move an object
+    between candidate buckets while preserving the original detector assignment. They do not create
+    canonical content and they do not change the detector itself. This makes review reusable without
+    hiding the evidence trail.
+  </p>
+
   <h2>First Book Strategy</h2>
   <p>
     We will choose one book and build Phase 1 around it until it passes cleanliness gates. This is intentionally

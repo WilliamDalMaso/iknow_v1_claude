@@ -30,6 +30,7 @@ REQUIRED_ARTIFACTS = [
     "unknown_objects.jsonl",
     "reconstruction_map_candidate.json",
     "reading_order_candidate.json",
+    "review_overrides.jsonl",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -64,6 +65,31 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def ensure_review_overrides_template(path: Path) -> None:
+    if path.exists():
+        return
+    path.write_text(
+        "# Add one JSON object per line. Lines starting with # are ignored.\n"
+        "# Required: object_id, corrected_bucket, reason, reviewer.\n"
+        "# Optional: corrected_subtype, confidence, date.\n",
+        encoding="utf-8",
+    )
+
+
+def read_review_overrides(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        row = json.loads(line)
+        row["_line_number"] = line_number
+        rows.append(row)
+    return rows
 
 
 def clean_line(raw: str) -> tuple[str, list[str]]:
@@ -523,9 +549,11 @@ def build_reconstruction_streams(
     clean_objects: list[dict[str, Any]],
     inventory: list[dict[str, Any]],
     page_count: int,
+    review_overrides: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     clean_by_id = {row["object_id"]: row for row in clean_objects}
     furniture_profiles = build_page_furniture_profiles(layout_objects, clean_objects, inventory)
+    overrides_by_id = {row["object_id"]: row for row in review_overrides or []}
     main_paragraph_candidates: list[dict[str, Any]] = []
     structure_candidates: list[dict[str, Any]] = []
     page_artifacts_candidates: list[dict[str, Any]] = []
@@ -542,8 +570,29 @@ def build_reconstruction_streams(
         clean = clean_by_id[object_id]
         page_number = int(layout["page_number"])
         stream, stream_type, confidence, warnings, extra = classify_stream_object(layout, clean, furniture_profiles.get(object_id))
+        original_stream = stream
+        original_stream_type = stream_type
+        original_confidence = confidence
+        original_extra = dict(extra)
         classification_reasons = list(layout.get("classification_reasons", [])) + list(extra.get("classification_reasons", []))
         classification_reasons = list(dict.fromkeys(classification_reasons))
+        review_override = overrides_by_id.get(object_id)
+        if review_override:
+            corrected_bucket = review_override.get("corrected_bucket")
+            bucket_to_stream = {
+                "main_paragraph_candidate": ("main_paragraph", "main_paragraph_candidate"),
+                "structure_candidate": ("structure", "structure_candidate"),
+                "page_artifact_candidate": ("page_artifact", "page_artifact_candidate"),
+                "unknown_needs_review": ("unknown", "unknown_needs_review"),
+            }
+            if corrected_bucket not in bucket_to_stream:
+                raise ValueError(f"Invalid corrected_bucket for {object_id}: {corrected_bucket}")
+            stream, stream_type = bucket_to_stream[corrected_bucket]
+            confidence = float(review_override.get("confidence", confidence))
+            warnings = list(dict.fromkeys(warnings + ["review_override_applied"]))
+            classification_reasons.append("review_override_applied")
+            if review_override.get("corrected_subtype"):
+                extra["artifact_subtype"] = review_override["corrected_subtype"]
         common = {
             "book_id": book_id,
             "run_id": run_id,
@@ -556,9 +605,21 @@ def build_reconstruction_streams(
             "raw_text": layout.get("raw_text", ""),
             "clean_text": clean.get("clean_text", ""),
             "confidence": confidence,
+            "original_stream_type": original_stream_type,
             "classification_reasons": classification_reasons,
             "warnings": warnings,
         }
+        if review_override:
+            common["review_override"] = {
+                "original_bucket": original_stream_type,
+                "corrected_bucket": stream_type,
+                "reason": review_override.get("reason", ""),
+                "reviewer": review_override.get("reviewer", ""),
+                "date": review_override.get("date", ""),
+                "line_number": review_override.get("_line_number"),
+            }
+            common["original_confidence"] = original_confidence
+            common["original_artifact_type"] = original_extra.get("artifact_subtype")
         object_to_stream[object_id] = stream
         page_key = str(page_number)
         if stream == "main_paragraph":
@@ -624,6 +685,8 @@ def build_reconstruction_streams(
             "unknown_objects": len(unknown_objects),
         },
         "artifact_type_counts": dict(sorted(Counter(row.get("artifact_type", "unknown") for row in page_artifacts_candidates).items())),
+        "review_override_count": len(overrides_by_id),
+        "review_override_object_ids": sorted(overrides_by_id),
         "object_to_stream": object_to_stream,
         "artifact_candidate_object_ids": [row["object_id"] for row in page_artifacts_candidates],
         "candidate_only_exclusions": {
@@ -847,6 +910,12 @@ def build_audit_html(
             subtype = candidate.get("artifact_type") or candidate.get("structure_type") or "-" if candidate else "-"
             confidence = candidate.get("confidence", "-") if candidate else "-"
             zone = page_zones.get(page_number, "unknown")
+            override = candidate.get("review_override") if candidate else None
+            override_text = (
+                f"{override.get('original_bucket')} -> {override.get('corrected_bucket')}: {override.get('reason')}"
+                if override
+                else "-"
+            )
             object_cards.append(
                 f"""<article class="object-card" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}">
                   <header>
@@ -870,6 +939,7 @@ def build_audit_html(
                       <dl>
                         <dt>Confidence</dt><dd><code>{esc(confidence)}</code></dd>
                         <dt>Subtype</dt><dd><code>{esc(subtype)}</code></dd>
+                        <dt>Review override</dt><dd><code>{esc(override_text)}</code></dd>
                         <dt>Warnings</dt><dd><code>{esc(', '.join(warnings) or '-')}</code></dd>
                         <dt>Reasons</dt><dd><code>{esc(', '.join(reasons) or '-')}</code></dd>
                       </dl>
@@ -1025,6 +1095,15 @@ def build_audit_html(
   <h2>Page Artifact Candidate Types</h2>
   <ul>{artifact_type_items or '<li>No page artifact candidates.</li>'}</ul>
 
+  <h2>Review Overrides</h2>
+  <p>
+    Persistent reviewer decisions live in <code>review_overrides.jsonl</code>. Overrides change
+    candidate bucket assignment for review purposes only; they do not promote content to canonical.
+  </p>
+  <ul>
+    <li>Applied overrides: <code>{validation_report.get('summary', {}).get('review_override_rows', 0)}</code></li>
+  </ul>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -1160,6 +1239,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     layout_objects = read_jsonl(output_dir / "layout_objects.jsonl")
     clean_objects = read_jsonl(output_dir / "clean_objects.jsonl")
     cleanup_log = read_jsonl(output_dir / "cleanup_log.jsonl")
+    review_overrides = read_review_overrides(output_dir / "review_overrides.jsonl")
     main_paragraphs = read_jsonl(output_dir / "main_paragraph_candidates.jsonl")
     structure = read_jsonl(output_dir / "structure_candidates.jsonl")
     page_artifacts = read_jsonl(output_dir / "page_artifacts_candidates.jsonl")
@@ -1202,6 +1282,13 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("paragraph_stream_has_paragraph_ids", all(row.get("paragraph_id") for row in main_paragraphs))
     add_check("stream_rows_are_evidence_bound", all(row.get("source_object_ids") and row.get("source_line_ids") for row in stream_rows))
     add_check("reconstruction_map_counts_match_streams", reconstruction_map.get("counts") == expected_counts)
+    known_ids = set(layout_ids)
+    override_object_ids = [row.get("object_id") for row in review_overrides]
+    valid_buckets = {"main_paragraph_candidate", "structure_candidate", "page_artifact_candidate", "unknown_needs_review"}
+    add_check("review_overrides_reference_known_objects", set(override_object_ids).issubset(known_ids))
+    add_check("review_override_object_ids_unique", len(override_object_ids) == len(set(override_object_ids)))
+    add_check("review_override_buckets_valid", all(row.get("corrected_bucket") in valid_buckets for row in review_overrides))
+    add_check("reconstruction_map_records_review_overrides", reconstruction_map.get("review_override_count") == len(review_overrides))
 
     status = "pass" if all(check["status"] == "pass" for check in checks) else "fail"
     return {
@@ -1218,6 +1305,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             "structure_rows": len(structure),
             "page_artifact_rows": len(page_artifacts),
             "unknown_rows": len(unknown),
+            "review_override_rows": len(review_overrides),
             "cleanup_log_rows": len(cleanup_log),
         },
     }
@@ -1230,6 +1318,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
 
     output_dir = RUNS_DIR / book_id / run_id
     output_dir.mkdir(parents=True, exist_ok=True)
+    review_overrides_path = output_dir / "review_overrides.jsonl"
+    ensure_review_overrides_template(review_overrides_path)
+    review_overrides = read_review_overrides(review_overrides_path)
 
     inventory: list[dict[str, Any]] = []
     raw_pages: list[dict[str, Any]] = []
@@ -1291,6 +1382,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "layout_objects": "layout_objects.jsonl",
             "clean_objects": "clean_objects.jsonl",
             "reading_order_candidate": "reading_order_candidate.json",
+            "review_overrides": "review_overrides.jsonl",
             "cleanup_log": "cleanup_log.jsonl",
             "validation_report": "validation_report.json",
             "phase1_audit": "phase1_audit.html",
@@ -1298,7 +1390,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
     main_paragraphs, structure, page_artifacts, unknown, reconstruction_map = build_reconstruction_streams(
-        book_id, run_id, layout_objects, clean_objects, inventory, page_count
+        book_id, run_id, layout_objects, clean_objects, inventory, page_count, review_overrides
     )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
@@ -1315,6 +1407,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         "object_type_counts": dict(sorted(object_counts.items())),
         "candidate_stream_counts": stream_counts,
         "artifact_type_counts": artifact_type_counts,
+        "review_override_count": len(review_overrides),
         "page_count": page_count,
         "object_ids": [row["object_id"] for row in layout_objects],
         "main_paragraph_candidate_ids": [row["paragraph_id"] for row in main_paragraphs],

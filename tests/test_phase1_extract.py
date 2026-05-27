@@ -219,3 +219,48 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "False-Positive Risk Review" in html
     assert "filter-bucket" in html
     assert "filter-page-min" in html
+    assert "review_overrides.jsonl" in html
+
+
+def test_review_override_moves_candidate_bucket() -> None:
+    layout = []
+    clean = []
+    for page_number, printed_page in [(20, "2"), (22, "4"), (24, "6")]:
+        page_layout, page_clean, _ = build_segmented_objects(
+            "book",
+            page_number,
+            [
+                {"text": f"{printed_page} NARRATIVE OF THE", "x0": 42, "top": 37, "bottom": 49},
+                {"text": "This is a real paragraph line.", "x0": 64, "top": 80, "bottom": 92},
+            ],
+        )
+        layout.extend(page_layout)
+        clean.extend(page_clean)
+    overridden_object_id = layout[0]["object_id"]
+
+    paragraphs, structure, artifacts, unknown, reconstruction_map = build_reconstruction_streams(
+        "book",
+        "phase1_v3",
+        layout,
+        clean,
+        [inventory_row(20), inventory_row(22), inventory_row(24)],
+        page_count=24,
+        review_overrides=[
+            {
+                "object_id": overridden_object_id,
+                "corrected_bucket": "structure_candidate",
+                "reason": "test override",
+                "reviewer": "test",
+                "date": "2026-05-27",
+            }
+        ],
+    )
+
+    assert len(paragraphs) == 3
+    assert len(structure) == 1
+    assert len(artifacts) == 2
+    assert unknown == []
+    assert structure[0]["object_id"] == overridden_object_id
+    assert structure[0]["review_override"]["original_bucket"] == "page_artifact_candidate"
+    assert structure[0]["review_override"]["corrected_bucket"] == "structure_candidate"
+    assert reconstruction_map["review_override_count"] == 1

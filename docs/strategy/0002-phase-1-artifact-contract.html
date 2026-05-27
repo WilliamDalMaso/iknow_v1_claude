@@ -99,6 +99,11 @@
         <td>Defines the provisional reading sequence for audit.</td>
       </tr>
       <tr>
+        <td><code>review_overrides.jsonl</code></td>
+        <td>Persistent reviewer corrections for candidate bucket assignment, one JSON object per line.</td>
+        <td>Lets review decisions change candidate streams without changing detector rules or promoting content to canonical.</td>
+      </tr>
+      <tr>
         <td><code>cleanup_log.jsonl</code></td>
         <td>Append-only log of each cleanup operation applied to extracted text.</td>
         <td>Prevents untracked text mutation.</td>
@@ -129,6 +134,7 @@
     <li>No output is named canonical before audit promotion.</li>
     <li>Repeated page furniture is detected from deterministic repetition, position, and page-number evidence.</li>
     <li>Artifact false-positive risks are visible before any canonical exclusion is allowed.</li>
+    <li>Review overrides are validated, evidence-bound, and candidate-only.</li>
     <li>The audit page lets a reviewer compare raw extracted objects against their candidate bucket assignments.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
