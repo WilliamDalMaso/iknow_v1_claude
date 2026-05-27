@@ -300,6 +300,9 @@ def test_canonical_paragraph_review_flags_risky_promoted_rows() -> None:
     assert report["safe_for_downstream"] is False
     assert report["sample_risky_canonical_paragraphs"][0]["canonical_paragraph_id"] == "cp_000001"
     assert "possible_metadata_or_structure_leakage" in report["warning_categories"]
+    assert report["warning_category_drilldown"][0]["count"] >= 1
+    assert report["risky_paragraph_clusters"]
+    assert report["recommendation_detail"]["top_risk_to_fix_first"]
 
 
 def test_review_override_moves_candidate_bucket() -> None:

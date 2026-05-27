@@ -48,7 +48,7 @@
     "canonical_promotion_rule": {
       "meaning": "Canonical means evidence-bound, audited enough under current rules, and safe for downstream use; it does not mean flawless.",
       "first_gate": "Promote main_paragraph_candidates only.",
-      "review_gate": "Review canonical_paragraphs.jsonl with canonical_paragraph_review_report.json before downstream use.",
+      "review_gate": "Review canonical_paragraphs.jsonl with canonical_paragraph_review_report.json before downstream use, including warning drilldowns, risk clusters, and top corrective recommendation.",
       "forbidden_in_first_gate": [
         "structure promotion",
         "page artifact promotion",

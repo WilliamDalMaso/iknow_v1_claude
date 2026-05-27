@@ -950,6 +950,81 @@ METADATA_LEAKAGE_PATTERNS = [
         r"\bfrederick douglass\b",
     ]
 ]
+WARNING_DRILLDOWN_RULES = {
+    "possible_broken_paragraph_merge": {
+        "cluster": "merge_risk",
+        "severity": "high",
+        "likely_next_corrective_action": "Inspect paragraph line grouping and split candidates where multiple ideas were merged.",
+        "may_require": ["detector_changes", "manual_inspection"],
+    },
+    "possible_metadata_or_structure_leakage": {
+        "cluster": "structure_metadata_leakage",
+        "severity": "high",
+        "likely_next_corrective_action": "Move publisher/front matter or heading-like text out of canonical paragraphs into structure or artifacts.",
+        "may_require": ["promotion_rule_changes", "review_overrides", "manual_inspection"],
+    },
+    "possible_missing_paragraph_start": {
+        "cluster": "missing_paragraph_start_end",
+        "severity": "medium",
+        "likely_next_corrective_action": "Inspect neighboring source objects to determine whether paragraph starts were split or joined incorrectly.",
+        "may_require": ["detector_changes", "manual_inspection"],
+    },
+    "unusual_paragraph_ending": {
+        "cluster": "missing_paragraph_start_end",
+        "severity": "medium",
+        "likely_next_corrective_action": "Inspect neighboring source objects to determine whether paragraph endings were truncated or split.",
+        "may_require": ["detector_changes", "manual_inspection"],
+    },
+    "possible_bad_hyphenation_join": {
+        "cluster": "hyphenation_line_join",
+        "severity": "medium",
+        "likely_next_corrective_action": "Review hyphenated line-join cleanup rules against raw source lines.",
+        "may_require": ["detector_changes", "promotion_rule_changes"],
+    },
+    "missing_bbox_visual_evidence": {
+        "cluster": "bbox_span_risk",
+        "severity": "medium",
+        "likely_next_corrective_action": "Require visual evidence or route missing-bbox paragraphs to manual inspection.",
+        "may_require": ["promotion_rule_changes", "manual_inspection"],
+    },
+    "suspicious_source_line_vertical_span": {
+        "cluster": "bbox_span_risk",
+        "severity": "high",
+        "likely_next_corrective_action": "Inspect visual page spans and split paragraph candidates whose source lines cover too much page height.",
+        "may_require": ["detector_changes", "manual_inspection"],
+    },
+    "source_lines_span_suspicious_distance": {
+        "cluster": "bbox_span_risk",
+        "severity": "high",
+        "likely_next_corrective_action": "Inspect multi-line paragraph grouping and split candidates with suspicious vertical span.",
+        "may_require": ["detector_changes", "manual_inspection"],
+    },
+    "front_matter_or_chapter_boundary_risk": {
+        "cluster": "boundary_page_risk",
+        "severity": "medium",
+        "likely_next_corrective_action": "Define front matter and chapter boundary handling before promoting early-page text downstream.",
+        "may_require": ["promotion_rule_changes", "review_overrides", "manual_inspection"],
+    },
+    "possible_repeated_header_or_furniture_leakage": {
+        "cluster": "repeated_furniture_leakage",
+        "severity": "high",
+        "likely_next_corrective_action": "Improve page-furniture detection or add curated overrides for repeated text that entered canonical paragraphs.",
+        "may_require": ["detector_changes", "review_overrides"],
+    },
+    "suspiciously_short_promoted_paragraph": {
+        "cluster": "unusual_length",
+        "severity": "low",
+        "likely_next_corrective_action": "Sample short paragraphs to decide whether they are legitimate prose, fragments, captions, or metadata.",
+        "may_require": ["promotion_rule_changes", "manual_inspection"],
+    },
+    "suspiciously_long_promoted_paragraph": {
+        "cluster": "unusual_length",
+        "severity": "medium",
+        "likely_next_corrective_action": "Inspect long paragraphs for accidental merges before downstream chunking.",
+        "may_require": ["detector_changes", "manual_inspection"],
+    },
+}
+SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 
 
 def bbox_height(value: Any) -> float | None:
@@ -962,6 +1037,19 @@ def bbox_height(value: Any) -> float | None:
     return max(0.0, float(bottom) - float(top))
 
 
+def first_unique(values: list[Any], limit: int) -> list[Any]:
+    seen = set()
+    result = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def review_canonical_paragraphs(
     book_id: str,
     run_id: str,
@@ -970,6 +1058,8 @@ def review_canonical_paragraphs(
     normalized_counts = Counter(normalized_object_text(row.get("clean_text", "")) for row in canonical_paragraphs)
     warning_counts: Counter[str] = Counter()
     risky_samples: list[dict[str, Any]] = []
+    warning_records: dict[str, list[dict[str, Any]]] = {}
+    cluster_records: dict[str, list[dict[str, Any]]] = {}
     clean_count = 0
 
     for row in canonical_paragraphs:
@@ -1010,6 +1100,19 @@ def review_canonical_paragraphs(
 
         if warnings:
             warning_counts.update(warnings)
+            sample_record = {
+                "canonical_paragraph_id": row.get("canonical_paragraph_id"),
+                "source_candidate_object_id": row.get("source_candidate_object_id"),
+                "page_number": page_number,
+                "word_count": word_count,
+                "bbox": row.get("bbox"),
+                "source_line_ids": source_line_ids,
+                "text_preview": clean_text[:220],
+            }
+            for warning in warnings:
+                warning_records.setdefault(warning, []).append(sample_record)
+                cluster = WARNING_DRILLDOWN_RULES.get(warning, {}).get("cluster", "other")
+                cluster_records.setdefault(str(cluster), []).append({**sample_record, "warning": warning})
             if len(risky_samples) < 40:
                 risky_samples.append(
                     {
@@ -1027,8 +1130,82 @@ def review_canonical_paragraphs(
         else:
             clean_count += 1
 
+    def warning_drilldown_rows() -> list[dict[str, Any]]:
+        rows = []
+        for warning, rows_for_warning in warning_records.items():
+            rule = WARNING_DRILLDOWN_RULES.get(warning, {})
+            severity = str(rule.get("severity", "low"))
+            unique_pages = sorted({int(row["page_number"]) for row in rows_for_warning})
+            rows.append(
+                {
+                    "warning": warning,
+                    "cluster": rule.get("cluster", "other"),
+                    "count": len(rows_for_warning),
+                    "severity": severity,
+                    "severity_rank": SEVERITY_RANK.get(severity, 1),
+                    "sample_canonical_paragraph_ids": first_unique([row["canonical_paragraph_id"] for row in rows_for_warning], 5),
+                    "affected_pages": unique_pages[:20],
+                    "text_previews": [row["text_preview"] for row in rows_for_warning[:3]],
+                    "likely_next_corrective_action": rule.get("likely_next_corrective_action", "Inspect samples and define a corrective rule."),
+                    "may_require": rule.get("may_require", ["manual_inspection"]),
+                }
+            )
+        return sorted(rows, key=lambda row: (-int(row["count"]), -int(row["severity_rank"]), str(row["warning"])))
+
+    def cluster_drilldown_rows() -> list[dict[str, Any]]:
+        rows = []
+        for cluster, rows_for_cluster in cluster_records.items():
+            warnings_in_cluster = sorted({str(row["warning"]) for row in rows_for_cluster})
+            severities = [
+                str(WARNING_DRILLDOWN_RULES.get(warning, {}).get("severity", "low"))
+                for warning in warnings_in_cluster
+            ]
+            max_rank = max((SEVERITY_RANK.get(severity, 1) for severity in severities), default=1)
+            severity = next(key for key, value in SEVERITY_RANK.items() if value == max_rank)
+            unique_pages = sorted({int(row["page_number"]) for row in rows_for_cluster})
+            next_actions = []
+            may_require = set()
+            for warning in warnings_in_cluster:
+                rule = WARNING_DRILLDOWN_RULES.get(warning, {})
+                action = rule.get("likely_next_corrective_action")
+                if action and action not in next_actions:
+                    next_actions.append(str(action))
+                may_require.update(str(value) for value in rule.get("may_require", []))
+            rows.append(
+                {
+                    "cluster": cluster,
+                    "count": len(rows_for_cluster),
+                    "severity": severity,
+                    "severity_rank": max_rank,
+                    "warnings": warnings_in_cluster,
+                    "sample_canonical_paragraph_ids": first_unique([row["canonical_paragraph_id"] for row in rows_for_cluster], 6),
+                    "affected_pages": unique_pages[:24],
+                    "text_previews": [row["text_preview"] for row in rows_for_cluster[:3]],
+                    "likely_next_corrective_action": " ".join(next_actions) or "Inspect samples and define a corrective rule.",
+                    "may_require": sorted(may_require),
+                }
+            )
+        return sorted(rows, key=lambda row: (-(int(row["severity_rank"]) * int(row["count"])), -int(row["count"]), str(row["cluster"])))
+
+    warning_drilldown = warning_drilldown_rows()
+    cluster_drilldown = cluster_drilldown_rows()
+    top_risk = cluster_drilldown[0] if cluster_drilldown else None
     warning_total = sum(warning_counts.values())
     safe_for_downstream = warning_total == 0
+    recommendation = {
+        "top_risk_to_fix_first": top_risk.get("cluster") if top_risk else None,
+        "why_it_matters": (
+            "Large source-line or bounding-box spans can indicate accidental paragraph merges, which would contaminate chunks and reasoning."
+            if top_risk and top_risk.get("cluster") == "bbox_span_risk"
+            else "The highest-priority risk cluster should be reviewed before downstream intelligence uses canonical paragraphs."
+        ),
+        "expected_impact": (
+            f"Reviewing this cluster addresses {top_risk.get('count')} warning instances across pages {', '.join(str(page) for page in top_risk.get('affected_pages', [])[:8])}."
+            if top_risk
+            else "No risky cluster detected."
+        ),
+        "may_require": top_risk.get("may_require", []) if top_risk else [],
+    }
     return {
         "book_id": book_id,
         "run_id": run_id,
@@ -1046,6 +1223,9 @@ def review_canonical_paragraphs(
             "sample_risky_paragraphs": len(risky_samples),
         },
         "warning_categories": dict(sorted(warning_counts.items())),
+        "warning_category_drilldown": warning_drilldown,
+        "risky_paragraph_clusters": cluster_drilldown,
+        "recommendation_detail": recommendation,
         "sample_risky_canonical_paragraphs": risky_samples,
     }
 
@@ -1458,6 +1638,31 @@ def build_audit_html(
         "</tr>"
         for row in (canonical_review_report.get("sample_risky_canonical_paragraphs") or [])[:20]
     )
+    canonical_review_drilldown_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('warning'))}</code></td>"
+        f"<td>{esc(row.get('cluster'))}</td>"
+        f"<td>{esc(row.get('severity'))}</td>"
+        f"<td>{esc(row.get('count'))}</td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</td>"
+        f"<td>{esc(', '.join(str(item) for item in row.get('sample_canonical_paragraph_ids', [])))}</td>"
+        f"<td>{esc(row.get('likely_next_corrective_action', ''))}</td>"
+        "</tr>"
+        for row in (canonical_review_report.get("warning_category_drilldown") or [])
+    )
+    canonical_review_cluster_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('cluster'))}</code></td>"
+        f"<td>{esc(row.get('severity'))}</td>"
+        f"<td>{esc(row.get('count'))}</td>"
+        f"<td>{esc(', '.join(row.get('warnings', [])))}</td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</td>"
+        f"<td>{esc(row.get('likely_next_corrective_action', ''))}</td>"
+        f"<td>{esc(', '.join(row.get('may_require', [])))}</td>"
+        "</tr>"
+        for row in (canonical_review_report.get("risky_paragraph_clusters") or [])
+    )
+    canonical_review_recommendation = canonical_review_report.get("recommendation_detail") or {}
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -1641,6 +1846,27 @@ def build_audit_html(
   </ul>
   <h3>Canonical Review Warning Categories</h3>
   <ul>{canonical_review_warning_items or '<li>No canonical paragraph review warnings.</li>'}</ul>
+  <h3>Canonical Warning Drilldown</h3>
+  <table>
+    <thead>
+      <tr><th>Warning</th><th>Cluster</th><th>Severity</th><th>Count</th><th>Affected Pages</th><th>Sample IDs</th><th>Likely Next Action</th></tr>
+    </thead>
+    <tbody>{canonical_review_drilldown_rows or '<tr><td colspan="7">No warning drilldown rows.</td></tr>'}</tbody>
+  </table>
+  <h3>Risk Clusters</h3>
+  <table>
+    <thead>
+      <tr><th>Cluster</th><th>Severity</th><th>Count</th><th>Warnings</th><th>Affected Pages</th><th>Likely Next Action</th><th>May Require</th></tr>
+    </thead>
+    <tbody>{canonical_review_cluster_rows or '<tr><td colspan="7">No risk clusters.</td></tr>'}</tbody>
+  </table>
+  <h3>Recommendation</h3>
+  <ul>
+    <li>Top risk to fix first: <code>{esc(canonical_review_recommendation.get('top_risk_to_fix_first', '-'))}</code></li>
+    <li>Why it matters: {esc(canonical_review_recommendation.get('why_it_matters', '-'))}</li>
+    <li>Expected impact: {esc(canonical_review_recommendation.get('expected_impact', '-'))}</li>
+    <li>May require: <code>{esc(', '.join(canonical_review_recommendation.get('may_require', [])))}</code></li>
+  </ul>
   <h3>Risky Canonical Paragraph Samples</h3>
   <table>
     <thead>
@@ -2017,7 +2243,21 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             for row in canonical_paragraph_review_report.get("sample_risky_canonical_paragraphs", [])
         }.issubset(set(canonical_ids)),
     )
+    add_check(
+        "canonical_paragraph_review_drilldown_counts_match_warnings",
+        {
+            row.get("warning"): row.get("count")
+            for row in canonical_paragraph_review_report.get("warning_category_drilldown", [])
+        }
+        == canonical_paragraph_review_report.get("warning_categories", {}),
+    )
+    add_check(
+        "canonical_paragraph_review_recommendation_present",
+        bool((canonical_paragraph_review_report.get("recommendation_detail") or {}).get("top_risk_to_fix_first"))
+        or canonical_review_counts.get("warning_count", 0) == 0,
+    )
     add_check("audit_has_canonical_paragraph_review", "Canonical Paragraph Review" in audit_html)
+    add_check("audit_has_canonical_review_drilldown", "Canonical Warning Drilldown" in audit_html and "Risk Clusters" in audit_html)
     known_ids = set(layout_ids)
     override_object_ids = [row.get("object_id") for row in review_overrides]
     add_check("review_overrides_reference_known_objects", set(override_object_ids).issubset(known_ids))

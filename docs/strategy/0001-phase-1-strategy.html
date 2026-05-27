@@ -97,7 +97,8 @@
   </p>
   <ol>
     <li>Look for likely merge problems, structure leakage, front-matter boundaries, unusual endings, and suspicious source spans.</li>
-    <li>Record warning categories and risky samples with source candidate ids, pages, source lines, and bounding boxes.</li>
+    <li>Record warning categories, severity, risk clusters, affected pages, risky samples, source candidate ids, source lines, and bounding boxes.</li>
+    <li>Recommend the highest-impact risk to fix first before changing extraction logic.</li>
     <li>Use <code>safe_for_downstream</code> as a gate signal before retrieval, embeddings, reasoning, or graph work.</li>
   </ol>
 

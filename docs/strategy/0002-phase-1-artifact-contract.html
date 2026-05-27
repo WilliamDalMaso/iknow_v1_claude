@@ -135,7 +135,7 @@
       </tr>
       <tr>
         <td><code>canonical_paragraph_review_report.json</code></td>
-        <td>Deterministic review of promoted canonical paragraphs for likely quality risks, with warning categories, risky samples, source candidate ids, page numbers, source lines, bounding boxes, and downstream safety recommendation.</td>
+        <td>Deterministic review of promoted canonical paragraphs for likely quality risks, with warning categories, severity, risk clusters, affected pages, risky samples, source candidate ids, page numbers, source lines, bounding boxes, likely corrective actions, and downstream safety recommendation.</td>
         <td>Prevents clean-looking canonical output from entering retrieval, embeddings, reasoning, or graph work without a reviewed risk signal.</td>
       </tr>
       <tr>
@@ -178,7 +178,7 @@
     <li>Canonical paragraph promotion is paragraph-only and records promoted rows, blocked rows, and promotion counts.</li>
     <li>No structure, page artifact, or unknown object appears in <code>canonical_paragraphs.jsonl</code>.</li>
     <li><code>canonical_paragraph_review_report.json</code> row counts match <code>canonical_paragraphs.jsonl</code>.</li>
-    <li>The audit page shows canonical paragraph review counts, warning categories, samples, and <code>safe_for_downstream</code>.</li>
+    <li>The audit page shows canonical paragraph review counts, warning categories, risk clusters, corrective-action recommendations, samples, and <code>safe_for_downstream</code>.</li>
     <li>The audit page lets a reviewer compare raw extracted objects against their candidate bucket assignments.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
