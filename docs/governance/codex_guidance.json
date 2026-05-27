@@ -20,6 +20,16 @@
     "Do not use Markdown as the durable project documentation format, except README.md as a GitHub-facing adapter.",
     "Stage, commit, and push meaningful checkpoints when the repo state should be preserved."
   ],
+  "formatting_rules": {
+    "local_html_docs": "Use the standard light document style in docs/.",
+    "local_docs_background": "#fbfbf8",
+    "local_docs_text": "#17202a",
+    "local_docs_links": "#135f7f",
+    "local_docs_section_dividers": "#d8d6cc",
+    "local_docs_inline_code_background": "#ece9df",
+    "dark_mode_scope": "Reserve dark mode for runtime observability surfaces, not ordinary project documentation.",
+    "github_readme_scope": "README.md is a GitHub-facing adapter, not the durable local source of truth."
+  },
   "artifact_boundaries": {
     "source_code": "src/",
     "tests": "tests/",

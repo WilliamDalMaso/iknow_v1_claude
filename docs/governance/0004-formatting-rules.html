@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formatting Rules</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    a { color: #135f7f; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Formatting Rules</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+  <p>
+    These rules capture the formatting decisions made during the first project setup. They are
+    meant to keep the repo readable and prevent visual drift.
+  </p>
+
+  <h2>Local HTML Documentation</h2>
+  <div class="rule">
+    Local durable documentation in <code>docs/</code> uses the standard light document style.
+    Do not use dark mode for ordinary project docs.
+  </div>
+  <ol>
+    <li>Use <code>#fbfbf8</code> for the page background.</li>
+    <li>Use <code>#17202a</code> for primary body text.</li>
+    <li>Use <code>#135f7f</code> for links.</li>
+    <li>Use <code>#d8d6cc</code> for section dividers.</li>
+    <li>Use <code>#ece9df</code> for inline code backgrounds.</li>
+    <li>Use a constrained main column around <code>920px</code> to <code>980px</code>.</li>
+    <li>Use generous page padding, currently <code>48px 24px</code>.</li>
+    <li>Use simple headings, paragraphs, ordered lists, and tables. Avoid decorative UI.</li>
+  </ol>
+
+  <h2>Callouts</h2>
+  <ol>
+    <li>Use green-left-border callouts for principles or source-of-truth rules.</li>
+    <li>Use warning callouts sparingly for risks, not decoration.</li>
+    <li>Do not turn every section into a card.</li>
+  </ol>
+
+  <h2>Observability Dashboard</h2>
+  <div class="rule">
+    Dark mode is reserved for runtime observability surfaces such as the localhost dashboard.
+    It is not the default style for project documentation.
+  </div>
+  <ol>
+    <li>Keep the observability dashboard black and white.</li>
+    <li>Use it for live process state, build events, and runtime events.</li>
+    <li>Keep runtime logs ignored by git unless a curated finding becomes documentation.</li>
+  </ol>
+
+  <h2>GitHub Reader Experience</h2>
+  <ol>
+    <li><code>README.md</code> exists because GitHub renders Markdown best on the repo landing page.</li>
+    <li>The README is an adapter, not the local source of truth.</li>
+    <li>When README content changes project meaning, update the HTML source of truth first.</li>
+  </ol>
+
+  <h2>Future Formatting Rule</h2>
+  <p>
+    If a future page needs a different visual treatment, document why before making the exception.
+    The default assumption remains: local docs are light, readable, stable, and restrained.
+  </p>
+</main>
+</body>
+</html>
