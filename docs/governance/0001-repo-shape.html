@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Repository Shape</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 920px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Repository Shape</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Initial Directories</h2>
+  <ul>
+    <li><code>docs/</code>: HTML project memory, decisions, lessons, strategy, and history.</li>
+    <li><code>src/</code>: reusable engine code only.</li>
+    <li><code>tests/</code>: automated checks for extraction, cleanup, and artifact contracts.</li>
+    <li><code>data/books/</code>: local source-book inputs and book-specific setup files.</li>
+    <li><code>data/runs/</code>: generated run artifacts, grouped by book and run id.</li>
+  </ul>
+
+  <h2>Rules</h2>
+  <ol>
+    <li>Generated book artifacts do not live beside source code.</li>
+    <li>One run must be inspectable without reading unrelated book runs.</li>
+    <li>Documentation is HTML, not Markdown.</li>
+    <li>History and lessons are separated from strategy so future readers can distinguish what happened from what we intend.</li>
+    <li>Phase 1 artifacts must show raw, cleaned, canonical, and audit views separately.</li>
+  </ol>
+</main>
+</body>
+</html>

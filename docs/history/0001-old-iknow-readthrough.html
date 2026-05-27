@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Old iknow Readthrough</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2, h3 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 8px 10px; vertical-align: top; }
+    th { background: #ece9df; text-align: left; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    .warning { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; }
+    .keep { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Old iknow Readthrough</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+  <p><strong>Source reviewed:</strong> <code>/Users/williamdalmaso/Desktop/iknow</code></p>
+
+  <h2>Executive Judgment</h2>
+  <p>
+    The previous project had a strong habit of recording decisions, failures, and benchmark results.
+    Its weakest point was the same point that matters most for this new project: clean document intake.
+    The old ingestion path treated PDF extraction as a mostly solved technical step, then spent most
+    of its effort downstream on retrieval, answer behavior, claim extraction, graph pilots, and UI hardening.
+  </p>
+
+  <div class="warning">
+    <strong>Do not copy the old Phase 1 as-is.</strong>
+    Its first executable path used <code>pdfplumber.extract_text()</code>, light line normalization,
+    heuristic paragraph splitting, and later word-count chunking. That is not enough for a system whose
+    value depends on complete and clean document organization.
+  </div>
+
+  <h2>What They Did Right</h2>
+  <table>
+    <thead>
+      <tr><th>Area</th><th>Useful lesson</th><th>Evidence in old project</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Durable memory</td>
+        <td>They kept project history, lessons, analysis reports, governance files, and run manifests. This made failures inspectable.</td>
+        <td><code>PROJECT_HISTORY.md</code>, <code>platform/lessons.jsonl</code>, <code>docs/CURRENT_STATE.md</code>, <code>logs/run_manifest.jsonl</code></td>
+      </tr>
+      <tr>
+        <td>Bounded experiments</td>
+        <td>Several phases had one-tuning-iteration caps and explicit gates. This prevented endless prompt bargaining.</td>
+        <td>Phase 3a claims, Phase 4a entities, Phase 4b relations</td>
+      </tr>
+      <tr>
+        <td>Evaluation maturity</td>
+        <td>They learned to distinguish dev benchmarks, trusted benchmarks, deterministic judge contracts, and noisy LLM judging.</td>
+        <td>Phase 2.2, Phase 5 parity and metric work</td>
+      </tr>
+      <tr>
+        <td>Provenance pressure</td>
+        <td>Claims and entities carried source references and grounding checks. This is worth keeping.</td>
+        <td><code>src/extract_claims.py</code>, <code>src/extract_entities.py</code></td>
+      </tr>
+      <tr>
+        <td>Cost lessons</td>
+        <td>They eventually learned to sample benchmark regions and match model tier to task shape instead of blindly running full-book expensive passes.</td>
+        <td>Phase 3b Meditations reduced scope, Phase 4a model-tier refinement</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>What They Did Wrong Or Too Late</h2>
+  <table>
+    <thead>
+      <tr><th>Problem</th><th>Why it hurt</th><th>New-project response</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>PDF extraction was thin</td>
+        <td>Raw page text and heuristic paragraphs became the substrate for chunking, retrieval, claims, and graph work.</td>
+        <td>Build a multi-pass extraction audit before any retrieval work. Raw, cleaned, and canonical layers must be separate.</td>
+      </tr>
+      <tr>
+        <td>Document objects were not first-class enough</td>
+        <td>Tables, figures, captions, footnotes, headers, page numbers, front matter, and commentary layers were treated mostly as noise or later retrieval hazards.</td>
+        <td>Represent every detected content object explicitly with type, page span, coordinates when available, confidence, and review status.</td>
+      </tr>
+      <tr>
+        <td>One chunk object served too many jobs</td>
+        <td>The project later learned that retrieval units and citation/provenance units may need different shapes.</td>
+        <td>Keep canonical document objects separate from retrieval packages from the beginning.</td>
+      </tr>
+      <tr>
+        <td>Automation got ahead of perfection</td>
+        <td>The system tried to become a broad reusable engine while still learning how to clean one book properly.</td>
+        <td>Use one book as the proving ground. No automated multi-book path until Phase 1 quality gates pass.</td>
+      </tr>
+      <tr>
+        <td>Model selection was reactive</td>
+        <td>Model choices were often discovered through runs instead of a written model policy with escalation rules.</td>
+        <td>Create a model-use ledger before expensive model calls: deterministic first, cheap model for low-risk classification, stronger model for high-risk extraction review.</td>
+      </tr>
+      <tr>
+        <td>Folder layout mixed source, generated artifacts, tests, and experiments</td>
+        <td>Book outputs and test fixtures accumulated across root-level artifact folders, making repo truth harder to scan.</td>
+        <td>Separate engine code, documentation, book inputs, per-run artifacts, and experiments clearly.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Most Important Old Finding For Us</h2>
+  <p>
+    The old project eventually discovered that mechanically cleaner chunks were not automatically better retrieval chunks.
+    That is true, but it starts even earlier: mechanically extracted text is not automatically clean document content.
+    Phase 1 must preserve enough evidence to let us inspect and correct extraction before it becomes retrieval truth.
+  </p>
+
+  <h2>Source Files Read</h2>
+  <ul>
+    <li><code>README.md</code></li>
+    <li><code>PROJECT_HISTORY.md</code></li>
+    <li><code>docs/CURRENT_STATE.md</code></li>
+    <li><code>docs/OPERATING_DISCIPLINE.md</code></li>
+    <li><code>docs/PROJECT_GUIDE.md</code></li>
+    <li><code>analysis/old_engine_insights.md</code></li>
+    <li><code>analysis/pdf_forensic_report.md</code></li>
+    <li><code>analysis/book_structure_report.md</code></li>
+    <li><code>platform/lessons.jsonl</code></li>
+    <li><code>src/ingest.py</code></li>
+    <li><code>src/chunk.py</code></li>
+    <li><code>build_book_blueprint.py</code></li>
+  </ul>
+</main>
+</body>
+</html>
