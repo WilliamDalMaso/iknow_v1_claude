@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guarded Paragraph Merge Experiment</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Guarded Paragraph Merge Experiment</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The bbox span decision summary showed many likely accidental paragraph merges. This step tested
+    a narrow deterministic paragraph merge policy named <code>v2_span_guarded</code> against the
+    existing <code>v1_consecutive_lines</code> baseline.
+  </p>
+
+  <div class="rule">
+    This was an experiment, not a broad extractor rewrite. OCR, AI review, embeddings, retrieval,
+    graph work, user-facing answers, and structure promotion remain excluded.
+  </div>
+
+  <h2>Policy Tested</h2>
+  <p>
+    The experimental policy adds guarded split conditions around large vertical gaps, large visual
+    spans after terminal lines, unusual line count, uppercase starts, and indentation evidence.
+    The existing baseline remains the active policy for canonical outputs because the experiment did
+    not improve risk.
+  </p>
+
+  <h2>Douglass Result</h2>
+  <ol>
+    <li>Baseline paragraph candidates: <code>349</code>.</li>
+    <li>Experimental paragraph candidates: <code>395</code>.</li>
+    <li>Baseline promoted canonical paragraphs: <code>205</code>.</li>
+    <li>Experimental promoted canonical paragraphs: <code>270</code>.</li>
+    <li>Baseline bbox span risk count: <code>74</code>.</li>
+    <li>Experimental bbox span risk count: <code>91</code>.</li>
+    <li>Baseline likely true accidental merge count: <code>49</code>.</li>
+    <li>Experimental likely true accidental merge count: <code>61</code>.</li>
+    <li>Paragraphs split by the experimental policy: <code>42</code>.</li>
+    <li>Possible over-splitting risks: <code>26</code>.</li>
+  </ol>
+
+  <div class="warn">
+    The experimental policy made the measured risk worse, so it was not adopted as the active
+    canonical extraction behavior. The active manifest records <code>v1_consecutive_lines</code> as
+    the current paragraph merge policy and <code>v2_span_guarded</code> only as the experiment policy.
+  </div>
+
+  <h2>What Worked</h2>
+  <ol>
+    <li>The project can now compare paragraph merge policies without hiding the baseline.</li>
+    <li>The report captures before/after counts, split examples, and possible over-splitting risk.</li>
+    <li>The system refused to promote a worse experiment into canonical behavior.</li>
+  </ol>
+
+  <h2>What Failed</h2>
+  <p>
+    The simple span-guarded policy split more paragraphs, but the review layer still saw more bbox
+    span risk and more likely true accidental merges. This suggests the correction target is not just
+    line count or vertical span. The next correction should inspect split examples and likely merge
+    pages visually before attempting another merge rule.
+  </p>
+
+  <h2>Next Step</h2>
+  <p>
+    Review a small set of pages where the experiment worsened risk and compare the baseline paragraph,
+    experimental split children, page image, and bounding boxes. The next merge policy should be based
+    on those observed failure modes, not only on generic span thresholds.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -m pytest tests</code> passed with <code>19</code> tests.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+    <li>Browser smoke check confirmed the audit shows the paragraph merge experiment, the rejected outcome, and the before/after risk counts.</li>
+  </ol>
+</main>
+</body>
+</html>

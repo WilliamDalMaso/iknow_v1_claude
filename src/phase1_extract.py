@@ -39,6 +39,7 @@ REQUIRED_ARTIFACTS = [
     "promotion_blockers.jsonl",
     "canonical_promotion_report.json",
     "canonical_paragraph_review_report.json",
+    "paragraph_merge_experiment_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -49,6 +50,9 @@ VALID_OVERRIDE_BUCKETS = {
     "page_artifact_candidate",
     "unknown_needs_review",
 }
+BASELINE_PARAGRAPH_MERGE_POLICY = "v1_consecutive_lines"
+ACTIVE_PARAGRAPH_MERGE_POLICY = "v2_span_guarded"
+VALID_PARAGRAPH_MERGE_POLICIES = {BASELINE_PARAGRAPH_MERGE_POLICY, ACTIVE_PARAGRAPH_MERGE_POLICY}
 REQUIRED_OVERRIDE_FIELDS = {
     "object_id",
     "original_bucket",
@@ -260,7 +264,66 @@ def starts_new_indented_paragraph(record: dict[str, Any], left_margin: float | N
     return float(record["x0"]) - left_margin >= 12.0
 
 
-def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def line_height(record: dict[str, Any]) -> float | None:
+    if record.get("top") is None or record.get("bottom") is None:
+        return None
+    return max(0.0, float(record["bottom"]) - float(record["top"]))
+
+
+def line_gap(previous: dict[str, Any], current: dict[str, Any]) -> float | None:
+    if previous.get("bottom") is None or current.get("top") is None:
+        return None
+    return float(current["top"]) - float(previous["bottom"])
+
+
+def terminal_line_boundary(text: str) -> bool:
+    stripped = text.strip()
+    return bool(stripped) and stripped[-1] in ".!?;:"
+
+
+def uppercase_line_start(text: str) -> bool:
+    stripped = text.lstrip()
+    return bool(stripped) and stripped[0].isupper()
+
+
+def span_guarded_split_reason(
+    paragraph_buffer: list[dict[str, Any]],
+    record: dict[str, Any],
+    left_margin: float | None,
+) -> str | None:
+    if not paragraph_buffer:
+        return None
+    previous = paragraph_buffer[-1]
+    previous_text = str(previous.get("raw_text", ""))
+    current_text = str(record.get("text", ""))
+    previous_boundary = terminal_line_boundary(previous_text)
+    current_upper = uppercase_line_start(current_text)
+    current_indented = starts_new_indented_paragraph(record, left_margin)
+    current_gap = line_gap(previous, record)
+    heights = [value for value in (line_height(item) for item in paragraph_buffer + [record]) if value is not None]
+    median_height = sorted(heights)[len(heights) // 2] if heights else None
+    tops = [float(item["top"]) for item in paragraph_buffer + [record] if item.get("top") is not None]
+    bottoms = [float(item["bottom"]) for item in paragraph_buffer + [record] if item.get("bottom") is not None]
+    combined_span = max(bottoms) - min(tops) if tops and bottoms else None
+    line_count_after = len(paragraph_buffer) + 1
+    if current_gap is not None and median_height is not None:
+        if current_gap >= max(12.0, median_height * 1.6) and len(paragraph_buffer) >= 2 and previous_boundary:
+            return "span_guard_large_vertical_gap_after_terminal_line"
+    if combined_span is not None and combined_span > 160 and line_count_after >= 8 and previous_boundary and current_upper:
+        return "span_guard_large_visual_span_after_terminal_line"
+    if line_count_after >= 10 and previous_boundary and (current_upper or current_indented):
+        return "span_guard_unusual_line_count_after_terminal_line"
+    return None
+
+
+def build_segmented_objects(
+    book_id: str,
+    page_number: int,
+    raw_lines: list[Any],
+    paragraph_merge_policy: str = BASELINE_PARAGRAPH_MERGE_POLICY,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    if paragraph_merge_policy not in VALID_PARAGRAPH_MERGE_POLICIES:
+        raise ValueError(f"Unknown paragraph merge policy: {paragraph_merge_policy}")
     line_records = normalize_line_records(raw_lines)
     left_margin = body_left_margin(line_records, page_number)
     layout_objects: list[dict[str, Any]] = []
@@ -317,7 +380,7 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
                 "object_index": object_index - 1,
                 "object_type": "paragraph",
                 "confidence": 0.65,
-                "classification_reasons": ["merged_consecutive_paragraph_lines"],
+                "classification_reasons": ["merged_consecutive_paragraph_lines", f"paragraph_merge_policy:{paragraph_merge_policy}"],
                 "source_line_ids": source_line_ids,
                 "source_line_indexes": source_line_indexes,
                 "bbox": bbox,
@@ -349,6 +412,11 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
         if line_type == "paragraph_line":
             if paragraph_buffer and starts_new_indented_paragraph(record, left_margin):
                 flush_paragraph()
+            elif paragraph_merge_policy == ACTIVE_PARAGRAPH_MERGE_POLICY:
+                split_reason = span_guarded_split_reason(paragraph_buffer, record, left_margin)
+                if split_reason:
+                    paragraph_buffer[-1].setdefault("cleanup_operations", []).append(split_reason)
+                    flush_paragraph()
             paragraph_buffer.append(
                 {
                     "line_id": line_id,
@@ -1502,6 +1570,155 @@ def review_canonical_paragraphs(
     }
 
 
+def paragraph_policy_evaluation(
+    book_id: str,
+    run_id: str,
+    layout_objects: list[dict[str, Any]],
+    clean_objects: list[dict[str, Any]],
+    inventory: list[dict[str, Any]],
+    page_count: int,
+    review_overrides: list[dict[str, Any]],
+    page_heights_by_page: dict[int, float],
+) -> dict[str, Any]:
+    main_paragraphs, structure, page_artifacts, unknown, reconstruction_map = build_reconstruction_streams(
+        book_id, run_id, layout_objects, clean_objects, inventory, page_count, review_overrides
+    )
+    canonical_paragraphs, promotion_blockers, promotion_report = build_paragraph_promotion_artifacts(
+        book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
+    )
+    review_report = review_canonical_paragraphs(book_id, run_id, canonical_paragraphs, page_heights_by_page)
+    return {
+        "main_paragraphs": main_paragraphs,
+        "structure": structure,
+        "page_artifacts": page_artifacts,
+        "unknown": unknown,
+        "reconstruction_map": reconstruction_map,
+        "canonical_paragraphs": canonical_paragraphs,
+        "promotion_blockers": promotion_blockers,
+        "promotion_report": promotion_report,
+        "review_report": review_report,
+    }
+
+
+def count_likely_true_merges(review_report: dict[str, Any]) -> int:
+    return sum(1 for row in review_report.get("bbox_span_decisions", []) if row.get("likely_cause") == "true_accidental_merge")
+
+
+def candidate_word_count(row: dict[str, Any]) -> int:
+    return len(str(row.get("clean_text", "")).split())
+
+
+def build_paragraph_merge_experiment_report(
+    book_id: str,
+    run_id: str,
+    baseline: dict[str, Any],
+    active: dict[str, Any],
+) -> dict[str, Any]:
+    baseline_paragraphs = baseline["main_paragraphs"]
+    active_paragraphs = active["main_paragraphs"]
+    active_by_page: dict[int, list[dict[str, Any]]] = {}
+    for row in active_paragraphs:
+        active_by_page.setdefault(int(row.get("page_number") or 0), []).append(row)
+
+    split_examples = []
+    oversplit_examples = []
+    for baseline_row in baseline_paragraphs:
+        baseline_lines = set(baseline_row.get("source_line_ids", []))
+        if len(baseline_lines) < 2:
+            continue
+        matching_active = [
+            row
+            for row in active_by_page.get(int(baseline_row.get("page_number") or 0), [])
+            if set(row.get("source_line_ids", [])).issubset(baseline_lines)
+            and set(row.get("source_line_ids", []))
+        ]
+        covered_lines = set().union(*(set(row.get("source_line_ids", [])) for row in matching_active)) if matching_active else set()
+        if len(matching_active) > 1 and covered_lines == baseline_lines:
+            example = {
+                "baseline_object_id": baseline_row.get("object_id"),
+                "page_number": baseline_row.get("page_number"),
+                "baseline_source_line_count": len(baseline_row.get("source_line_ids", [])),
+                "baseline_text_preview": str(baseline_row.get("clean_text", ""))[:260],
+                "new_paragraphs": [
+                    {
+                        "object_id": row.get("object_id"),
+                        "source_line_count": len(row.get("source_line_ids", [])),
+                        "word_count": candidate_word_count(row),
+                        "text_preview": str(row.get("clean_text", ""))[:180],
+                    }
+                    for row in matching_active
+                ],
+            }
+            split_examples.append(example)
+            risky_children = [
+                row
+                for row in matching_active
+                if candidate_word_count(row) < 25 or str(row.get("clean_text", "")).strip()[-1:] not in TERMINAL_PUNCTUATION
+            ]
+            if risky_children:
+                oversplit_examples.append({**example, "risk_reason": "short_or_unusual_ending_child_paragraph"})
+
+    baseline_review = baseline["review_report"]
+    active_review = active["review_report"]
+    baseline_promotion_counts = baseline["promotion_report"].get("counts", {})
+    active_promotion_counts = active["promotion_report"].get("counts", {})
+    baseline_review_counts = baseline_review.get("counts", {})
+    active_review_counts = active_review.get("counts", {})
+    baseline_true_merges = count_likely_true_merges(baseline_review)
+    active_true_merges = count_likely_true_merges(active_review)
+    baseline_bbox_span = (baseline_review.get("bbox_span_risk_summary") or {}).get("total", 0)
+    active_bbox_span = (active_review.get("bbox_span_risk_summary") or {}).get("total", 0)
+    experiment_outcome = (
+        "new_policy_improved_risk"
+        if active_true_merges < baseline_true_merges and active_bbox_span <= baseline_bbox_span
+        else "new_policy_not_adopted_risk_increased"
+    )
+    experiment_recommendation = (
+        "review_split_examples_then_consider_narrow_adoption"
+        if experiment_outcome == "new_policy_improved_risk"
+        else "do_not_adopt_guarded_policy_yet_refine_split_conditions"
+    )
+    report = {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "experiment": "paragraph_merge_policy_v2_span_guarded",
+        "baseline_paragraph_merge_policy": BASELINE_PARAGRAPH_MERGE_POLICY,
+        "new_paragraph_merge_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
+        "scope": "deterministic_paragraph_merge_policy_experiment_only",
+        "experiment_outcome": experiment_outcome,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion"],
+        "counts": {
+            "baseline_paragraph_candidate_count": len(baseline_paragraphs),
+            "new_paragraph_candidate_count": len(active_paragraphs),
+            "baseline_canonical_promoted_count": baseline_promotion_counts.get("promoted_paragraphs", 0),
+            "new_canonical_promoted_count": active_promotion_counts.get("promoted_paragraphs", 0),
+            "baseline_bbox_span_risk_count": baseline_bbox_span,
+            "new_bbox_span_risk_count": active_bbox_span,
+            "baseline_likely_true_accidental_merge_count": baseline_true_merges,
+            "new_likely_true_accidental_merge_count": active_true_merges,
+            "baseline_blocked_paragraph_count": baseline_promotion_counts.get("paragraph_candidates_blocked", 0),
+            "new_blocked_paragraph_count": active_promotion_counts.get("paragraph_candidates_blocked", 0),
+            "split_example_count": len(split_examples),
+            "possible_oversplitting_risk_count": len(oversplit_examples),
+        },
+        "downstream_safety": {
+            "baseline_safe_for_downstream": baseline_review.get("safe_for_downstream"),
+            "new_safe_for_downstream": active_review.get("safe_for_downstream"),
+            "baseline_recommendation": baseline_review.get("recommendation"),
+            "new_recommendation": active_review.get("recommendation"),
+            "recommendation": experiment_recommendation,
+        },
+        "warning_counts": {
+            "baseline_total_warnings": baseline_review_counts.get("warning_count", 0),
+            "new_total_warnings": active_review_counts.get("warning_count", 0),
+        },
+        "examples_of_paragraphs_split_by_new_policy": split_examples[:30],
+        "examples_of_possible_oversplitting_risk": oversplit_examples[:30],
+    }
+    return report
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -1554,6 +1771,7 @@ def build_audit_html(
     promotion_blockers = read_jsonl(output_dir / "promotion_blockers.jsonl") if (output_dir / "promotion_blockers.jsonl").exists() else []
     promotion_report = read_json(output_dir / "canonical_promotion_report.json") if (output_dir / "canonical_promotion_report.json").exists() else {}
     canonical_review_report = read_json(output_dir / "canonical_paragraph_review_report.json") if (output_dir / "canonical_paragraph_review_report.json").exists() else {}
+    paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json") if (output_dir / "paragraph_merge_experiment_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
     candidate_by_object_id = {row["object_id"]: row for row in candidate_rows if row.get("object_id")}
@@ -1895,6 +2113,29 @@ def build_audit_html(
         f"<li><strong>{esc(row.get('object_id'))}</strong> ({esc(row.get('stream_type'))}): <code>{esc(', '.join(row.get('blocker_reasons', [])))}</code></li>"
         for row in promotion_blockers[:40]
     )
+    merge_experiment_counts = paragraph_merge_experiment_report.get("counts") or {}
+    merge_experiment_safety = paragraph_merge_experiment_report.get("downstream_safety") or {}
+    merge_split_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('baseline_object_id'))}</code></td>"
+        f"<td>{esc(row.get('page_number'))}</td>"
+        f"<td>{esc(row.get('baseline_source_line_count'))}</td>"
+        f"<td>{esc(len(row.get('new_paragraphs', [])))}</td>"
+        f"<td>{esc(row.get('baseline_text_preview', ''))}</td>"
+        f"<td>{esc(' | '.join(str(child.get('text_preview', '')) for child in row.get('new_paragraphs', [])))}</td>"
+        "</tr>"
+        for row in (paragraph_merge_experiment_report.get("examples_of_paragraphs_split_by_new_policy") or [])[:20]
+    )
+    merge_oversplit_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('baseline_object_id'))}</code></td>"
+        f"<td>{esc(row.get('page_number'))}</td>"
+        f"<td>{esc(row.get('risk_reason'))}</td>"
+        f"<td>{esc(row.get('baseline_text_preview', ''))}</td>"
+        f"<td>{esc(' | '.join(str(child.get('text_preview', '')) for child in row.get('new_paragraphs', [])))}</td>"
+        "</tr>"
+        for row in (paragraph_merge_experiment_report.get("examples_of_possible_oversplitting_risk") or [])[:20]
+    )
     canonical_review_counts = canonical_review_report.get("counts", {})
     canonical_review_warning_items = "\n".join(
         f"<li><code>{esc(key)}</code>: {value}</li>"
@@ -2178,6 +2419,44 @@ def build_audit_html(
   <ul>{promotion_warning_items or '<li>No warnings recorded.</li>'}</ul>
   <h3>Promotion Blocker Samples</h3>
   <ul>{promotion_blocker_items or '<li>No blockers recorded.</li>'}</ul>
+
+  <h2>Paragraph Merge Experiment</h2>
+  <div class="rule">
+    This compares the baseline paragraph merge policy with the active guarded policy. It is a
+    deterministic correction experiment; OCR, AI review, retrieval, graph work, and structure
+    promotion are still excluded.
+  </div>
+  <ul>
+    <li>Baseline policy: <code>{esc(paragraph_merge_experiment_report.get('baseline_paragraph_merge_policy', '-'))}</code></li>
+    <li>New policy: <code>{esc(paragraph_merge_experiment_report.get('new_paragraph_merge_policy', '-'))}</code></li>
+    <li>Experiment outcome: <code>{esc(paragraph_merge_experiment_report.get('experiment_outcome', '-'))}</code></li>
+    <li>Baseline paragraph candidates: <code>{esc(merge_experiment_counts.get('baseline_paragraph_candidate_count', 0))}</code></li>
+    <li>New paragraph candidates: <code>{esc(merge_experiment_counts.get('new_paragraph_candidate_count', 0))}</code></li>
+    <li>Baseline canonical promoted: <code>{esc(merge_experiment_counts.get('baseline_canonical_promoted_count', 0))}</code></li>
+    <li>New canonical promoted: <code>{esc(merge_experiment_counts.get('new_canonical_promoted_count', 0))}</code></li>
+    <li>Baseline bbox span risk: <code>{esc(merge_experiment_counts.get('baseline_bbox_span_risk_count', 0))}</code></li>
+    <li>New bbox span risk: <code>{esc(merge_experiment_counts.get('new_bbox_span_risk_count', 0))}</code></li>
+    <li>Baseline likely true accidental merge: <code>{esc(merge_experiment_counts.get('baseline_likely_true_accidental_merge_count', 0))}</code></li>
+    <li>New likely true accidental merge: <code>{esc(merge_experiment_counts.get('new_likely_true_accidental_merge_count', 0))}</code></li>
+    <li>Baseline blocked paragraphs: <code>{esc(merge_experiment_counts.get('baseline_blocked_paragraph_count', 0))}</code></li>
+    <li>New blocked paragraphs: <code>{esc(merge_experiment_counts.get('new_blocked_paragraph_count', 0))}</code></li>
+    <li>Possible oversplitting risks: <code>{esc(merge_experiment_counts.get('possible_oversplitting_risk_count', 0))}</code></li>
+    <li>Recommendation: <code>{esc(merge_experiment_safety.get('recommendation', '-'))}</code></li>
+  </ul>
+  <h3>Paragraphs Split By New Policy</h3>
+  <table>
+    <thead>
+      <tr><th>Baseline Object</th><th>Page</th><th>Baseline Lines</th><th>New Paragraphs</th><th>Baseline Preview</th><th>New Previews</th></tr>
+    </thead>
+    <tbody>{merge_split_rows or '<tr><td colspan="6">No split examples recorded.</td></tr>'}</tbody>
+  </table>
+  <h3>Possible Over-Splitting Risks</h3>
+  <table>
+    <thead>
+      <tr><th>Baseline Object</th><th>Page</th><th>Risk</th><th>Baseline Preview</th><th>New Previews</th></tr>
+    </thead>
+    <tbody>{merge_oversplit_rows or '<tr><td colspan="5">No possible over-splitting risks recorded.</td></tr>'}</tbody>
+  </table>
 
   <h2>Canonical Paragraph Review</h2>
   <div class="rule">
@@ -2527,6 +2806,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     promotion_blockers = read_jsonl(output_dir / "promotion_blockers.jsonl")
     canonical_promotion_report = read_json(output_dir / "canonical_promotion_report.json")
     canonical_paragraph_review_report = read_json(output_dir / "canonical_paragraph_review_report.json")
+    paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
     page_image_files = sorted((output_dir / PAGE_IMAGES_DIR_NAME).glob("page_*.jpg"))
@@ -2555,6 +2835,31 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("cleanup_log_references_known_objects", {row.get("object_id") for row in cleanup_log}.issubset(set(layout_ids)))
     add_check("raw_text_preserved", all("raw_text" in row for row in raw_pages))
     add_check("review_flags_present", "review_flags" in reading_order)
+    add_check("paragraph_merge_experiment_report_exists", (output_dir / "paragraph_merge_experiment_report.json").exists())
+    merge_counts = paragraph_merge_experiment_report.get("counts", {})
+    add_check("paragraph_merge_policy_recorded", manifest.get("paragraph_merge_policy") == BASELINE_PARAGRAPH_MERGE_POLICY)
+    add_check("paragraph_merge_experiment_policy_recorded", manifest.get("paragraph_merge_experiment_policy") == ACTIVE_PARAGRAPH_MERGE_POLICY)
+    add_check(
+        "paragraph_merge_experiment_baseline_counts_match_outputs",
+        merge_counts.get("baseline_paragraph_candidate_count") == len(main_paragraphs)
+        and merge_counts.get("baseline_canonical_promoted_count") == len(canonical_paragraphs)
+        and merge_counts.get("baseline_blocked_paragraph_count")
+        == sum(1 for row in promotion_blockers if row.get("stream_type") == "main_paragraph_candidate"),
+    )
+    add_check(
+        "paragraph_merge_experiment_counts_present",
+        all(
+            key in merge_counts
+            for key in [
+                "baseline_paragraph_candidate_count",
+                "new_paragraph_candidate_count",
+                "baseline_bbox_span_risk_count",
+                "new_bbox_span_risk_count",
+                "baseline_likely_true_accidental_merge_count",
+                "new_likely_true_accidental_merge_count",
+            ]
+        ),
+    )
     add_check("page_image_count_matches_manifest", len(page_image_files) == page_count, f"{len(page_image_files)} images / {page_count} pages")
     add_check("page_images_nonempty", all(path.stat().st_size > 0 for path in page_image_files))
     add_check(
@@ -2780,6 +3085,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     layout_objects: list[dict[str, Any]] = []
     clean_objects: list[dict[str, Any]] = []
     cleanup_log: list[dict[str, Any]] = []
+    experimental_layout_objects: list[dict[str, Any]] = []
+    experimental_clean_objects: list[dict[str, Any]] = []
+    experimental_cleanup_log: list[dict[str, Any]] = []
 
     with pdfplumber.open(str(pdf_path)) as pdf:
         page_count = len(pdf.pages)
@@ -2815,10 +3123,18 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
                     "raw_char_count": len(raw_text),
                 }
             )
-            page_layout_objects, page_clean_objects, page_cleanup_log = build_segmented_objects(book_id, page_number, raw_lines)
-            layout_objects.extend(page_layout_objects)
-            clean_objects.extend(page_clean_objects)
-            cleanup_log.extend(page_cleanup_log)
+            page_baseline_layout, page_baseline_clean, page_baseline_cleanup = build_segmented_objects(
+                book_id, page_number, raw_lines, paragraph_merge_policy=BASELINE_PARAGRAPH_MERGE_POLICY
+            )
+            layout_objects.extend(page_baseline_layout)
+            clean_objects.extend(page_baseline_clean)
+            cleanup_log.extend(page_baseline_cleanup)
+            page_experimental_layout, page_experimental_clean, page_experimental_cleanup = build_segmented_objects(
+                book_id, page_number, raw_lines, paragraph_merge_policy=ACTIVE_PARAGRAPH_MERGE_POLICY
+            )
+            experimental_layout_objects.extend(page_experimental_layout)
+            experimental_clean_objects.extend(page_experimental_clean)
+            experimental_cleanup_log.extend(page_experimental_cleanup)
     page_images = render_page_images(pdf_path, output_dir)
 
     manifest = {
@@ -2830,6 +3146,8 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         "sha256": sha256_file(pdf_path),
         "page_count": page_count,
         "tooling": {"pdfplumber": getattr(pdfplumber, "__version__", "unknown")},
+        "paragraph_merge_policy": BASELINE_PARAGRAPH_MERGE_POLICY,
+        "paragraph_merge_experiment_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
         "outputs": {
             "page_inventory": "page_inventory.jsonl",
             "raw_pages": "raw_pages.jsonl",
@@ -2846,22 +3164,46 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "promotion_blockers": "promotion_blockers.jsonl",
             "canonical_promotion_report": "canonical_promotion_report.json",
             "canonical_paragraph_review_report": "canonical_paragraph_review_report.json",
+            "paragraph_merge_experiment_report": "paragraph_merge_experiment_report.json",
         },
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
-    main_paragraphs, structure, page_artifacts, unknown, reconstruction_map = build_reconstruction_streams(
-        book_id, run_id, layout_objects, clean_objects, inventory, page_count, applied_review_overrides
-    )
-    canonical_paragraphs, promotion_blockers, canonical_promotion_report = build_paragraph_promotion_artifacts(
-        book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
-    )
     page_heights_by_page = {
         int(row["page_number"]): float(row["height"])
         for row in inventory
         if row.get("page_number") is not None and row.get("height") is not None
     }
-    canonical_paragraph_review_report = review_canonical_paragraphs(
-        book_id, run_id, canonical_paragraphs, page_heights_by_page
+    baseline_evaluation = paragraph_policy_evaluation(
+        book_id,
+        run_id,
+        layout_objects,
+        clean_objects,
+        inventory,
+        page_count,
+        applied_review_overrides,
+        page_heights_by_page,
+    )
+    experimental_evaluation = paragraph_policy_evaluation(
+        book_id,
+        run_id,
+        experimental_layout_objects,
+        experimental_clean_objects,
+        inventory,
+        page_count,
+        applied_review_overrides,
+        page_heights_by_page,
+    )
+    main_paragraphs = baseline_evaluation["main_paragraphs"]
+    structure = baseline_evaluation["structure"]
+    page_artifacts = baseline_evaluation["page_artifacts"]
+    unknown = baseline_evaluation["unknown"]
+    reconstruction_map = baseline_evaluation["reconstruction_map"]
+    canonical_paragraphs = baseline_evaluation["canonical_paragraphs"]
+    promotion_blockers = baseline_evaluation["promotion_blockers"]
+    canonical_promotion_report = baseline_evaluation["promotion_report"]
+    canonical_paragraph_review_report = baseline_evaluation["review_report"]
+    paragraph_merge_experiment_report = build_paragraph_merge_experiment_report(
+        book_id, run_id, baseline_evaluation, experimental_evaluation
     )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
@@ -2911,6 +3253,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_jsonl(output_dir / "promotion_blockers.jsonl", promotion_blockers)
     write_json(output_dir / "canonical_promotion_report.json", canonical_promotion_report)
     write_json(output_dir / "canonical_paragraph_review_report.json", canonical_paragraph_review_report)
+    write_json(output_dir / "paragraph_merge_experiment_report.json", paragraph_merge_experiment_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
         "created_at": utc_now(),

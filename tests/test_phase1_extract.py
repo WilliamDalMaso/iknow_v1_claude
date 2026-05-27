@@ -103,6 +103,25 @@ def test_build_segmented_objects_splits_indented_paragraphs() -> None:
     assert layout[0]["bbox"]["bottom"] == 34
 
 
+def test_span_guarded_merge_policy_splits_likely_accidental_merge() -> None:
+    raw_lines = [
+        {"text": "First paragraph begins with a normal sentence.", "x0": 43.0, "x1": 340.0, "top": 10.0, "bottom": 20.0},
+        {"text": "It continues until this sentence ends.", "x0": 43.0, "x1": 330.0, "top": 24.0, "bottom": 34.0},
+        {"text": "Second paragraph begins after a visual gap.", "x0": 43.0, "x1": 350.0, "top": 58.0, "bottom": 68.0},
+        {"text": "It continues here.", "x0": 43.0, "x1": 180.0, "top": 72.0, "bottom": 82.0},
+    ]
+
+    baseline_layout, _, _ = build_segmented_objects("book", 22, raw_lines)
+    guarded_layout, guarded_clean, _ = build_segmented_objects(
+        "book", 22, raw_lines, paragraph_merge_policy="v2_span_guarded"
+    )
+
+    assert [row["object_type"] for row in baseline_layout] == ["paragraph"]
+    assert [row["object_type"] for row in guarded_layout] == ["paragraph", "paragraph"]
+    assert guarded_clean[0]["clean_text"] == "First paragraph begins with a normal sentence. It continues until this sentence ends."
+    assert guarded_clean[1]["clean_text"] == "Second paragraph begins after a visual gap. It continues here."
+
+
 def test_build_reconstruction_streams_buckets_every_object_once() -> None:
     layout, clean, _ = build_segmented_objects(
         "book",
@@ -442,7 +461,16 @@ def test_validation_rejects_malformed_review_override_row() -> None:
 
     with TemporaryDirectory() as tmp:
         output_dir = Path(tmp)
-        (output_dir / "source_manifest.json").write_text(json.dumps({"page_count": 1}), encoding="utf-8")
+        (output_dir / "source_manifest.json").write_text(
+            json.dumps(
+                {
+                    "page_count": 1,
+                    "paragraph_merge_policy": "v1_consecutive_lines",
+                    "paragraph_merge_experiment_policy": "v2_span_guarded",
+                }
+            ),
+            encoding="utf-8",
+        )
         write_jsonl(output_dir / "page_inventory.jsonl", [inventory_row(1)])
         write_jsonl(output_dir / "raw_pages.jsonl", [{"page_number": 1, "raw_text": "This is a real paragraph line."}])
         write_jsonl(output_dir / "layout_objects.jsonl", layout)
@@ -459,6 +487,25 @@ def test_validation_rejects_malformed_review_override_row() -> None:
         (output_dir / "canonical_promotion_report.json").write_text(json.dumps(report), encoding="utf-8")
         review_report = review_canonical_paragraphs("book", "phase1_v3", canonical)
         (output_dir / "canonical_paragraph_review_report.json").write_text(json.dumps(review_report), encoding="utf-8")
+        (output_dir / "paragraph_merge_experiment_report.json").write_text(
+            json.dumps(
+                {
+                    "counts": {
+                        "baseline_paragraph_candidate_count": len(paragraphs),
+                        "new_paragraph_candidate_count": len(paragraphs),
+                        "baseline_canonical_promoted_count": len(canonical),
+                        "new_canonical_promoted_count": len(canonical),
+                        "baseline_bbox_span_risk_count": 0,
+                        "new_bbox_span_risk_count": 0,
+                        "baseline_likely_true_accidental_merge_count": 0,
+                        "new_likely_true_accidental_merge_count": 0,
+                        "baseline_blocked_paragraph_count": sum(1 for row in blockers if row.get("stream_type") == "main_paragraph_candidate"),
+                        "new_blocked_paragraph_count": sum(1 for row in blockers if row.get("stream_type") == "main_paragraph_candidate"),
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "reconstruction_map_candidate.json").write_text(json.dumps(reconstruction_map), encoding="utf-8")
         (output_dir / "reading_order_candidate.json").write_text(
             json.dumps({"object_ids": [row["object_id"] for row in layout]}),
