@@ -35,6 +35,9 @@ REQUIRED_ARTIFACTS = [
     "reading_order_candidate.json",
     PAGE_IMAGES_DIR_NAME,
     "review_overrides_applied.jsonl",
+    "canonical_paragraphs.jsonl",
+    "promotion_blockers.jsonl",
+    "canonical_promotion_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -771,6 +774,166 @@ def build_reconstruction_streams(
     return main_paragraph_candidates, structure_candidates, page_artifacts_candidates, unknown_objects, reconstruction_map
 
 
+BLOCKING_PROMOTION_WARNINGS = {
+    "cid_noise",
+    "cid_noise_detected",
+    "long_paragraph_candidate",
+    "short_paragraph_candidate",
+}
+
+
+def bbox_has_any_value(value: Any) -> bool:
+    return isinstance(value, dict) and any(value.get(key) is not None for key in ["x0", "x1", "top", "bottom"])
+
+
+def paragraph_promotion_blockers(row: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    warnings = set(row.get("warnings", []))
+    if row.get("stream_type") != "main_paragraph_candidate":
+        blockers.append("final_bucket_not_main_paragraph_candidate")
+    if not row.get("object_id"):
+        blockers.append("missing_object_id")
+    if row.get("page_number") is None:
+        blockers.append("missing_page")
+    if not row.get("source_object_ids"):
+        blockers.append("missing_source_object_ids")
+    if not row.get("source_line_ids"):
+        blockers.append("missing_source_line_ids")
+    if not str(row.get("raw_text", "")).strip():
+        blockers.append("missing_raw_text")
+    if not str(row.get("clean_text", "")).strip():
+        blockers.append("missing_clean_text")
+    blocking_warnings = sorted(warnings & BLOCKING_PROMOTION_WARNINGS)
+    for warning in blocking_warnings:
+        blockers.append(f"blocking_warning:{warning}")
+    override = row.get("review_override")
+    if override:
+        required = ["original_bucket", "corrected_bucket", "reason", "reviewer", "date", "evidence_reference"]
+        if not all(str(override.get(field, "")).strip() for field in required):
+            blockers.append("invalid_or_incomplete_review_override")
+    return blockers
+
+
+def build_paragraph_promotion_artifacts(
+    book_id: str,
+    run_id: str,
+    main_paragraphs: list[dict[str, Any]],
+    structure: list[dict[str, Any]],
+    page_artifacts: list[dict[str, Any]],
+    unknown: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    canonical_paragraphs: list[dict[str, Any]] = []
+    promotion_blockers: list[dict[str, Any]] = []
+    warning_counts: Counter[str] = Counter()
+    canonical_index = 1
+
+    for row in main_paragraphs:
+        warnings = list(row.get("warnings", []))
+        warning_counts.update(warnings)
+        blockers = paragraph_promotion_blockers(row)
+        promotion_reasons = [
+            "final_bucket_main_paragraph_candidate",
+            "source_object_ids_present",
+            "source_line_ids_present",
+            "raw_text_present",
+            "clean_text_present",
+            "no_blocking_warnings",
+            "candidate_only_promotion_v1",
+        ]
+        if bbox_has_any_value(row.get("bbox")):
+            promotion_reasons.append("bbox_available")
+        else:
+            promotion_reasons.append("bbox_unavailable_but_not_required")
+        if row.get("review_override"):
+            promotion_reasons.append("review_override_visible")
+        if blockers:
+            promotion_blockers.append(
+                {
+                    "book_id": book_id,
+                    "run_id": run_id,
+                    "object_id": row.get("object_id"),
+                    "paragraph_id": row.get("paragraph_id"),
+                    "page_number": row.get("page_number"),
+                    "source_object_ids": row.get("source_object_ids", []),
+                    "source_line_ids": row.get("source_line_ids", []),
+                    "raw_text": row.get("raw_text", ""),
+                    "clean_text": row.get("clean_text", ""),
+                    "stream_type": row.get("stream_type"),
+                    "promotion_status": "blocked",
+                    "blocker_reasons": blockers,
+                    "warnings": warnings,
+                    "applied_override": row.get("review_override"),
+                }
+            )
+            continue
+        canonical_paragraphs.append(
+            {
+                "book_id": book_id,
+                "run_id": run_id,
+                "canonical_paragraph_id": f"cp_{canonical_index:06d}",
+                "source_candidate_object_id": row.get("object_id"),
+                "source_candidate_paragraph_id": row.get("paragraph_id"),
+                "page_number": row.get("page_number"),
+                "raw_text": row.get("raw_text", ""),
+                "clean_text": row.get("clean_text", ""),
+                "source_object_ids": row.get("source_object_ids", []),
+                "source_line_ids": row.get("source_line_ids", []),
+                "bbox": row.get("bbox"),
+                "promotion_status": "promoted",
+                "promotion_reasons": promotion_reasons,
+                "warnings": warnings,
+                "applied_override": row.get("review_override"),
+            }
+        )
+        canonical_index += 1
+
+    non_paragraph_rows = structure + page_artifacts + unknown
+    for row in non_paragraph_rows:
+        warnings = list(row.get("warnings", []))
+        warning_counts.update(warnings)
+        promotion_blockers.append(
+            {
+                "book_id": book_id,
+                "run_id": run_id,
+                "object_id": row.get("object_id"),
+                "page_number": row.get("page_number"),
+                "source_object_ids": row.get("source_object_ids", []),
+                "source_line_ids": row.get("source_line_ids", []),
+                "raw_text": row.get("raw_text", ""),
+                "clean_text": row.get("clean_text", ""),
+                "stream_type": row.get("stream_type"),
+                "promotion_status": "blocked",
+                "blocker_reasons": [f"not_paragraph_stream:{row.get('stream_type', 'unknown')}"],
+                "warnings": warnings,
+                "applied_override": row.get("review_override"),
+            }
+        )
+
+    all_reviewed_count = len(main_paragraphs) + len(structure) + len(page_artifacts) + len(unknown)
+    report = {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "promotion_gate": "paragraph_candidate_promotion_v1",
+        "scope": "main_paragraph_candidates_only",
+        "canonical_does_not_mean_perfect": True,
+        "rule": "Canonical paragraphs are evidence-bound, audited enough under current rules, and safe for downstream use; they are not claimed flawless.",
+        "status": "pass",
+        "counts": {
+            "total_candidates_reviewed": all_reviewed_count,
+            "paragraph_candidates_reviewed": len(main_paragraphs),
+            "promoted_paragraphs": len(canonical_paragraphs),
+            "blocked_candidates": len(promotion_blockers),
+            "paragraph_candidates_blocked": sum(1 for row in promotion_blockers if row.get("stream_type") == "main_paragraph_candidate"),
+            "non_paragraph_candidates_blocked": sum(1 for row in promotion_blockers if row.get("stream_type") != "main_paragraph_candidate"),
+            "override_influenced_promotions": sum(1 for row in canonical_paragraphs if row.get("applied_override")),
+        },
+        "warning_counts": dict(sorted(warning_counts.items())),
+        "blocking_warning_policy": sorted(BLOCKING_PROMOTION_WARNINGS),
+    }
+    return canonical_paragraphs, promotion_blockers, report
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -819,6 +982,11 @@ def build_audit_html(
     candidate_rows = [row for rows in stream_samples.values() for row in rows]
     # The full candidate rows are provided through stream_samples["__all__"] when available.
     candidate_rows = stream_samples.get("__all__", candidate_rows)
+    canonical_paragraphs = read_jsonl(output_dir / "canonical_paragraphs.jsonl") if (output_dir / "canonical_paragraphs.jsonl").exists() else []
+    promotion_blockers = read_jsonl(output_dir / "promotion_blockers.jsonl") if (output_dir / "promotion_blockers.jsonl").exists() else []
+    promotion_report = read_json(output_dir / "canonical_promotion_report.json") if (output_dir / "canonical_promotion_report.json").exists() else {}
+    promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
+    blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
     candidate_by_object_id = {row["object_id"]: row for row in candidate_rows if row.get("object_id")}
     artifact_rows = [row for row in candidate_rows if row.get("stream_type") == "page_artifact_candidate"]
     objects_by_page: dict[int, list[dict[str, Any]]] = {}
@@ -1011,6 +1179,8 @@ def build_audit_html(
         for obj in page_objects:
             candidate = candidate_by_object_id.get(obj["object_id"])
             label = bucket_label(candidate)
+            promotion_status = "promoted" if obj["object_id"] in promoted_object_ids else "not_promoted"
+            promotion_blocker = blocker_by_object_id.get(obj["object_id"])
             bucket_counts[label] += 1
             warnings = candidate.get("warnings", []) if candidate else ["object_missing_from_candidate_streams"]
             reasons = obj.get("classification_reasons", [])
@@ -1035,10 +1205,13 @@ def build_audit_html(
                     f"""<button type="button" class="{esc(overlay_class(label, bool(override)))}" style="{esc(style)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-overridden="{str(bool(override)).lower()}" aria-label="Highlight {esc(object_id)}" title="{esc(label)} · {esc(object_id)}"></button>"""
                 )
             object_cards.append(
-                f"""<article class="object-card" id="card-{esc(dom_id)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-detector-bucket="{esc(detector_bucket)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}" data-evidence-reference="{esc(evidence_reference)}" tabindex="0">
+                f"""<article class="object-card {esc('is-promoted' if promotion_status == 'promoted' else '')}" id="card-{esc(dom_id)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-detector-bucket="{esc(detector_bucket)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}" data-evidence-reference="{esc(evidence_reference)}" data-promotion-status="{esc(promotion_status)}" tabindex="0">
                   <header>
                     <code>{esc(obj.get('object_id'))}</code>
-                    <span class="{esc(bucket_class(label))}">{esc(label)}</span>
+                    <span>
+                      <span class="{esc(bucket_class(label))}">{esc(label)}</span>
+                      <span class="promotion-badge {esc('promoted' if promotion_status == 'promoted' else 'blocked')}">{esc(promotion_status)}</span>
+                    </span>
                   </header>
                   <div class="object-grid">
                     <section>
@@ -1061,6 +1234,8 @@ def build_audit_html(
                         <dt>Confidence</dt><dd><code>{esc(confidence)}</code></dd>
                         <dt>Subtype</dt><dd><code>{esc(subtype)}</code></dd>
                         <dt>Review override</dt><dd><code>{esc(override_text)}</code></dd>
+                        <dt>Promotion</dt><dd><code>{esc(promotion_status)}</code></dd>
+                        <dt>Promotion blockers</dt><dd><code>{esc(', '.join(promotion_blocker.get('blocker_reasons', [])) if promotion_blocker else '-')}</code></dd>
                         <dt>Warnings</dt><dd><code>{esc(', '.join(warnings) or '-')}</code></dd>
                         <dt>Reasons</dt><dd><code>{esc(', '.join(reasons) or '-')}</code></dd>
                       </dl>
@@ -1142,6 +1317,15 @@ def build_audit_html(
     artifact_type_counts = Counter(row.get("artifact_type", "unknown") for row in candidate_rows if row.get("stream_type") == "page_artifact_candidate")
     artifact_type_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(artifact_type_counts.items()))
     artifact_pattern_rows_html, false_positive_rows_html = artifact_review_groups()
+    promotion_counts = promotion_report.get("counts", {})
+    promotion_warning_items = "\n".join(
+        f"<li><code>{esc(key)}</code>: {value}</li>"
+        for key, value in sorted((promotion_report.get("warning_counts") or {}).items())
+    )
+    promotion_blocker_items = "\n".join(
+        f"<li><strong>{esc(row.get('object_id'))}</strong> ({esc(row.get('stream_type'))}): <code>{esc(', '.join(row.get('blocker_reasons', [])))}</code></li>"
+        for row in promotion_blockers[:40]
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -1217,6 +1401,7 @@ def build_audit_html(
     .page-object-list {{ min-width: 0; }}
     .object-card {{ padding: 14px; border-top: 1px solid #d8d6cc; }}
     .object-card.is-active {{ background: #fff7d6; box-shadow: inset 4px 0 0 #111; }}
+    .object-card.is-promoted {{ box-shadow: inset 4px 0 0 #2d6f63; }}
     .page-object-list .object-card:first-child {{ border-top: 0; }}
     .object-card.hidden {{ display: none; }}
     .object-card header {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }}
@@ -1228,6 +1413,9 @@ def build_audit_html(
     dt {{ font-weight: 700; }}
     dd {{ margin: 0; overflow-wrap: anywhere; }}
     .bucket {{ border: 1px solid #9c978b; padding: 2px 8px; font-size: 0.82rem; font-weight: 700; }}
+    .promotion-badge {{ display: inline-block; margin-left: 6px; border: 1px solid #9c978b; padding: 2px 8px; font-size: 0.82rem; font-weight: 700; }}
+    .promotion-badge.promoted {{ background: #e6f3eb; }}
+    .promotion-badge.blocked {{ background: #f4eee4; }}
     .paragraph {{ background: #e9f3ee; }}
     .structure {{ background: #edf0f7; }}
     .artifact {{ background: #f5eadb; }}
@@ -1286,6 +1474,25 @@ def build_audit_html(
   <ul>
     <li>Applied overrides: <code>{validation_report.get('summary', {}).get('review_override_rows', 0)}</code></li>
   </ul>
+
+  <h2>Canonical Paragraph Promotion</h2>
+  <div class="rule">
+    Canonical paragraphs are evidence-bound and promoted under the current paragraph-only gate.
+    Structure, page artifacts, unknown objects, OCR, AI review, retrieval, and graph work are not
+    promoted here.
+  </div>
+  <ul>
+    <li>Status: <code>{esc(promotion_report.get('status', 'unknown'))}</code></li>
+    <li>Total candidates reviewed: <code>{esc(promotion_counts.get('total_candidates_reviewed', 0))}</code></li>
+    <li>Paragraph candidates reviewed: <code>{esc(promotion_counts.get('paragraph_candidates_reviewed', 0))}</code></li>
+    <li>Promoted paragraphs: <code>{esc(promotion_counts.get('promoted_paragraphs', 0))}</code></li>
+    <li>Blocked candidates: <code>{esc(promotion_counts.get('blocked_candidates', 0))}</code></li>
+    <li>Override-influenced promotions: <code>{esc(promotion_counts.get('override_influenced_promotions', 0))}</code></li>
+  </ul>
+  <h3>Promotion Warning Counts</h3>
+  <ul>{promotion_warning_items or '<li>No warnings recorded.</li>'}</ul>
+  <h3>Promotion Blocker Samples</h3>
+  <ul>{promotion_blocker_items or '<li>No blockers recorded.</li>'}</ul>
 
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
@@ -1536,6 +1743,9 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     structure = read_jsonl(output_dir / "structure_candidates.jsonl")
     page_artifacts = read_jsonl(output_dir / "page_artifacts_candidates.jsonl")
     unknown = read_jsonl(output_dir / "unknown_objects.jsonl")
+    canonical_paragraphs = read_jsonl(output_dir / "canonical_paragraphs.jsonl")
+    promotion_blockers = read_jsonl(output_dir / "promotion_blockers.jsonl")
+    canonical_promotion_report = read_json(output_dir / "canonical_promotion_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
     page_image_files = sorted((output_dir / PAGE_IMAGES_DIR_NAME).glob("page_*.jpg"))
@@ -1605,6 +1815,35 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("paragraph_stream_has_paragraph_ids", all(row.get("paragraph_id") for row in main_paragraphs))
     add_check("stream_rows_are_evidence_bound", all(row.get("source_object_ids") and row.get("source_line_ids") for row in stream_rows))
     add_check("reconstruction_map_counts_match_streams", reconstruction_map.get("counts") == expected_counts)
+    candidate_ids = {row.get("object_id") for row in stream_rows}
+    main_paragraph_ids = {row.get("object_id") for row in main_paragraphs}
+    non_paragraph_ids = {row.get("object_id") for row in structure + page_artifacts + unknown}
+    canonical_ids = [row.get("canonical_paragraph_id") for row in canonical_paragraphs]
+    canonical_source_ids = [row.get("source_candidate_object_id") for row in canonical_paragraphs]
+    blocker_source_ids = [row.get("object_id") for row in promotion_blockers]
+    promotion_counts = canonical_promotion_report.get("counts", {})
+    add_check("canonical_paragraph_ids_unique", len(canonical_ids) == len(set(canonical_ids)))
+    add_check("canonical_paragraphs_trace_to_candidates", set(canonical_source_ids).issubset(candidate_ids))
+    add_check("canonical_paragraphs_trace_to_main_paragraph_candidates", set(canonical_source_ids).issubset(main_paragraph_ids))
+    add_check("canonical_paragraphs_exclude_non_paragraph_streams", set(canonical_source_ids).isdisjoint(non_paragraph_ids))
+    add_check("canonical_paragraph_rows_promoted", all(row.get("promotion_status") == "promoted" for row in canonical_paragraphs))
+    add_check("canonical_paragraph_rows_evidence_bound", all(row.get("source_object_ids") and row.get("source_line_ids") and row.get("raw_text") and row.get("clean_text") for row in canonical_paragraphs))
+    add_check("promotion_blockers_trace_to_candidates", set(blocker_source_ids).issubset(candidate_ids))
+    add_check("promotion_blockers_rows_blocked", all(row.get("promotion_status") == "blocked" and row.get("blocker_reasons") for row in promotion_blockers))
+    add_check(
+        "promotion_report_counts_match_outputs",
+        promotion_counts
+        == {
+            "total_candidates_reviewed": len(stream_rows),
+            "paragraph_candidates_reviewed": len(main_paragraphs),
+            "promoted_paragraphs": len(canonical_paragraphs),
+            "blocked_candidates": len(promotion_blockers),
+            "paragraph_candidates_blocked": sum(1 for row in promotion_blockers if row.get("stream_type") == "main_paragraph_candidate"),
+            "non_paragraph_candidates_blocked": sum(1 for row in promotion_blockers if row.get("stream_type") != "main_paragraph_candidate"),
+            "override_influenced_promotions": sum(1 for row in canonical_paragraphs if row.get("applied_override")),
+        },
+    )
+    add_check("promotion_report_status_pass", canonical_promotion_report.get("status") == "pass")
     known_ids = set(layout_ids)
     override_object_ids = [row.get("object_id") for row in review_overrides]
     add_check("review_overrides_reference_known_objects", set(override_object_ids).issubset(known_ids))
@@ -1639,6 +1878,8 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             "structure_rows": len(structure),
             "page_artifact_rows": len(page_artifacts),
             "unknown_rows": len(unknown),
+            "canonical_paragraph_rows": len(canonical_paragraphs),
+            "promotion_blocker_rows": len(promotion_blockers),
             "review_override_rows": len(review_overrides),
             "page_image_rows": len(page_image_files),
             "cleanup_log_rows": len(cleanup_log),
@@ -1724,11 +1965,17 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "cleanup_log": "cleanup_log.jsonl",
             "validation_report": "validation_report.json",
             "phase1_audit": "phase1_audit.html",
+            "canonical_paragraphs": "canonical_paragraphs.jsonl",
+            "promotion_blockers": "promotion_blockers.jsonl",
+            "canonical_promotion_report": "canonical_promotion_report.json",
         },
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
     main_paragraphs, structure, page_artifacts, unknown, reconstruction_map = build_reconstruction_streams(
         book_id, run_id, layout_objects, clean_objects, inventory, page_count, applied_review_overrides
+    )
+    canonical_paragraphs, promotion_blockers, canonical_promotion_report = build_paragraph_promotion_artifacts(
+        book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
     )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
@@ -1774,6 +2021,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "reconstruction_map_candidate.json", reconstruction_map)
     write_json(output_dir / "reading_order_candidate.json", reading_order_candidate)
     write_jsonl(output_dir / "review_overrides_applied.jsonl", applied_review_overrides)
+    write_jsonl(output_dir / "canonical_paragraphs.jsonl", canonical_paragraphs)
+    write_jsonl(output_dir / "promotion_blockers.jsonl", promotion_blockers)
+    write_json(output_dir / "canonical_promotion_report.json", canonical_promotion_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
         "created_at": utc_now(),

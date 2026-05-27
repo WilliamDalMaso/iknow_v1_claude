@@ -39,8 +39,25 @@
       "phase1_audit.html",
       "bounding_box_overlay_data",
       "review_overrides_applied.jsonl",
+      "canonical_paragraphs.jsonl",
+      "promotion_blockers.jsonl",
+      "canonical_promotion_report.json",
       "validation_report.json"
     ],
+    "canonical_promotion_rule": {
+      "meaning": "Canonical means evidence-bound, audited enough under current rules, and safe for downstream use; it does not mean flawless.",
+      "first_gate": "Promote main_paragraph_candidates only.",
+      "forbidden_in_first_gate": [
+        "structure promotion",
+        "page artifact promotion",
+        "unknown object promotion",
+        "OCR",
+        "AI/model review",
+        "embeddings",
+        "retrieval",
+        "graph work"
+      ]
+    },
     "evidence_stack": [
       "raw PDF evidence",
       "deterministic layout objects",

@@ -8,6 +8,7 @@ from pathlib import Path
 from src.phase1_extract import (
     CID_PATTERN,
     build_audit_html,
+    build_paragraph_promotion_artifacts,
     build_reconstruction_streams,
     build_segmented_objects,
     classify_line,
@@ -235,12 +236,44 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "Detector bucket" in html
     assert "Override bucket" in html
     assert "Final candidate bucket" in html
+    assert "Canonical Paragraph Promotion" in html
+    assert "data-promotion-status" in html
     assert "Copy-ready override JSONL" in html
     assert "overrideTemplateFor" in html
     assert "data-detector-bucket" in html
     assert "corrected_bucket" in html
     assert "evidence_reference" in html
     assert "reviews/book/review_overrides.jsonl" in html
+
+
+def test_paragraph_promotion_promotes_only_evidence_bound_paragraphs() -> None:
+    layout, clean, _ = build_segmented_objects(
+        "book",
+        1,
+        [
+            "CHAPTER I",
+            "This is a real paragraph line",
+            "with enough words to pass the simple promotion gate.",
+            "iv",
+        ],
+    )
+    paragraphs, structure, artifacts, unknown, _ = build_reconstruction_streams(
+        "book", "phase1_v3", layout, clean, [inventory_row(1)], page_count=1
+    )
+
+    canonical, blockers, report = build_paragraph_promotion_artifacts(
+        "book", "phase1_v3", paragraphs, structure, artifacts, unknown
+    )
+
+    assert len(canonical) == 1
+    assert canonical[0]["promotion_status"] == "promoted"
+    assert canonical[0]["source_candidate_object_id"] == paragraphs[0]["object_id"]
+    assert canonical[0]["source_object_ids"] == [paragraphs[0]["object_id"]]
+    assert {row["stream_type"] for row in blockers} == {"structure_candidate", "page_artifact_candidate"}
+    assert report["counts"]["total_candidates_reviewed"] == 3
+    assert report["counts"]["paragraph_candidates_reviewed"] == 1
+    assert report["counts"]["promoted_paragraphs"] == 1
+    assert report["counts"]["blocked_candidates"] == 2
 
 
 def test_review_override_moves_candidate_bucket() -> None:
@@ -353,6 +386,12 @@ def test_validation_rejects_malformed_review_override_row() -> None:
         write_jsonl(output_dir / "structure_candidates.jsonl", structure)
         write_jsonl(output_dir / "page_artifacts_candidates.jsonl", artifacts)
         write_jsonl(output_dir / "unknown_objects.jsonl", unknown)
+        canonical, blockers, report = build_paragraph_promotion_artifacts(
+            "book", "phase1_v3", paragraphs, structure, artifacts, unknown
+        )
+        write_jsonl(output_dir / "canonical_paragraphs.jsonl", canonical)
+        write_jsonl(output_dir / "promotion_blockers.jsonl", blockers)
+        (output_dir / "canonical_promotion_report.json").write_text(json.dumps(report), encoding="utf-8")
         (output_dir / "reconstruction_map_candidate.json").write_text(json.dumps(reconstruction_map), encoding="utf-8")
         (output_dir / "reading_order_candidate.json").write_text(
             json.dumps({"object_ids": [row["object_id"] for row in layout]}),

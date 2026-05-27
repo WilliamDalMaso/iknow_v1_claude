@@ -72,6 +72,21 @@
     <li><code>reconstruction_map_candidate.json</code> links the candidates back to pages and source objects.</li>
   </ol>
 
+  <h2>Paragraph Promotion Gate</h2>
+  <p>
+    After candidate streams are auditable, Phase 1 may promote paragraph candidates into
+    <code>canonical_paragraphs.jsonl</code>. This first gate is intentionally narrow: it promotes
+    paragraph candidates only, keeps structure unpromoted, and records every blocked object in
+    <code>promotion_blockers.jsonl</code>. Canonical means evidence-bound and safe under current
+    rules, not flawless.
+  </p>
+  <ol>
+    <li>Promoted paragraphs must trace back to a candidate object, source object ids, source line ids, raw text, and clean text.</li>
+    <li>Blocking warnings prevent promotion until reviewed or repaired.</li>
+    <li>Non-paragraph streams are blocked from paragraph promotion instead of silently ignored.</li>
+    <li><code>canonical_promotion_report.json</code> records counts, warning policy, and validation status.</li>
+  </ol>
+
   <h2>Page Furniture Detection</h2>
   <p>
     Phase 1 v3 adds candidate-only page furniture detection before any OCR or model review. The

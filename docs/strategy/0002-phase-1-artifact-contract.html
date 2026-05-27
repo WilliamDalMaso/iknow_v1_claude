@@ -119,6 +119,21 @@
         <td>Lets review decisions change candidate streams without changing detector rules or promoting content to canonical.</td>
       </tr>
       <tr>
+        <td><code>canonical_paragraphs.jsonl</code></td>
+        <td>Paragraph candidates promoted by the current evidence gate, with canonical paragraph id, source candidate id, raw text, clean text, source ids, bbox, promotion status, reasons, warnings, and applied override when present.</td>
+        <td>Creates the first downstream-safe paragraph layer without promoting structure, artifacts, unknowns, OCR, AI review, retrieval, or graph work.</td>
+      </tr>
+      <tr>
+        <td><code>promotion_blockers.jsonl</code></td>
+        <td>Rows for candidates not promoted by the paragraph gate, including blocker reasons and preserved evidence.</td>
+        <td>Prevents silent non-promotion and makes canonical exclusions reviewable.</td>
+      </tr>
+      <tr>
+        <td><code>canonical_promotion_report.json</code></td>
+        <td>Summary of paragraph promotion counts, blocked counts, warning counts, override-influenced promotions, and validation status.</td>
+        <td>Proves the candidate-to-canonical gate was applied consistently.</td>
+      </tr>
+      <tr>
         <td><code>cleanup_log.jsonl</code></td>
         <td>Append-only log of each cleanup operation applied to extracted text.</td>
         <td>Prevents untracked text mutation.</td>
@@ -155,6 +170,8 @@
     <li>Repeated page furniture is detected from deterministic repetition, position, and page-number evidence.</li>
     <li>Artifact false-positive risks are visible before any canonical exclusion is allowed.</li>
     <li>Review overrides are validated, evidence-bound, and candidate-only.</li>
+    <li>Canonical paragraph promotion is paragraph-only and records promoted rows, blocked rows, and promotion counts.</li>
+    <li>No structure, page artifact, or unknown object appears in <code>canonical_paragraphs.jsonl</code>.</li>
     <li>The audit page lets a reviewer compare raw extracted objects against their candidate bucket assignments.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>

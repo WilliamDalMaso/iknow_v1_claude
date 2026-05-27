@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paragraph Canonical Promotion</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Paragraph Canonical Promotion</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    Phase 1 can now inspect, review, and correct candidate streams. This step adds the first narrow
+    candidate-to-canonical gate for Douglass paragraph candidates only.
+  </p>
+
+  <div class="rule">
+    Canonical does not mean perfect. It means evidence-bound, audited enough under current rules,
+    and safe to use downstream. This gate promotes paragraphs only.
+  </div>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Added <code>canonical_paragraphs.jsonl</code> for promoted paragraph candidates.</li>
+    <li>Added <code>promotion_blockers.jsonl</code> for candidates not promoted by the paragraph gate.</li>
+    <li>Added <code>canonical_promotion_report.json</code> for counts, warning policy, and validation status.</li>
+    <li>Updated the audit to show promotion summary, warning counts, blocker samples, and per-object promotion status.</li>
+    <li>Updated validation so canonical paragraphs must trace to paragraph candidates and exclude structure, page artifacts, and unknown objects.</li>
+  </ol>
+
+  <h2>What Did Not Change</h2>
+  <ol>
+    <li>No structure was promoted.</li>
+    <li>No OCR was added.</li>
+    <li>No AI/model review was added.</li>
+    <li>No embeddings, retrieval, graph work, user-facing answers, or broad automation were added.</li>
+  </ol>
+
+  <h2>Remaining Weakness</h2>
+  <p>
+    The first gate is conservative but still deterministic. It proves the promotion mechanism, not
+    perfect paragraph purity. Future work must review the promoted paragraph layer against visual
+    evidence before downstream intelligence depends on it.
+  </p>
+
+  <h2>Douglass Result</h2>
+  <ol>
+    <li>Reviewed candidates: <code>517</code>.</li>
+    <li>Paragraph candidates reviewed: <code>349</code>.</li>
+    <li>Promoted canonical paragraphs: <code>205</code>.</li>
+    <li>Blocked candidates: <code>312</code>, including <code>144</code> paragraph candidates and <code>168</code> non-paragraph candidates.</li>
+    <li>Blocking warning policy: <code>cid_noise</code>, <code>cid_noise_detected</code>, <code>long_paragraph_candidate</code>, and <code>short_paragraph_candidate</code>.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li><code>python3 -m pytest tests</code> passed with <code>16</code> tests.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li>Browser check confirmed the audit shows the promotion section, <code>205</code> promoted badges, and <code>312</code> blocked badges.</li>
+  </ol>
+</main>
+</body>
+</html>
