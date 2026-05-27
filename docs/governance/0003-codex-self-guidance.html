@@ -35,7 +35,7 @@
     <li>Preserve provenance for every derived object.</li>
     <li>Write tests for artifact contracts as soon as a contract exists.</li>
     <li>When uncertain, inspect the actual PDF evidence instead of guessing.</li>
-    <li>Do not adopt paragraph merge policy changes from heuristic warning counts alone; require gold-set improvement.</li>
+    <li>Do not adopt paragraph merge policy changes from heuristic warning counts alone; require gold-set improvement and side-effect review.</li>
   </ol>
 
   <h2>Verification Bias</h2>
@@ -52,6 +52,7 @@
     <li>Use page images and bounding-box overlays to check where extracted objects came from.</li>
     <li>Keep reviewer corrections in tracked review override files, not hidden detector tweaks.</li>
     <li>Use tracked gold review rows as the answer key for paragraph-boundary policy experiments.</li>
+    <li>Review proposed cross-page joins before treating a cross-page continuation experiment as active behavior.</li>
     <li>Do not add OCR, model review, retrieval, or graph work just because the audit UI improved.</li>
   </ol>
 

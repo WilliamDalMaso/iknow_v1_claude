@@ -41,6 +41,7 @@ REQUIRED_ARTIFACTS = [
     "canonical_paragraph_review_report.json",
     "paragraph_merge_experiment_report.json",
     "paragraph_merge_failure_taxonomy_report.json",
+    "cross_page_join_review_report.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -55,7 +56,8 @@ VALID_OVERRIDE_BUCKETS = {
 BASELINE_PARAGRAPH_MERGE_POLICY = "v1_consecutive_lines"
 PARAGRAPH_BREAK_GUARDED_POLICY = "v2_paragraph_break_guarded"
 CROSS_PAGE_CONTINUATION_POLICY = "v2_cross_page_continuation"
-ACTIVE_PARAGRAPH_MERGE_POLICY = CROSS_PAGE_CONTINUATION_POLICY
+ACTIVE_PARAGRAPH_MERGE_POLICY = BASELINE_PARAGRAPH_MERGE_POLICY
+EXPERIMENTAL_PARAGRAPH_MERGE_POLICY = CROSS_PAGE_CONTINUATION_POLICY
 VALID_PARAGRAPH_MERGE_POLICIES = {
     BASELINE_PARAGRAPH_MERGE_POLICY,
     PARAGRAPH_BREAK_GUARDED_POLICY,
@@ -74,6 +76,10 @@ REQUIRED_OVERRIDE_FIELDS = {
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def safe_dom_id(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "-", value)
 
 
 def sha256_file(path: Path) -> str:
@@ -597,10 +603,12 @@ def apply_cross_page_continuation_experiment(
                     "first_object_id": first.get("object_id"),
                     "second_object_id": second.get("object_id"),
                     "pages": [page_number, next_page],
+                    "source_line_ids": list(first.get("source_line_ids", [])) + list(second.get("source_line_ids", [])),
                     "source_line_count": len(first.get("source_line_ids", [])) + len(second.get("source_line_ids", [])),
                     "join_reasons": reasons,
                     "first_text_end": first_clean[-160:],
                     "second_text_start": second_clean[:160],
+                    "joined_text_preview": f"{first_clean} {second_clean}"[:360],
                 }
             )
         else:
@@ -1948,9 +1956,9 @@ def build_paragraph_merge_experiment_report(
         "book_id": book_id,
         "run_id": run_id,
         "created_at": utc_now(),
-        "experiment": f"paragraph_merge_policy_{ACTIVE_PARAGRAPH_MERGE_POLICY}",
+        "experiment": f"paragraph_merge_policy_{EXPERIMENTAL_PARAGRAPH_MERGE_POLICY}",
         "baseline_paragraph_merge_policy": BASELINE_PARAGRAPH_MERGE_POLICY,
-        "new_paragraph_merge_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
+        "new_paragraph_merge_policy": EXPERIMENTAL_PARAGRAPH_MERGE_POLICY,
         "scope": "deterministic_paragraph_merge_policy_experiment_only",
         "experiment_outcome": experiment_outcome,
         "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion"],
@@ -2292,6 +2300,108 @@ def evaluate_gold_reviews(
     }
 
 
+def authoritative_gold_line_sets(book_id: str) -> list[dict[str, Any]]:
+    path = gold_review_dir(book_id) / "gold_paragraph_boundaries.jsonl"
+    rows = read_jsonl(path) if path.exists() else []
+    return [
+        {
+            "gold_id": row.get("gold_id"),
+            "page": row.get("page"),
+            "source_line_ids": set(row.get("source_line_ids", [])),
+        }
+        for row in rows
+        if gold_row_is_authoritative(row) and row.get("source_line_ids")
+    ]
+
+
+def cross_page_join_risk(join: dict[str, Any], gold_ids: list[str]) -> tuple[str, float, str]:
+    pages = join.get("pages") or []
+    source_line_count = int(join.get("source_line_count") or 0)
+    if gold_ids:
+        return "likely_correct_continuation", 0.96, "covered by authoritative gold row"
+    if any(int(page) <= 18 for page in pages if isinstance(page, int)):
+        return "boundary_or_structure_risk", 0.58, "inspect manually before adoption because join is in front matter or early book matter"
+    if source_line_count >= 34:
+        return "needs_manual_review", 0.62, "inspect long joined paragraph before adoption"
+    if "previous_page_last_paragraph_incomplete" in join.get("join_reasons", []) and "next_page_first_paragraph_looks_like_continuation" in join.get("join_reasons", []):
+        return "likely_correct_continuation", 0.78, "review sample, then accept if visual page evidence confirms continuation"
+    return "possible_false_join", 0.52, "inspect manually before adoption"
+
+
+def build_cross_page_join_review_report(
+    book_id: str,
+    run_id: str,
+    experiment_details: dict[str, Any],
+) -> dict[str, Any]:
+    gold_line_sets = authoritative_gold_line_sets(book_id)
+    review_rows = []
+    for index, join in enumerate(experiment_details.get("joined_cross_page_paragraphs", []), start=1):
+        join_lines = set(join.get("source_line_ids", []))
+        matching_gold_ids = [
+            str(row.get("gold_id"))
+            for row in gold_line_sets
+            if join_lines and join_lines == row.get("source_line_ids")
+        ]
+        risk_category, confidence, action = cross_page_join_risk(join, matching_gold_ids)
+        left_page, right_page = (join.get("pages") or [None, None])[:2]
+        review_rows.append(
+            {
+                "join_id": f"xpage_join_{index:04d}",
+                "left_page": left_page,
+                "right_page": right_page,
+                "left_candidate_id": join.get("first_object_id"),
+                "right_candidate_id": join.get("second_object_id"),
+                "left_text_end_preview": join.get("first_text_end"),
+                "right_text_start_preview": join.get("second_text_start"),
+                "joined_text_preview": join.get("joined_text_preview"),
+                "continuation_evidence": join.get("join_reasons", []),
+                "acceptance_signals": [
+                    "previous_page_last_paragraph_incomplete",
+                    "next_page_first_paragraph_looks_like_continuation",
+                    "no_intervening_structure_candidate",
+                ],
+                "rejection_signals": [],
+                "overlaps_authoritative_gold": bool(matching_gold_ids),
+                "gold_ids": matching_gold_ids,
+                "risk_category": risk_category,
+                "confidence": confidence,
+                "recommended_action": action,
+                "page_anchor": f"#page-{left_page}",
+                "left_audit_anchor": f"#card-{safe_dom_id(str(join.get('first_object_id')))}",
+                "right_audit_anchor": f"#card-{safe_dom_id(str(join.get('second_object_id')))}",
+            }
+        )
+
+    risk_counts = Counter(row["risk_category"] for row in review_rows)
+    top_pages = Counter()
+    for row in review_rows:
+        if row["risk_category"] != "likely_correct_continuation":
+            top_pages.update([row["left_page"], row["right_page"]])
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "method": "deterministic_cross_page_join_review_v1",
+        "analysis_only": True,
+        "does_not_change_active_policy": True,
+        "summary": {
+            "total_proposed_joins": len(review_rows),
+            "likely_correct_joins": risk_counts.get("likely_correct_continuation", 0),
+            "possible_false_joins": risk_counts.get("possible_false_join", 0),
+            "boundary_or_structure_risk_joins": risk_counts.get("boundary_or_structure_risk", 0),
+            "needs_manual_review": risk_counts.get("needs_manual_review", 0),
+            "joins_covered_by_authoritative_gold": sum(1 for row in review_rows if row["overlaps_authoritative_gold"]),
+            "joins_not_covered_by_gold": sum(1 for row in review_rows if not row["overlaps_authoritative_gold"]),
+            "top_pages_needing_review": [
+                {"page": page, "count": count}
+                for page, count in top_pages.most_common(10)
+                if page is not None
+            ],
+        },
+        "joins": review_rows,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -2346,6 +2456,7 @@ def build_audit_html(
     canonical_review_report = read_json(output_dir / "canonical_paragraph_review_report.json") if (output_dir / "canonical_paragraph_review_report.json").exists() else {}
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json") if (output_dir / "paragraph_merge_experiment_report.json").exists() else {}
     paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json") if (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists() else {}
+    cross_page_join_review_report = read_json(output_dir / "cross_page_join_review_report.json") if (output_dir / "cross_page_join_review_report.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -2472,9 +2583,6 @@ def build_audit_html(
             if raw_value is not None:
                 parts.append(f"{key}={float(raw_value):.1f}")
         return ", ".join(parts) or "-"
-
-    def safe_dom_id(value: str) -> str:
-        return re.sub(r"[^a-zA-Z0-9_-]+", "-", value)
 
     def overlay_style(bbox: Any, page: dict[str, Any]) -> str | None:
         if not isinstance(bbox, dict):
@@ -2749,6 +2857,28 @@ def build_audit_html(
     merge_taxonomy_action_items = "\n".join(
         f"<li><code>{esc(key)}</code>: {esc(value)}</li>"
         for key, value in sorted((merge_taxonomy_summary.get("count_by_recommended_action") or {}).items())
+    )
+    cross_page_join_summary = cross_page_join_review_report.get("summary") or {}
+    cross_page_join_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('join_id'))}</code></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('left_page'))}-{esc(row.get('right_page'))}</a></td>"
+        f"<td><a href=\"{esc(row.get('left_audit_anchor', '#'))}\"><code>{esc(row.get('left_candidate_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('right_audit_anchor', '#'))}\"><code>{esc(row.get('right_candidate_id'))}</code></a></td>"
+        f"<td>{esc(row.get('risk_category'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
+        f"<td>{esc(row.get('overlaps_authoritative_gold'))}</td>"
+        f"<td>{esc(', '.join(row.get('gold_ids', [])))}</td>"
+        f"<td>{esc(', '.join(row.get('continuation_evidence', [])))}</td>"
+        f"<td>{esc(row.get('left_text_end_preview', ''))}</td>"
+        f"<td>{esc(row.get('right_text_start_preview', ''))}</td>"
+        f"<td>{esc(row.get('recommended_action', ''))}</td>"
+        "</tr>"
+        for row in (cross_page_join_review_report.get("joins") or [])[:120]
+    )
+    cross_page_top_page_items = "\n".join(
+        f"<li>Page <code>{esc(row.get('page'))}</code>: <code>{esc(row.get('count'))}</code></li>"
+        for row in cross_page_join_summary.get("top_pages_needing_review", [])
     )
     merge_taxonomy_rows = "\n".join(
         "<tr>"
@@ -3105,6 +3235,29 @@ def build_audit_html(
       <tr><th>First Object</th><th>Second Object</th><th>Pages</th><th>Rejection Reasons</th><th>Intervening Structure</th><th>First End</th><th>Second Start</th></tr>
     </thead>
     <tbody>{merge_rejected_rows or '<tr><td colspan="7">No rejected cross-page candidates recorded.</td></tr>'}</tbody>
+  </table>
+
+  <h2>Cross-Page Join Review</h2>
+  <div class="rule">
+    This review classifies every proposed cross-page join before the continuation policy can become
+    active. It is review-only and does not change canonical output.
+  </div>
+  <ul>
+    <li>Total proposed joins: <code>{esc(cross_page_join_summary.get('total_proposed_joins', 0))}</code></li>
+    <li>Likely correct joins: <code>{esc(cross_page_join_summary.get('likely_correct_joins', 0))}</code></li>
+    <li>Possible false joins: <code>{esc(cross_page_join_summary.get('possible_false_joins', 0))}</code></li>
+    <li>Boundary or structure risk joins: <code>{esc(cross_page_join_summary.get('boundary_or_structure_risk_joins', 0))}</code></li>
+    <li>Needs manual review: <code>{esc(cross_page_join_summary.get('needs_manual_review', 0))}</code></li>
+    <li>Covered by authoritative gold: <code>{esc(cross_page_join_summary.get('joins_covered_by_authoritative_gold', 0))}</code></li>
+    <li>Not covered by gold: <code>{esc(cross_page_join_summary.get('joins_not_covered_by_gold', 0))}</code></li>
+  </ul>
+  <h3>Top Pages Needing Review</h3>
+  <ul>{cross_page_top_page_items or '<li>No high-risk pages identified.</li>'}</ul>
+  <table>
+    <thead>
+      <tr><th>Join</th><th>Pages</th><th>Left</th><th>Right</th><th>Risk</th><th>Confidence</th><th>Gold</th><th>Gold IDs</th><th>Evidence</th><th>Left End</th><th>Right Start</th><th>Action</th></tr>
+    </thead>
+    <tbody>{cross_page_join_rows or '<tr><td colspan="12">No cross-page join review rows.</td></tr>'}</tbody>
   </table>
   <h3>Paragraphs Split By New Policy</h3>
   <table>
@@ -3521,6 +3674,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     canonical_paragraph_review_report = read_json(output_dir / "canonical_paragraph_review_report.json")
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json")
     paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json")
+    cross_page_join_review_report = read_json(output_dir / "cross_page_join_review_report.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -3552,12 +3706,13 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("review_flags_present", "review_flags" in reading_order)
     add_check("paragraph_merge_experiment_report_exists", (output_dir / "paragraph_merge_experiment_report.json").exists())
     add_check("paragraph_merge_failure_taxonomy_report_exists", (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists())
+    add_check("cross_page_join_review_report_exists", (output_dir / "cross_page_join_review_report.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
     taxonomy_samples = paragraph_merge_failure_taxonomy_report.get("samples", [])
-    add_check("paragraph_merge_policy_recorded", manifest.get("paragraph_merge_policy") == BASELINE_PARAGRAPH_MERGE_POLICY)
-    add_check("paragraph_merge_experiment_policy_recorded", manifest.get("paragraph_merge_experiment_policy") == ACTIVE_PARAGRAPH_MERGE_POLICY)
+    add_check("paragraph_merge_policy_recorded", manifest.get("paragraph_merge_policy") == ACTIVE_PARAGRAPH_MERGE_POLICY)
+    add_check("paragraph_merge_experiment_policy_recorded", manifest.get("paragraph_merge_experiment_policy") == EXPERIMENTAL_PARAGRAPH_MERGE_POLICY)
     add_check(
         "paragraph_merge_experiment_baseline_counts_match_outputs",
         merge_counts.get("baseline_paragraph_candidate_count") == len(main_paragraphs)
@@ -3581,6 +3736,19 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
                 "baseline_merged_across_large_vertical_whitespace_count",
                 "new_merged_across_large_vertical_whitespace_count",
             ]
+        ),
+    )
+    cross_page_join_summary = cross_page_join_review_report.get("summary", {})
+    cross_page_join_rows = cross_page_join_review_report.get("joins", [])
+    add_check(
+        "cross_page_join_review_counts_match_rows",
+        cross_page_join_summary.get("total_proposed_joins") == len(cross_page_join_rows),
+    )
+    add_check(
+        "cross_page_join_review_has_required_fields",
+        all(
+            all(row.get(field) is not None for field in ["join_id", "left_page", "right_page", "left_candidate_id", "right_candidate_id", "risk_category"])
+            for row in cross_page_join_rows
         ),
     )
     valid_taxonomy_categories = {
@@ -3774,6 +3942,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("audit_has_canonical_paragraph_review", "Canonical Paragraph Review" in audit_html)
     add_check("audit_has_canonical_review_drilldown", "Canonical Warning Drilldown" in audit_html and "Risk Clusters" in audit_html)
     add_check("audit_has_gold_review", "Gold Review" in audit_html)
+    add_check("audit_has_cross_page_join_review", "Cross-Page Join Review" in audit_html)
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -3883,12 +4052,12 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             clean_objects.extend(page_baseline_clean)
             cleanup_log.extend(page_baseline_cleanup)
             page_experimental_layout, page_experimental_clean, page_experimental_cleanup = build_segmented_objects(
-                book_id, page_number, raw_lines, paragraph_merge_policy=ACTIVE_PARAGRAPH_MERGE_POLICY
+                book_id, page_number, raw_lines, paragraph_merge_policy=EXPERIMENTAL_PARAGRAPH_MERGE_POLICY
             )
             experimental_layout_objects.extend(page_experimental_layout)
             experimental_clean_objects.extend(page_experimental_clean)
             experimental_cleanup_log.extend(page_experimental_cleanup)
-    if ACTIVE_PARAGRAPH_MERGE_POLICY == CROSS_PAGE_CONTINUATION_POLICY:
+    if EXPERIMENTAL_PARAGRAPH_MERGE_POLICY == CROSS_PAGE_CONTINUATION_POLICY:
         experimental_layout_objects, experimental_clean_objects, cross_page_experiment_details = apply_cross_page_continuation_experiment(
             experimental_layout_objects,
             experimental_clean_objects,
@@ -3904,8 +4073,8 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         "sha256": sha256_file(pdf_path),
         "page_count": page_count,
         "tooling": {"pdfplumber": getattr(pdfplumber, "__version__", "unknown")},
-        "paragraph_merge_policy": BASELINE_PARAGRAPH_MERGE_POLICY,
-        "paragraph_merge_experiment_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
+        "paragraph_merge_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
+        "paragraph_merge_experiment_policy": EXPERIMENTAL_PARAGRAPH_MERGE_POLICY,
         "outputs": {
             "page_inventory": "page_inventory.jsonl",
             "raw_pages": "raw_pages.jsonl",
@@ -3924,6 +4093,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "canonical_paragraph_review_report": "canonical_paragraph_review_report.json",
             "paragraph_merge_experiment_report": "paragraph_merge_experiment_report.json",
             "paragraph_merge_failure_taxonomy_report": "paragraph_merge_failure_taxonomy_report.json",
+            "cross_page_join_review_report": "cross_page_join_review_report.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -3964,6 +4134,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     canonical_paragraph_review_report = baseline_evaluation["review_report"]
     paragraph_merge_experiment_report = build_paragraph_merge_experiment_report(
         book_id, run_id, baseline_evaluation, experimental_evaluation, cross_page_experiment_details
+    )
+    cross_page_join_review_report = build_cross_page_join_review_report(
+        book_id, run_id, cross_page_experiment_details
     )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
@@ -4019,6 +4192,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "canonical_paragraph_review_report.json", canonical_paragraph_review_report)
     write_json(output_dir / "paragraph_merge_experiment_report.json", paragraph_merge_experiment_report)
     write_json(output_dir / "paragraph_merge_failure_taxonomy_report.json", paragraph_merge_failure_taxonomy_report)
+    write_json(output_dir / "cross_page_join_review_report.json", cross_page_join_review_report)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

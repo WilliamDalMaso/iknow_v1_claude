@@ -164,6 +164,11 @@
         <td>Allows merge-rule changes to be tested before they become active canonical extraction behavior.</td>
       </tr>
       <tr>
+        <td><code>cross_page_join_review_report.json</code></td>
+        <td>Focused review of every proposed cross-page continuation join, including candidate ids, page anchors, text previews, continuation evidence, acceptance and rejection signals, gold coverage, risk category, confidence, recommended action, and top pages needing review.</td>
+        <td>Prevents a gold-improving cross-page experiment from becoming active before its unscored side effects are reviewed.</td>
+      </tr>
+      <tr>
         <td><code>paragraph_merge_failure_taxonomy_report.json</code></td>
         <td>Deterministic sample of likely true accidental merge rows with provisional category, confidence, recommended next action, source-line previews, bbox metrics, page anchors, and summary counts.</td>
         <td>Identifies the specific merge failure pattern before another merge-rule correction is attempted.</td>
@@ -185,8 +190,8 @@
       </tr>
       <tr>
         <td><code>phase1_audit.html</code></td>
-        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, merge failure taxonomy, gold review evaluation, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, and copy-ready review override templates.</td>
-        <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy, for safely drafting manual curated overrides, and for seeing whether gold scoring is authoritative enough for policy adoption.</td>
+        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, cross-page join review, merge failure taxonomy, gold review evaluation, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, and copy-ready review override templates.</td>
+        <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy, for safely drafting manual curated overrides, for seeing whether gold scoring is authoritative enough for policy adoption, and for reviewing proposed cross-page joins before adoption.</td>
       </tr>
     </tbody>
   </table>
@@ -217,6 +222,7 @@
     <li>The audit page lets a reviewer compare raw extracted objects against their candidate bucket assignments.</li>
     <li><code>gold_evaluation_report.json</code> reports gold row counts, excludes non-authoritative seed rows from scoring, and states whether the gold set is sufficient to judge merge-policy adoption.</li>
     <li>No paragraph merge policy can become active from heuristic warning improvement alone.</li>
+    <li><code>cross_page_join_review_report.json</code> exists when a cross-page continuation experiment proposes joins, and the audit page exposes those joins before adoption.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
   </ol>

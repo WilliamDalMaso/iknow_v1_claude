@@ -9,6 +9,7 @@ import src.phase1_extract as phase1_extract
 from src.phase1_extract import (
     CID_PATTERN,
     apply_cross_page_continuation_experiment,
+    build_cross_page_join_review_report,
     build_audit_html,
     build_paragraph_promotion_artifacts,
     build_reconstruction_streams,
@@ -180,6 +181,37 @@ def test_cross_page_continuation_experiment_joins_incomplete_page_boundary() -> 
     assert paragraph_rows[0]["source_line_ids"] == ["book:p0001:line001", "book:p0002:line002"]
     assert details["joined_count"] == 1
     assert "the next page text" in clean_by_id[paragraph_rows[0]["object_id"]]["clean_text"]
+
+
+def test_cross_page_join_review_report_counts_all_joins() -> None:
+    report = build_cross_page_join_review_report(
+        "missing_book_for_unit_test",
+        "phase1_v3",
+        {
+            "joined_cross_page_paragraphs": [
+                {
+                    "first_object_id": "book:p0001:obj001",
+                    "second_object_id": "book:p0002:obj002",
+                    "pages": [1, 2],
+                    "source_line_ids": ["book:p0001:line001", "book:p0002:line002"],
+                    "source_line_count": 2,
+                    "join_reasons": [
+                        "previous_page_last_paragraph_incomplete",
+                        "next_page_first_paragraph_looks_like_continuation",
+                        "no_intervening_structure_candidate",
+                    ],
+                    "first_text_end": "continues with",
+                    "second_text_start": "the next page",
+                    "joined_text_preview": "continues with the next page",
+                }
+            ]
+        },
+    )
+
+    assert report["summary"]["total_proposed_joins"] == 1
+    assert report["summary"]["joins_not_covered_by_gold"] == 1
+    assert report["joins"][0]["join_id"] == "xpage_join_0001"
+    assert report["joins"][0]["risk_category"] in {"likely_correct_continuation", "boundary_or_structure_risk", "needs_manual_review"}
 
 
 def test_build_reconstruction_streams_buckets_every_object_once() -> None:
@@ -691,6 +723,15 @@ def test_validation_rejects_malformed_review_override_row() -> None:
                         "count_by_recommended_action": {},
                     },
                     "samples": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (output_dir / "cross_page_join_review_report.json").write_text(
+            json.dumps(
+                {
+                    "summary": {"total_proposed_joins": 0},
+                    "joins": [],
                 }
             ),
             encoding="utf-8",

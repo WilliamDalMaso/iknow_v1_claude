@@ -105,7 +105,7 @@
     <li>When a merge experiment fails, sample and classify failure patterns before attempting another merge-policy correction.</li>
     <li>A paragraph-break experiment must reduce likely true accidental merges and paragraph-break taxonomy counts without unacceptable over-splitting before adoption.</li>
     <li>No paragraph merge policy may become active from heuristic warning improvement alone; it must improve against authoritative gold review rows and preserve audit safety metrics.</li>
-    <li>When gold rows show cross-page over-splitting, test cross-page continuation as a narrow experiment and review joined examples before adoption.</li>
+    <li>When gold rows show cross-page over-splitting, test cross-page continuation as a narrow experiment and review every proposed join before adoption.</li>
     <li>Use <code>safe_for_downstream</code> as a gate signal before retrieval, embeddings, reasoning, or graph work.</li>
   </ol>
 
@@ -136,7 +136,8 @@
   <ol>
     <li>The active canonical extraction policy remains <code>v1_consecutive_lines</code> until adoption is explicit.</li>
     <li>Experiment reports must compare gold precision, recall, over-splits, over-merges, warning counts, and joined examples.</li>
-    <li>A cross-page policy can only be adopted after reviewing joined examples and confirming no material audit-safety regression.</li>
+    <li>A cross-page policy can only be adopted after <code>cross_page_join_review_report.json</code> exposes every proposed join, gold coverage, risk category, and top pages needing review.</li>
+    <li>Strong gold improvement is not enough by itself when most joins are outside the current gold set.</li>
   </ol>
 
   <h2>Page Furniture Detection</h2>

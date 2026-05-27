@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cross-Page Join Review</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Cross-Page Join Review</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The <code>v2_cross_page_continuation</code> experiment improved the authoritative gold score, but
+    it proposed <code>79</code> joins. This checkpoint adds a focused review layer so those side effects
+    can be inspected before the policy becomes active.
+  </p>
+
+  <div class="rule">
+    This is review-only. The active canonical extraction policy remains
+    <code>v1_consecutive_lines</code>; the experimental policy remains
+    <code>v2_cross_page_continuation</code>. No OCR, AI review, embeddings, retrieval, graph work,
+    user-facing answers, or structure promotion was added.
+  </div>
+
+  <h2>Generated Artifact</h2>
+  <p>
+    The run now generates <code>cross_page_join_review_report.json</code>. Each row records the left
+    and right page, candidate ids, text previews, continuation evidence, gold coverage, risk category,
+    confidence, recommended action, and audit anchors.
+  </p>
+
+  <h2>Douglass Result</h2>
+  <ol>
+    <li>Total proposed joins: <code>79</code>.</li>
+    <li>Likely correct joins: <code>48</code>.</li>
+    <li>Possible false joins: <code>0</code>.</li>
+    <li>Boundary or structure risk joins: <code>4</code>.</li>
+    <li>Needs manual review: <code>27</code>.</li>
+    <li>Covered by authoritative gold: <code>6</code>.</li>
+    <li>Not covered by gold: <code>73</code>.</li>
+  </ol>
+
+  <div class="warn">
+    The gold-covered joins explain why the experiment scored well, but most proposed joins are not
+    covered by the current gold set. Adoption still requires reviewing the unscored joins, especially
+    early/front-matter joins and unusually long joined paragraphs.
+  </div>
+
+  <h2>Audit Update</h2>
+  <p>
+    <code>phase1_audit.html</code> now includes a Cross-Page Join Review section with summary counts,
+    top pages needing review, row-level risk categories, gold coverage, continuation evidence, text
+    previews, and links back to the page/object audit anchors.
+  </p>
+
+  <h2>Crack Fixed</h2>
+  <p>
+    During regeneration, the code exposed an inconsistency: the cross-page policy was named as active
+    even though canonical outputs were still built from the baseline evaluation. The code now records
+    the active policy separately from the experimental policy so future runs do not confuse
+    experiment evidence with adopted behavior.
+  </p>
+
+  <h2>Next Step</h2>
+  <p>
+    Inspect the <code>73</code> joins not covered by authoritative gold before adopting
+    <code>v2_cross_page_continuation</code>. A small next review set should focus on the
+    <code>4</code> boundary/structure risks and the <code>27</code> joins marked
+    <code>needs_manual_review</code>.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>phase1_audit.html</code> shows the Cross-Page Join Review section.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>
