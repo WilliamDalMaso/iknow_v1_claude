@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections import Counter
+from pathlib import Path
+
 from src.phase1_extract import (
     CID_PATTERN,
+    build_audit_html,
     build_reconstruction_streams,
     build_segmented_objects,
     classify_line,
@@ -105,3 +109,58 @@ def test_build_reconstruction_streams_buckets_every_object_once() -> None:
         "page_artifacts_candidates": 1,
         "unknown_objects": 0,
     }
+
+
+def test_build_audit_html_contains_page_object_inspection() -> None:
+    layout, clean, _ = build_segmented_objects(
+        "book",
+        1,
+        [
+            "CHAPTER I",
+            "This is the first line",
+            "of a paragraph.",
+        ],
+    )
+    paragraphs, structure, artifacts, unknown, _ = build_reconstruction_streams(
+        "book", "phase1_v2", layout, clean, page_count=1
+    )
+    stream_samples = {
+        "main_paragraph_candidates": paragraphs[:8],
+        "structure_candidates": structure[:8],
+        "page_artifacts_candidates": artifacts[:8],
+        "unknown_objects": unknown[:8],
+        "__all__": paragraphs + structure + artifacts + unknown,
+    }
+    html = build_audit_html(
+        "book",
+        Path("book.pdf"),
+        {"page_count": 1, "file_size_bytes": 10, "sha256": "abc"},
+        [
+            {
+                "page_number": 1,
+                "status": "text",
+                "raw_char_count": 32,
+                "line_count": 3,
+                "image_count": 0,
+                "table_count": 0,
+                "review_flags": [],
+                "sample": "CHAPTER I | This is the first line",
+            }
+        ],
+        layout,
+        Counter(row["object_type"] for row in layout),
+        {
+            "main_paragraph_candidates": len(paragraphs),
+            "structure_candidates": len(structure),
+            "page_artifacts_candidates": len(artifacts),
+            "unknown_objects": len(unknown),
+        },
+        stream_samples,
+        {"status": "pass", "checks": []},
+        Path("out"),
+    )
+    assert "Page Inspection Index" in html
+    assert "Page-by-Page Object Inspection" in html
+    assert "Raw Extracted Object" in html
+    assert "Candidate Assignment" in html
+    assert "main_paragraph_candidate" in html

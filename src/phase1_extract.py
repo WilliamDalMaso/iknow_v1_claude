@@ -485,6 +485,7 @@ def build_audit_html(
     source_pdf: Path,
     manifest: dict[str, Any],
     inventory: list[dict[str, Any]],
+    layout_objects: list[dict[str, Any]],
     object_counts: Counter[str],
     stream_counts: dict[str, int],
     stream_samples: dict[str, list[dict[str, Any]]],
@@ -498,6 +499,107 @@ def build_audit_html(
 
     def esc(value: Any) -> str:
         return html.escape(str(value))
+
+    candidate_rows = [row for rows in stream_samples.values() for row in rows]
+    # The full candidate rows are provided through stream_samples["__all__"] when available.
+    candidate_rows = stream_samples.get("__all__", candidate_rows)
+    candidate_by_object_id = {row["object_id"]: row for row in candidate_rows if row.get("object_id")}
+    objects_by_page: dict[int, list[dict[str, Any]]] = {}
+    for obj in layout_objects:
+        objects_by_page.setdefault(int(obj["page_number"]), []).append(obj)
+
+    def bbox_text(value: Any) -> str:
+        if not isinstance(value, dict):
+            return "-"
+        parts = []
+        for key in ["x0", "top", "bottom"]:
+            raw_value = value.get(key)
+            if raw_value is not None:
+                parts.append(f"{key}={float(raw_value):.1f}")
+        return ", ".join(parts) or "-"
+
+    def bucket_label(candidate: dict[str, Any] | None) -> str:
+        if not candidate:
+            return "missing_bucket"
+        return str(candidate.get("stream_type", "unknown_bucket"))
+
+    def bucket_class(label: str) -> str:
+        if label.startswith("main_paragraph"):
+            return "bucket paragraph"
+        if label.startswith("structure"):
+            return "bucket structure"
+        if label.startswith("page_artifact"):
+            return "bucket artifact"
+        if label.startswith("unknown") or label == "missing_bucket":
+            return "bucket unknown"
+        return "bucket"
+
+    page_summary_rows = []
+    page_detail_sections = []
+    for page in inventory:
+        page_number = int(page["page_number"])
+        page_objects = objects_by_page.get(page_number, [])
+        bucket_counts: Counter[str] = Counter()
+        object_cards = []
+        for obj in page_objects:
+            candidate = candidate_by_object_id.get(obj["object_id"])
+            label = bucket_label(candidate)
+            bucket_counts[label] += 1
+            warnings = candidate.get("warnings", []) if candidate else ["object_missing_from_candidate_streams"]
+            reasons = obj.get("classification_reasons", [])
+            source_lines = candidate.get("source_line_ids", []) if candidate else obj.get("source_line_ids", [])
+            object_cards.append(
+                f"""<article class="object-card">
+                  <header>
+                    <code>{esc(obj.get('object_id'))}</code>
+                    <span class="{esc(bucket_class(label))}">{esc(label)}</span>
+                  </header>
+                  <div class="object-grid">
+                    <section>
+                      <h4>Raw Extracted Object</h4>
+                      <p>{esc(obj.get('raw_text', ''))}</p>
+                      <dl>
+                        <dt>Object type</dt><dd><code>{esc(obj.get('object_type'))}</code></dd>
+                        <dt>Source lines</dt><dd><code>{esc(', '.join(source_lines))}</code></dd>
+                        <dt>Bounding box</dt><dd><code>{esc(bbox_text(obj.get('bbox')))}</code></dd>
+                      </dl>
+                    </section>
+                    <section>
+                      <h4>Candidate Assignment</h4>
+                      <p>{esc(candidate.get('clean_text', '') if candidate else '')}</p>
+                      <dl>
+                        <dt>Confidence</dt><dd><code>{esc(candidate.get('confidence', '-') if candidate else '-')}</code></dd>
+                        <dt>Warnings</dt><dd><code>{esc(', '.join(warnings) or '-')}</code></dd>
+                        <dt>Reasons</dt><dd><code>{esc(', '.join(reasons) or '-')}</code></dd>
+                      </dl>
+                    </section>
+                  </div>
+                </article>"""
+            )
+        bucket_summary = ", ".join(f"{key}: {count}" for key, count in sorted(bucket_counts.items())) or "-"
+        page_summary_rows.append(
+            "<tr>"
+            f"<td><a href=\"#page-{page_number}\">{page_number}</a></td>"
+            f"<td>{esc(page['status'])}</td>"
+            f"<td>{len(page_objects)}</td>"
+            f"<td>{esc(bucket_summary)}</td>"
+            f"<td>{esc(', '.join(page['review_flags']) or '-')}</td>"
+            f"<td>{esc(page['sample'])}</td>"
+            "</tr>"
+        )
+        page_detail_sections.append(
+            f"""<details class="page-audit" id="page-{page_number}">
+              <summary>Page {page_number}: {esc(page['status'])} · {len(page_objects)} objects · {esc(bucket_summary)}</summary>
+              <div class="page-meta">
+                <span>Chars: <code>{page['raw_char_count']}</code></span>
+                <span>Lines: <code>{page['line_count']}</code></span>
+                <span>Images: <code>{page['image_count']}</code></span>
+                <span>Tables: <code>{page['table_count']}</code></span>
+                <span>Flags: <code>{esc(', '.join(page['review_flags']) or '-')}</code></span>
+              </div>
+              {''.join(object_cards) or '<p>No extracted objects for this page.</p>'}
+            </details>"""
+        )
 
     rows_html = "\n".join(
         "<tr>"
@@ -525,12 +627,16 @@ def build_audit_html(
     )
     sample_sections = []
     for stream_name, rows in stream_samples.items():
+        if stream_name == "__all__":
+            continue
         items = "\n".join(
             f"<li><strong>Page {esc(row.get('page_number'))}</strong>: {esc(row.get('clean_text', ''))}</li>"
             for row in rows[:8]
         )
         sample_sections.append(f"<h3>{esc(stream_name)}</h3><ul>{items or '<li>No rows.</li>'}</ul>")
     sample_stream_html = "\n".join(sample_sections)
+    page_summary_html = "\n".join(page_summary_rows)
+    page_detail_html = "\n".join(page_detail_sections)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -547,6 +653,24 @@ def build_audit_html(
     th {{ background: #ece9df; text-align: left; }}
     code {{ background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }}
     .rule {{ background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; }}
+    .page-audit {{ border: 1px solid #d8d6cc; margin: 12px 0; background: #fffef9; }}
+    .page-audit summary {{ cursor: pointer; padding: 12px 14px; font-weight: 700; background: #f1efe6; }}
+    .page-meta {{ display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 14px; border-top: 1px solid #d8d6cc; border-bottom: 1px solid #d8d6cc; }}
+    .object-card {{ padding: 14px; border-top: 1px solid #d8d6cc; }}
+    .object-card header {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }}
+    .object-grid {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }}
+    .object-grid section {{ border: 1px solid #e3e0d6; padding: 12px; background: #fbfbf8; }}
+    .object-grid h4 {{ margin: 0 0 8px; }}
+    .object-grid p {{ white-space: pre-wrap; margin: 0 0 10px; }}
+    dl {{ display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 10px; margin: 0; }}
+    dt {{ font-weight: 700; }}
+    dd {{ margin: 0; overflow-wrap: anywhere; }}
+    .bucket {{ border: 1px solid #9c978b; padding: 2px 8px; font-size: 0.82rem; font-weight: 700; }}
+    .paragraph {{ background: #e9f3ee; }}
+    .structure {{ background: #edf0f7; }}
+    .artifact {{ background: #f5eadb; }}
+    .unknown {{ background: #f7e4e1; }}
+    @media (max-width: 760px) {{ .object-grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
@@ -586,6 +710,21 @@ def build_audit_html(
 
   <h2>Stream Samples</h2>
   {sample_stream_html}
+
+  <h2>Page Inspection Index</h2>
+  <table>
+    <thead>
+      <tr><th>Page</th><th>Status</th><th>Objects</th><th>Candidate Buckets</th><th>Flags</th><th>Raw Sample</th></tr>
+    </thead>
+    <tbody>{page_summary_html}</tbody>
+  </table>
+
+  <h2>Page-by-Page Object Inspection</h2>
+  <p>
+    Open a page to compare each raw extracted object against its candidate bucket, cleaned text,
+    confidence, warnings, source lines, and bounding box evidence.
+  </p>
+  {page_detail_html}
 
   <h2>First 12 Pages</h2>
   <table>
@@ -807,15 +946,16 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v2") -> Path:
         "structure_candidates": structure[:8],
         "page_artifacts_candidates": page_artifacts[:8],
         "unknown_objects": unknown[:8],
+        "__all__": main_paragraphs + structure + page_artifacts + unknown,
     }
     (output_dir / "phase1_audit.html").write_text(
-        build_audit_html(book_id, pdf_path, manifest, inventory, object_counts, stream_counts, stream_samples, pending_validation, output_dir),
+        build_audit_html(book_id, pdf_path, manifest, inventory, layout_objects, object_counts, stream_counts, stream_samples, pending_validation, output_dir),
         encoding="utf-8",
     )
     validation_report = validate_phase1_run(output_dir)
     write_json(output_dir / "validation_report.json", validation_report)
     (output_dir / "phase1_audit.html").write_text(
-        build_audit_html(book_id, pdf_path, manifest, inventory, object_counts, stream_counts, stream_samples, validation_report, output_dir),
+        build_audit_html(book_id, pdf_path, manifest, inventory, layout_objects, object_counts, stream_counts, stream_samples, validation_report, output_dir),
         encoding="utf-8",
     )
     return output_dir

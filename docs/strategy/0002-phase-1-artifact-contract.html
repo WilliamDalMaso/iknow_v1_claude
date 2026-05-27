@@ -110,8 +110,8 @@
       </tr>
       <tr>
         <td><code>phase1_audit.html</code></td>
-        <td>Human-readable local audit page summarizing status, risks, and page samples.</td>
-        <td>Primary v0 review surface.</td>
+        <td>Human-readable local audit page summarizing status, risks, page samples, and page-by-page object inspections.</td>
+        <td>Primary review surface for deciding whether candidate streams are trustworthy.</td>
       </tr>
     </tbody>
   </table>
@@ -127,6 +127,7 @@
     <li>Heading detections remain <code>structure_candidate</code> rows until audited.</li>
     <li>Every extracted object appears in exactly one candidate bucket unless duplicated only as a linked reference.</li>
     <li>No output is named canonical before audit promotion.</li>
+    <li>The audit page lets a reviewer compare raw extracted objects against their candidate bucket assignments.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
   </ol>

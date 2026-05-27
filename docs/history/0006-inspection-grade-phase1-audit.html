@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inspection Grade Phase 1 Audit</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Inspection Grade Phase 1 Audit</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Why This Step Happened</h2>
+  <p>
+    After the v2 candidate streams worked, the next risk was false trust. Counts and samples are not
+    enough. To make Phase 1 reusable, the audit must expose whether each extraction decision is
+    right or wrong at the page/object level.
+  </p>
+
+  <div class="rule">
+    The reusable extractor should be trusted because it proves where cleaned content came from, not
+    because the output looks clean.
+  </div>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li><code>phase1_audit.html</code> now includes a full page inspection index.</li>
+    <li>Each PDF page has an expandable inspection section.</li>
+    <li>Each extracted object shows raw evidence beside candidate assignment evidence.</li>
+    <li>The object view includes raw text, clean text, bucket, confidence, warnings, source lines, classification reasons, and bounding box evidence.</li>
+    <li>The observability dashboard continues to link directly to the generated audit page.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>The Douglass <code>phase1_v2</code> run regenerated successfully.</li>
+    <li><code>validation_report.json</code> returned <code>pass</code>.</li>
+    <li>Direct no-cache Phase 1 test execution passed <code>7</code> checks.</li>
+    <li>The in-app browser verified <code>126</code> page sections and <code>517</code> object cards.</li>
+    <li>The first page expanded and displayed both <code>Raw Extracted Object</code> and <code>Candidate Assignment</code>.</li>
+  </ol>
+
+  <h2>What Went Right</h2>
+  <ol>
+    <li>The audit now supports the real question: was this object classified correctly?</li>
+    <li>Generated HTML remains local, standard, and self-contained.</li>
+    <li>No OCR, AI, retrieval, embedding, or graph work was introduced.</li>
+    <li>The fixed observability port stayed at <code>127.0.0.1:8765</code>.</li>
+  </ol>
+
+  <h2>Still Weak</h2>
+  <div class="warn">
+    The audit is now inspectable, but it does not yet record human corrections or promote candidates.
+  </div>
+  <ol>
+    <li>The page does not yet show rendered PDF page images beside extraction objects.</li>
+    <li>There is no correction workflow for marking a bucket as wrong.</li>
+    <li>Repeated running headers are still probably under-classified as structure candidates.</li>
+    <li>The audit page is larger because it includes all object cards; this is acceptable for one-book trials but should be watched.</li>
+  </ol>
+
+  <h2>Next Correct Move</h2>
+  <p>
+    Use the inspection page to identify the first class of systematic mistakes. The likely next target
+    is repeated headers/page furniture, because v2 detected only one page artifact candidate.
+  </p>
+</main>
+</body>
+</html>
