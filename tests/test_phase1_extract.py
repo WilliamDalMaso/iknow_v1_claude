@@ -104,7 +104,7 @@ def test_build_segmented_objects_splits_indented_paragraphs() -> None:
     assert layout[0]["bbox"]["bottom"] == 34
 
 
-def test_span_guarded_merge_policy_splits_likely_accidental_merge() -> None:
+def test_paragraph_break_guarded_merge_policy_splits_likely_break() -> None:
     raw_lines = [
         {"text": "First paragraph begins with a normal sentence.", "x0": 43.0, "x1": 340.0, "top": 10.0, "bottom": 20.0},
         {"text": "It continues until this sentence ends.", "x0": 43.0, "x1": 330.0, "top": 24.0, "bottom": 34.0},
@@ -114,7 +114,7 @@ def test_span_guarded_merge_policy_splits_likely_accidental_merge() -> None:
 
     baseline_layout, _, _ = build_segmented_objects("book", 22, raw_lines)
     guarded_layout, guarded_clean, _ = build_segmented_objects(
-        "book", 22, raw_lines, paragraph_merge_policy="v2_span_guarded"
+        "book", 22, raw_lines, paragraph_merge_policy="v2_paragraph_break_guarded"
     )
 
     assert [row["object_type"] for row in baseline_layout] == ["paragraph"]
@@ -504,11 +504,11 @@ def test_validation_rejects_malformed_review_override_row() -> None:
         output_dir = Path(tmp)
         (output_dir / "source_manifest.json").write_text(
             json.dumps(
-                {
-                    "page_count": 1,
-                    "paragraph_merge_policy": "v1_consecutive_lines",
-                    "paragraph_merge_experiment_policy": "v2_span_guarded",
-                }
+                    {
+                        "page_count": 1,
+                        "paragraph_merge_policy": "v1_consecutive_lines",
+                        "paragraph_merge_experiment_policy": "v2_paragraph_break_guarded",
+                    }
             ),
             encoding="utf-8",
         )
@@ -540,6 +540,10 @@ def test_validation_rejects_malformed_review_override_row() -> None:
                         "new_bbox_span_risk_count": 0,
                         "baseline_likely_true_accidental_merge_count": 0,
                         "new_likely_true_accidental_merge_count": 0,
+                        "baseline_merged_across_paragraph_break_count": 0,
+                        "new_merged_across_paragraph_break_count": 0,
+                        "baseline_merged_across_large_vertical_whitespace_count": 0,
+                        "new_merged_across_large_vertical_whitespace_count": 0,
                         "baseline_blocked_paragraph_count": sum(1 for row in blockers if row.get("stream_type") == "main_paragraph_candidate"),
                         "new_blocked_paragraph_count": sum(1 for row in blockers if row.get("stream_type") == "main_paragraph_candidate"),
                     }

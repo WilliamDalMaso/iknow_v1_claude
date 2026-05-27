@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paragraph Break Guarded Experiment</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Paragraph Break Guarded Experiment</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The taxonomy suggested that the dominant merge failure pattern was
+    <code>merged_across_paragraph_break</code>. This step tested a narrower experimental policy,
+    <code>v2_paragraph_break_guarded</code>, instead of another broad span guard.
+  </p>
+
+  <div class="rule">
+    This remains experiment-only. The active canonical extraction policy is still
+    <code>v1_consecutive_lines</code>. No OCR, AI review, embeddings, retrieval, graph work,
+    user-facing answers, or structure promotion was added.
+  </div>
+
+  <h2>Policy Tested</h2>
+  <p>
+    The experimental policy requires paragraph-break evidence such as previous line terminal
+    punctuation, next line capitalization or paragraph-like opening, vertical gap evidence, and
+    indentation or x-position shift. It avoids splitting inside obvious continuous sentences.
+  </p>
+
+  <h2>Douglass Result</h2>
+  <ol>
+    <li>Baseline paragraph candidates: <code>349</code>.</li>
+    <li>Experimental paragraph candidates: <code>354</code>.</li>
+    <li>Baseline canonical promoted: <code>205</code>.</li>
+    <li>Experimental canonical promoted: <code>205</code>.</li>
+    <li>Baseline bbox span risk: <code>74</code>.</li>
+    <li>Experimental bbox span risk: <code>74</code>.</li>
+    <li>Baseline likely true accidental merge: <code>49</code>.</li>
+    <li>Experimental likely true accidental merge: <code>49</code>.</li>
+    <li>Baseline merged across paragraph break: <code>35</code>.</li>
+    <li>Experimental merged across paragraph break: <code>35</code>.</li>
+    <li>Possible over-splitting risks: <code>5</code>.</li>
+  </ol>
+
+  <h2>Outcome</h2>
+  <p>
+    The experiment was not adopted because it did not reduce likely true accidental merges or
+    merged-across-paragraph-break counts, and it introduced possible over-splitting risk. This is a
+    better result than silently adopting a plausible rule that does not improve measured extraction
+    quality.
+  </p>
+
+  <h2>Next Step</h2>
+  <p>
+    The sampled rows need visual inspection before another merge rule is attempted. The next
+    correction should likely use stronger evidence from the visual page and source-line sequence,
+    not only punctuation, capitalization, gap, and indentation heuristics.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed with <code>20</code> tests.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+    <li>Browser smoke check confirmed the audit shows <code>v2_paragraph_break_guarded</code>, the non-adoption outcome, and the paragraph-break counts.</li>
+  </ol>
+</main>
+</body>
+</html>

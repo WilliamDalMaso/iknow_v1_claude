@@ -52,7 +52,7 @@ VALID_OVERRIDE_BUCKETS = {
     "unknown_needs_review",
 }
 BASELINE_PARAGRAPH_MERGE_POLICY = "v1_consecutive_lines"
-ACTIVE_PARAGRAPH_MERGE_POLICY = "v2_span_guarded"
+ACTIVE_PARAGRAPH_MERGE_POLICY = "v2_paragraph_break_guarded"
 VALID_PARAGRAPH_MERGE_POLICIES = {BASELINE_PARAGRAPH_MERGE_POLICY, ACTIVE_PARAGRAPH_MERGE_POLICY}
 REQUIRED_OVERRIDE_FIELDS = {
     "object_id",
@@ -287,7 +287,7 @@ def uppercase_line_start(text: str) -> bool:
     return bool(stripped) and stripped[0].isupper()
 
 
-def span_guarded_split_reason(
+def paragraph_break_guarded_split_reason(
     paragraph_buffer: list[dict[str, Any]],
     record: dict[str, Any],
     left_margin: float | None,
@@ -299,21 +299,25 @@ def span_guarded_split_reason(
     current_text = str(record.get("text", ""))
     previous_boundary = terminal_line_boundary(previous_text)
     current_upper = uppercase_line_start(current_text)
+    current_opens_like_paragraph = bool(re.match(r'^\s*["“‘A-Z0-9]', current_text))
     current_indented = starts_new_indented_paragraph(record, left_margin)
     current_gap = line_gap(previous, record)
     heights = [value for value in (line_height(item) for item in paragraph_buffer + [record]) if value is not None]
     median_height = sorted(heights)[len(heights) // 2] if heights else None
-    tops = [float(item["top"]) for item in paragraph_buffer + [record] if item.get("top") is not None]
-    bottoms = [float(item["bottom"]) for item in paragraph_buffer + [record] if item.get("bottom") is not None]
-    combined_span = max(bottoms) - min(tops) if tops and bottoms else None
-    line_count_after = len(paragraph_buffer) + 1
+    x_shift = None
+    if previous.get("x0") is not None and record.get("x0") is not None:
+        x_shift = float(record["x0"]) - float(previous["x0"])
+    if not previous_boundary:
+        return None
+    if not (current_upper or current_opens_like_paragraph):
+        return None
     if current_gap is not None and median_height is not None:
-        if current_gap >= max(12.0, median_height * 1.6) and len(paragraph_buffer) >= 2 and previous_boundary:
-            return "span_guard_large_vertical_gap_after_terminal_line"
-    if combined_span is not None and combined_span > 160 and line_count_after >= 8 and previous_boundary and current_upper:
-        return "span_guard_large_visual_span_after_terminal_line"
-    if line_count_after >= 10 and previous_boundary and (current_upper or current_indented):
-        return "span_guard_unusual_line_count_after_terminal_line"
+        if current_gap >= max(7.0, median_height * 0.55) and (current_indented or (x_shift is not None and x_shift >= 8.0)):
+            return "paragraph_break_guard_gap_indent_after_terminal_line"
+        if current_gap >= max(14.0, median_height * 1.15):
+            return "paragraph_break_guard_large_gap_after_terminal_line"
+    if x_shift is not None and x_shift >= 16.0 and len(paragraph_buffer) >= 4:
+        return "paragraph_break_guard_indent_after_terminal_line"
     return None
 
 
@@ -414,7 +418,7 @@ def build_segmented_objects(
             if paragraph_buffer and starts_new_indented_paragraph(record, left_margin):
                 flush_paragraph()
             elif paragraph_merge_policy == ACTIVE_PARAGRAPH_MERGE_POLICY:
-                split_reason = span_guarded_split_reason(paragraph_buffer, record, left_margin)
+                split_reason = paragraph_break_guarded_split_reason(paragraph_buffer, record, left_margin)
                 if split_reason:
                     paragraph_buffer[-1].setdefault("cleanup_operations", []).append(split_reason)
                     flush_paragraph()
@@ -1605,6 +1609,24 @@ def count_likely_true_merges(review_report: dict[str, Any]) -> int:
     return sum(1 for row in review_report.get("bbox_span_decisions", []) if row.get("likely_cause") == "true_accidental_merge")
 
 
+def taxonomy_counts_for_review(canonical_paragraphs: list[dict[str, Any]], review_report: dict[str, Any]) -> Counter[str]:
+    canonical_by_id = {row.get("canonical_paragraph_id"): row for row in canonical_paragraphs}
+    decisions_by_id = {
+        row.get("canonical_paragraph_id"): row
+        for row in review_report.get("bbox_span_decisions", [])
+    }
+    counts: Counter[str] = Counter()
+    for diagnostic in review_report.get("bbox_span_risk_diagnostics", []):
+        if (decisions_by_id.get(diagnostic.get("canonical_paragraph_id")) or {}).get("likely_cause") != "true_accidental_merge":
+            continue
+        category, _, _ = merge_failure_taxonomy_decision(
+            diagnostic,
+            canonical_by_id.get(diagnostic.get("canonical_paragraph_id"), {}),
+        )
+        counts.update([category])
+    return counts
+
+
 def candidate_word_count(row: dict[str, Any]) -> int:
     return len(str(row.get("clean_text", "")).split())
 
@@ -1667,12 +1689,23 @@ def build_paragraph_merge_experiment_report(
     active_review_counts = active_review.get("counts", {})
     baseline_true_merges = count_likely_true_merges(baseline_review)
     active_true_merges = count_likely_true_merges(active_review)
+    baseline_taxonomy_counts = taxonomy_counts_for_review(baseline["canonical_paragraphs"], baseline_review)
+    active_taxonomy_counts = taxonomy_counts_for_review(active["canonical_paragraphs"], active_review)
     baseline_bbox_span = (baseline_review.get("bbox_span_risk_summary") or {}).get("total", 0)
     active_bbox_span = (active_review.get("bbox_span_risk_summary") or {}).get("total", 0)
+    improved = (
+        active_true_merges < baseline_true_merges
+        and active_taxonomy_counts.get("merged_across_paragraph_break", 0) < baseline_taxonomy_counts.get("merged_across_paragraph_break", 0)
+        and active_bbox_span <= baseline_bbox_span
+        and len(oversplit_examples) <= max(3, len(split_examples) // 4)
+    )
+    worsened = active_true_merges > baseline_true_merges or active_bbox_span > baseline_bbox_span
     experiment_outcome = (
         "new_policy_improved_risk"
-        if active_true_merges < baseline_true_merges and active_bbox_span <= baseline_bbox_span
+        if improved
         else "new_policy_not_adopted_risk_increased"
+        if worsened
+        else "new_policy_not_adopted_no_risk_reduction"
     )
     experiment_recommendation = (
         "review_split_examples_then_consider_narrow_adoption"
@@ -1683,7 +1716,7 @@ def build_paragraph_merge_experiment_report(
         "book_id": book_id,
         "run_id": run_id,
         "created_at": utc_now(),
-        "experiment": "paragraph_merge_policy_v2_span_guarded",
+        "experiment": "paragraph_merge_policy_v2_paragraph_break_guarded",
         "baseline_paragraph_merge_policy": BASELINE_PARAGRAPH_MERGE_POLICY,
         "new_paragraph_merge_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
         "scope": "deterministic_paragraph_merge_policy_experiment_only",
@@ -1698,10 +1731,18 @@ def build_paragraph_merge_experiment_report(
             "new_bbox_span_risk_count": active_bbox_span,
             "baseline_likely_true_accidental_merge_count": baseline_true_merges,
             "new_likely_true_accidental_merge_count": active_true_merges,
+            "baseline_merged_across_paragraph_break_count": baseline_taxonomy_counts.get("merged_across_paragraph_break", 0),
+            "new_merged_across_paragraph_break_count": active_taxonomy_counts.get("merged_across_paragraph_break", 0),
+            "baseline_merged_across_large_vertical_whitespace_count": baseline_taxonomy_counts.get("merged_across_large_vertical_whitespace", 0),
+            "new_merged_across_large_vertical_whitespace_count": active_taxonomy_counts.get("merged_across_large_vertical_whitespace", 0),
             "baseline_blocked_paragraph_count": baseline_promotion_counts.get("paragraph_candidates_blocked", 0),
             "new_blocked_paragraph_count": active_promotion_counts.get("paragraph_candidates_blocked", 0),
             "split_example_count": len(split_examples),
             "possible_oversplitting_risk_count": len(oversplit_examples),
+        },
+        "taxonomy_counts": {
+            "baseline": dict(sorted(baseline_taxonomy_counts.items())),
+            "new": dict(sorted(active_taxonomy_counts.items())),
         },
         "downstream_safety": {
             "baseline_safe_for_downstream": baseline_review.get("safe_for_downstream"),
@@ -2564,6 +2605,10 @@ def build_audit_html(
     <li>New bbox span risk: <code>{esc(merge_experiment_counts.get('new_bbox_span_risk_count', 0))}</code></li>
     <li>Baseline likely true accidental merge: <code>{esc(merge_experiment_counts.get('baseline_likely_true_accidental_merge_count', 0))}</code></li>
     <li>New likely true accidental merge: <code>{esc(merge_experiment_counts.get('new_likely_true_accidental_merge_count', 0))}</code></li>
+    <li>Baseline merged across paragraph break: <code>{esc(merge_experiment_counts.get('baseline_merged_across_paragraph_break_count', 0))}</code></li>
+    <li>New merged across paragraph break: <code>{esc(merge_experiment_counts.get('new_merged_across_paragraph_break_count', 0))}</code></li>
+    <li>Baseline merged across large vertical whitespace: <code>{esc(merge_experiment_counts.get('baseline_merged_across_large_vertical_whitespace_count', 0))}</code></li>
+    <li>New merged across large vertical whitespace: <code>{esc(merge_experiment_counts.get('new_merged_across_large_vertical_whitespace_count', 0))}</code></li>
     <li>Baseline blocked paragraphs: <code>{esc(merge_experiment_counts.get('baseline_blocked_paragraph_count', 0))}</code></li>
     <li>New blocked paragraphs: <code>{esc(merge_experiment_counts.get('new_blocked_paragraph_count', 0))}</code></li>
     <li>Possible oversplitting risks: <code>{esc(merge_experiment_counts.get('possible_oversplitting_risk_count', 0))}</code></li>
@@ -3010,6 +3055,10 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
                 "new_bbox_span_risk_count",
                 "baseline_likely_true_accidental_merge_count",
                 "new_likely_true_accidental_merge_count",
+                "baseline_merged_across_paragraph_break_count",
+                "new_merged_across_paragraph_break_count",
+                "baseline_merged_across_large_vertical_whitespace_count",
+                "new_merged_across_large_vertical_whitespace_count",
             ]
         ),
     )
