@@ -65,6 +65,20 @@
     content.
   </p>
 
+  <h2>Phase 1 Evidence Stack</h2>
+  <div class="rule">
+    Phase 1 is a truth filter before it is a cleaning tool. Every extracted object should remain
+    traceable through raw PDF evidence, deterministic layout objects, candidate bucket assignment,
+    visual page evidence, bounding-box evidence when available, review overrides when applied, and
+    audit validation.
+  </div>
+  <p>
+    The first reusable extraction method must expose this stack before it asks retrieval, reasoning,
+    OCR, or models to trust the output. The current candidate streams are
+    <code>main_paragraph_candidates.jsonl</code>, <code>structure_candidates.jsonl</code>,
+    <code>page_artifacts_candidates.jsonl</code>, and <code>unknown_objects.jsonl</code>.
+  </p>
+
   <h2>Review Override Rule</h2>
   <p>
     Reviewer corrections must be stored as tracked explicit artifacts, not hidden inside detector changes.

@@ -34,6 +34,22 @@
       "reconstruction_map_candidate.json",
       "reading_order_candidate.json"
     ],
+    "audit_artifacts": [
+      "page_images/",
+      "phase1_audit.html",
+      "bounding_box_overlay_data",
+      "review_overrides_applied.jsonl",
+      "validation_report.json"
+    ],
+    "evidence_stack": [
+      "raw PDF evidence",
+      "deterministic layout objects",
+      "candidate bucket assignment",
+      "visual page witness",
+      "bounding-box witness when available",
+      "review override when applied",
+      "audit validation"
+    ],
     "allowed_model_roles": [
       "classify",
       "link",
@@ -54,7 +70,7 @@
       "Read current Phase 1 strategy and artifact contract.",
       "Read the latest relevant history entry.",
       "Check git status before editing.",
-      "Append an observability event when beginning meaningful work."
+      "Append an observability event at the start of meaningful work, before the first edit."
     ],
     "closure": [
       "Run the smallest relevant verification command.",

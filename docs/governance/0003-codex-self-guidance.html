@@ -23,7 +23,7 @@
     <li>Read <code>docs/governance/0002-source-of-truth.html</code>.</li>
     <li>Read <code>docs/governance/0005-codex-work-loop.html</code>.</li>
     <li>Check whether the requested work strengthens Phase 1 cleanliness or distracts from it.</li>
-    <li>If making a meaningful change, append an observability event so William can see what changed.</li>
+    <li>If making a meaningful change, append an observability event before the first edit and another one after verification.</li>
     <li>Prefer a small verified step over broad architecture.</li>
   </ol>
 
@@ -35,6 +35,15 @@
     <li>Preserve provenance for every derived object.</li>
     <li>Write tests for artifact contracts as soon as a contract exists.</li>
     <li>When uncertain, inspect the actual PDF evidence instead of guessing.</li>
+  </ol>
+
+  <h2>Evidence Stack Reminder</h2>
+  <ol>
+    <li>Start from raw PDF and layout evidence, not clean-looking prose.</li>
+    <li>Keep candidate streams separate from future canonical artifacts.</li>
+    <li>Use page images and bounding-box overlays to check where extracted objects came from.</li>
+    <li>Keep reviewer corrections in tracked review override files, not hidden detector tweaks.</li>
+    <li>Do not add OCR, model review, retrieval, or graph work just because the audit UI improved.</li>
   </ol>
 
   <h2>Git Discipline</h2>

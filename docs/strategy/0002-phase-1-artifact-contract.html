@@ -27,7 +27,7 @@
     claims, entities, relations, graphs, or user-facing answers.
   </div>
   <div class="rule">
-    Phase 1 v2 is candidate-first. It does not call extracted text canonical until an audit step has
+    Phase 1 is candidate-first. It does not call extracted text canonical until an audit step has
     promoted it.
   </div>
 
@@ -125,7 +125,7 @@
       </tr>
       <tr>
         <td><code>validation_report.json</code></td>
-        <td>Checks required artifacts, page coverage, object ids, raw preservation, and cleanup references.</td>
+        <td>Checks required artifacts, page coverage, object ids, raw preservation, cleanup references, rendered page images, overlay data, and review override validity.</td>
         <td>Prevents silent artifact-contract drift.</td>
       </tr>
       <tr>
@@ -136,7 +136,7 @@
     </tbody>
   </table>
 
-  <h2>V2 Acceptance</h2>
+  <h2>Current Acceptance</h2>
   <ol>
     <li>The page inventory row count equals the PDF page count.</li>
     <li>Image-only, blank, mixed, and text pages are explicitly labeled.</li>
@@ -161,9 +161,11 @@
 
   <h2>Known Limits</h2>
   <p>
-    Phase 1 v1 has paragraph segmentation, but it is still heuristic. It is allowed to be imperfect,
-    but not opaque. Its job is to reveal extraction risks and establish the artifact spine before
-    structure, OCR, table, figure, and footnote handling deepen.
+    The current Douglass run is still heuristic even though the audit surface is much stronger than
+    the first pass. Paragraph purity, front matter boundaries, table handling, figure handling,
+    captions, footnotes, lists, and section nesting are not solved yet. This is allowed only because
+    the system preserves raw evidence, candidate buckets, page images, bounding boxes, review
+    overrides, and validation instead of pretending the extraction is canonical.
   </p>
 
   <h2>Model Assistance Policy</h2>
