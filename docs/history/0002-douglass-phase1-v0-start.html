@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Douglass Phase 1 v0 Start</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 8px 10px; vertical-align: top; }
+    th { background: #ece9df; text-align: left; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Douglass Phase 1 v0 Start</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Book Choice</h2>
+  <p>
+    The first book is <code>douglass_narrative.pdf</code>. It was chosen over <code>the_hobbit.pdf</code>
+    because it is smaller, better suited to public-domain experimentation, and already exposes real
+    extraction issues without forcing v0 to solve a larger illustrated copyrighted book first.
+  </p>
+
+  <h2>What Was Built</h2>
+  <p>
+    Phase 1 v0 now has a deterministic extractor at <code>src/phase1_extract.py</code> and a formal
+    artifact contract at <code>docs/strategy/0002-phase-1-artifact-contract.html</code>.
+  </p>
+
+  <h2>V0 Run Summary</h2>
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>Value</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Book id</td><td><code>douglass_narrative</code></td></tr>
+      <tr><td>Page count</td><td><code>126</code></td></tr>
+      <tr><td>Text pages</td><td><code>125</code></td></tr>
+      <tr><td>Image-only pages</td><td><code>1</code></td></tr>
+      <tr><td>Layout objects</td><td><code>3902</code></td></tr>
+      <tr><td>Heading candidates</td><td><code>163</code></td></tr>
+      <tr><td>Paragraph-line objects</td><td><code>3737</code></td></tr>
+      <tr><td>Pages with CID noise</td><td><code>1</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>What The Run Exposed</h2>
+  <ol>
+    <li>Page 1 contains visible <code>(cid:...)</code> extraction noise in the title/front-matter area.</li>
+    <li>Page 2 has no extracted text and one image, so it needs image/OCR-aware review later.</li>
+    <li>The v0 object model is line-based. That is useful for auditability but not yet a clean paragraph/object model.</li>
+    <li>Heading detection is intentionally provisional and likely over-detects short uppercase lines.</li>
+  </ol>
+
+  <div class="rule">
+    This is the right failure shape for v0: we have a complete page inventory and visible risks,
+    not a silent claim that extraction is clean.
+  </div>
+
+  <h2>Next Improvement</h2>
+  <p>
+    The next Phase 1 slice should improve object segmentation. Specifically, it should merge normal
+    prose lines into paragraph objects while preserving headings, page artifacts, image-only pages,
+    and flagged noisy objects separately.
+  </p>
+</main>
+</body>
+</html>
+

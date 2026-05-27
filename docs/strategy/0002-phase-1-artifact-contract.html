@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 1 Artifact Contract</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 8px 10px; vertical-align: top; }
+    th { background: #ece9df; text-align: left; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Phase 1 Artifact Contract</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <div class="rule">
+    Phase 1 produces an auditable document package. It does not produce embeddings, retrieval chunks,
+    claims, entities, relations, graphs, or user-facing answers.
+  </div>
+
+  <h2>Run Location</h2>
+  <p>
+    Generated Phase 1 runs live under <code>data/runs/&lt;book_id&gt;/phase1_v0/</code>. Runtime run
+    artifacts are ignored by git unless a curated finding is promoted into <code>docs/</code>.
+  </p>
+
+  <h2>Required Artifacts</h2>
+  <table>
+    <thead>
+      <tr><th>Artifact</th><th>Purpose</th><th>Gate Role</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>source_manifest.json</code></td>
+        <td>Records source path, file size, SHA-256 hash, run id, and extraction tool metadata.</td>
+        <td>Proves which PDF was processed.</td>
+      </tr>
+      <tr>
+        <td><code>page_inventory.jsonl</code></td>
+        <td>One row per PDF page with dimensions, raw text counts, image/table counts, status, and review flags.</td>
+        <td>Proves every page is accounted for.</td>
+      </tr>
+      <tr>
+        <td><code>raw_pages.jsonl</code></td>
+        <td>Raw extracted text preserved page by page before cleanup.</td>
+        <td>Prevents silent rewriting.</td>
+      </tr>
+      <tr>
+        <td><code>layout_objects.jsonl</code></td>
+        <td>Initial deterministic page objects, usually line-level in v0, with type guesses and confidence.</td>
+        <td>Begins object-level organization before retrieval.</td>
+      </tr>
+      <tr>
+        <td><code>clean_objects.jsonl</code></td>
+        <td>Cleaned object text with cleanup operations attached.</td>
+        <td>Makes cleanup inspectable.</td>
+      </tr>
+      <tr>
+        <td><code>canonical_reading_order.json</code></td>
+        <td>Ordered object ids plus summary counts and review flags.</td>
+        <td>Defines the first canonical reading sequence.</td>
+      </tr>
+      <tr>
+        <td><code>cleanup_log.jsonl</code></td>
+        <td>Append-only log of each cleanup operation applied to extracted text.</td>
+        <td>Prevents untracked text mutation.</td>
+      </tr>
+      <tr>
+        <td><code>phase1_audit.html</code></td>
+        <td>Human-readable local audit page summarizing status, risks, and page samples.</td>
+        <td>Primary v0 review surface.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>V0 Acceptance</h2>
+  <ol>
+    <li>The page inventory row count equals the PDF page count.</li>
+    <li>Image-only, blank, mixed, and text pages are explicitly labeled.</li>
+    <li>Raw extracted text is preserved unchanged.</li>
+    <li>Known extraction noise such as <code>(cid:...)</code> is flagged for review.</li>
+    <li>Cleanup operations are logged per object.</li>
+    <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
+  </ol>
+
+  <h2>Known Limits</h2>
+  <p>
+    Phase 1 v0 is line-object based. It is allowed to be imperfect, but not opaque. Its job is to
+    reveal extraction risks and establish the artifact spine before we improve object segmentation.
+  </p>
+</main>
+</body>
+</html>
+
