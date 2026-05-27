@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local OpenAI Config</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 920px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Local OpenAI Config</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Added a committed <code>.env.example</code> template.</li>
+    <li>Added local ignored <code>.env</code> support.</li>
+    <li>Added <code>src/config.py</code> to load local environment values without a dependency.</li>
+    <li>Added config tests.</li>
+    <li>Documented API key and model config rules.</li>
+  </ol>
+
+  <h2>Decision</h2>
+  <div class="rule">
+    The project may use <code>OPENAI_API_KEY</code> locally, but the key must never be committed,
+    logged, or written into generated artifacts.
+  </div>
+
+  <h2>Model Discipline</h2>
+  <p>
+    Model names are not defaulted. Future model-assisted work must choose a model explicitly and
+    document why that model is appropriate for the task. This protects the project from repeating
+    the old system's expensive trial-and-error pattern.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Config checks passed: <code>3</code>.</li>
+    <li>Phase 1 checks still passed: <code>8</code>.</li>
+    <li>The local <code>.env</code> file did not appear in <code>git status</code>.</li>
+  </ol>
+</main>
+</body>
+</html>

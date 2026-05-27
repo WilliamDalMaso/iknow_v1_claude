@@ -61,6 +61,12 @@ python3 src/observe.py codex "Started Phase 1 extraction design" --details '{"ph
 
 Runtime observability logs are ignored by git.
 
+## Local API Key
+
+Copy `.env.example` to `.env` and set `OPENAI_API_KEY` locally. `.env` is ignored by git.
+
+Model names are intentionally not defaulted. When a model-assisted step is added, the selected model must be explicit and documented.
+
 ## Repository Shape
 
 - `docs/`: HTML project memory, decisions, lessons, strategy, and history.
