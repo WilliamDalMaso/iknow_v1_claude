@@ -17,15 +17,15 @@
     "Do not treat LLM output as ground truth without provenance and review.",
     "Do not widen to many books before one book passes Phase 1 gates.",
     "Do not spend expensive model calls without recording why the model was chosen.",
-    "Do not use Markdown as the durable project documentation format.",
+    "Do not use Markdown as the durable project documentation format, except README.md as a GitHub-facing adapter.",
     "Stage, commit, and push meaningful checkpoints when the repo state should be preserved."
   ],
   "artifact_boundaries": {
     "source_code": "src/",
     "tests": "tests/",
     "html_documentation": "docs/",
+    "github_readme_adapter": "README.md",
     "source_books": "data/books/",
     "generated_runs": "data/runs/"
   }
 }
-
