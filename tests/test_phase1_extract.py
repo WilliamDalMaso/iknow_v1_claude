@@ -215,3 +215,7 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "Raw Extracted Object" in html
     assert "Candidate Assignment" in html
     assert "main_paragraph_candidate" in html
+    assert "Repeated Artifact Pattern Review" in html
+    assert "False-Positive Risk Review" in html
+    assert "filter-bucket" in html
+    assert "filter-page-min" in html

@@ -691,9 +691,118 @@ def build_audit_html(
     # The full candidate rows are provided through stream_samples["__all__"] when available.
     candidate_rows = stream_samples.get("__all__", candidate_rows)
     candidate_by_object_id = {row["object_id"]: row for row in candidate_rows if row.get("object_id")}
+    artifact_rows = [row for row in candidate_rows if row.get("stream_type") == "page_artifact_candidate"]
     objects_by_page: dict[int, list[dict[str, Any]]] = {}
     for obj in layout_objects:
         objects_by_page.setdefault(int(obj["page_number"]), []).append(obj)
+
+    def infer_page_zones() -> dict[int, str]:
+        structure_rows = [row for row in candidate_rows if row.get("stream_type") == "structure_candidate"]
+        chapter_pages = [
+            int(row["page_number"])
+            for row in structure_rows
+            if normalized_object_text(str(row.get("clean_text", ""))).startswith("chapter")
+        ]
+        appendix_pages = [
+            int(row["page_number"])
+            for row in structure_rows
+            if "appendix" in normalized_object_text(str(row.get("clean_text", ""))).split()
+        ]
+        first_chapter_page = min(chapter_pages) if chapter_pages else None
+        first_appendix_page = min(appendix_pages) if appendix_pages else None
+        zones: dict[int, str] = {}
+        for row in inventory:
+            page_number = int(row["page_number"])
+            if first_appendix_page is not None and page_number >= first_appendix_page:
+                zones[page_number] = "appendix"
+            elif first_chapter_page is not None and page_number < first_chapter_page:
+                zones[page_number] = "front_matter"
+            elif first_chapter_page is not None:
+                zones[page_number] = "body"
+            else:
+                zones[page_number] = "unknown"
+        return zones
+
+    page_zones = infer_page_zones()
+
+    def page_list_text(pages: list[int]) -> str:
+        if not pages:
+            return "-"
+        if len(pages) <= 12:
+            return ", ".join(str(page) for page in pages)
+        return ", ".join(str(page) for page in pages[:6]) + " ... " + ", ".join(str(page) for page in pages[-3:])
+
+    def object_top(row: dict[str, Any]) -> float | None:
+        bbox = row.get("bbox") or {}
+        top = bbox.get("top")
+        return float(top) if top is not None else None
+
+    def artifact_review_groups() -> tuple[str, str]:
+        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for row in artifact_rows:
+            evidence = row.get("furniture_evidence") or {}
+            normalized = evidence.get("normalized_furniture_text") or normalized_furniture_text(str(row.get("clean_text", ""))) or "[blank]"
+            subtype = str(row.get("artifact_type", "unknown"))
+            groups.setdefault((normalized, subtype), []).append(row)
+
+        pattern_rows = []
+        risk_rows = []
+        structure_chapter_pages = {
+            int(row["page_number"])
+            for row in candidate_rows
+            if row.get("stream_type") == "structure_candidate"
+            and normalized_object_text(str(row.get("clean_text", ""))).startswith("chapter")
+        }
+        for (normalized, subtype), rows in sorted(groups.items(), key=lambda item: (-len(item[1]), item[0][0])):
+            rows = sorted(rows, key=lambda row: int(row["page_number"]))
+            pages = [int(row["page_number"]) for row in rows]
+            first = rows[0]
+            middle = rows[len(rows) // 2]
+            last = rows[-1]
+            tops = [top for top in (object_top(row) for row in rows) if top is not None]
+            avg_top = sum(tops) / len(tops) if tops else None
+            margin_counts = Counter((row.get("furniture_evidence") or {}).get("margin_zone") or "unknown" for row in rows)
+            zones = Counter(page_zones.get(page, "unknown") for page in pages)
+            max_words = max(len(str(row.get("clean_text", "")).split()) for row in rows)
+            max_chars = max(len(str(row.get("clean_text", ""))) for row in rows)
+            risks = []
+            if len(rows) < 5:
+                risks.append("low_repetition_count")
+            if pages and max(pages) - min(pages) <= 5:
+                risks.append("small_page_range")
+            if any(abs(page - chapter_page) <= 1 for page in pages for chapter_page in structure_chapter_pages):
+                risks.append("near_chapter_boundary")
+            if max_words >= 7 or max_chars >= 65:
+                risks.append("long_text_may_be_structure")
+            if any(zone in {"front_matter", "appendix"} for zone in zones):
+                risks.append("front_or_appendix_zone")
+            risk_text = ", ".join(risks) or "-"
+            pattern_rows.append(
+                "<tr>"
+                f"<td><code>{esc(normalized)}</code></td>"
+                f"<td><code>{esc(subtype)}</code></td>"
+                f"<td>{len(rows)}</td>"
+                f"<td>{esc(page_list_text(pages))}</td>"
+                f"<td>{esc(first.get('clean_text', ''))}</td>"
+                f"<td>{esc(middle.get('clean_text', ''))}</td>"
+                f"<td>{esc(last.get('clean_text', ''))}</td>"
+                f"<td>{esc(f'{avg_top:.1f}' if avg_top is not None else '-')}</td>"
+                f"<td>{esc(', '.join(f'{key}: {value}' for key, value in sorted(margin_counts.items())))}</td>"
+                f"<td>{esc(risk_text)}</td>"
+                "</tr>"
+            )
+            if risks:
+                risk_rows.append(
+                    "<tr>"
+                    f"<td><code>{esc(normalized)}</code></td>"
+                    f"<td><code>{esc(subtype)}</code></td>"
+                    f"<td>{len(rows)}</td>"
+                    f"<td>{esc(page_list_text(pages))}</td>"
+                    f"<td>{esc(', '.join(f'{key}: {value}' for key, value in sorted(zones.items())))}</td>"
+                    f"<td>{esc(risk_text)}</td>"
+                    "</tr>"
+                )
+        return "\n".join(pattern_rows), "\n".join(risk_rows)
 
     def bbox_text(value: Any) -> str:
         if not isinstance(value, dict):
@@ -735,8 +844,11 @@ def build_audit_html(
             warnings = candidate.get("warnings", []) if candidate else ["object_missing_from_candidate_streams"]
             reasons = obj.get("classification_reasons", [])
             source_lines = candidate.get("source_line_ids", []) if candidate else obj.get("source_line_ids", [])
+            subtype = candidate.get("artifact_type") or candidate.get("structure_type") or "-" if candidate else "-"
+            confidence = candidate.get("confidence", "-") if candidate else "-"
+            zone = page_zones.get(page_number, "unknown")
             object_cards.append(
-                f"""<article class="object-card">
+                f"""<article class="object-card" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}">
                   <header>
                     <code>{esc(obj.get('object_id'))}</code>
                     <span class="{esc(bucket_class(label))}">{esc(label)}</span>
@@ -747,6 +859,7 @@ def build_audit_html(
                       <p>{esc(obj.get('raw_text', ''))}</p>
                       <dl>
                         <dt>Object type</dt><dd><code>{esc(obj.get('object_type'))}</code></dd>
+                        <dt>Book zone</dt><dd><code>{esc(zone)}</code></dd>
                         <dt>Source lines</dt><dd><code>{esc(', '.join(source_lines))}</code></dd>
                         <dt>Bounding box</dt><dd><code>{esc(bbox_text(obj.get('bbox')))}</code></dd>
                       </dl>
@@ -755,8 +868,8 @@ def build_audit_html(
                       <h4>Candidate Assignment</h4>
                       <p>{esc(candidate.get('clean_text', '') if candidate else '')}</p>
                       <dl>
-                        <dt>Confidence</dt><dd><code>{esc(candidate.get('confidence', '-') if candidate else '-')}</code></dd>
-                        <dt>Subtype</dt><dd><code>{esc(candidate.get('artifact_type') or candidate.get('structure_type') or '-')}</code></dd>
+                        <dt>Confidence</dt><dd><code>{esc(confidence)}</code></dd>
+                        <dt>Subtype</dt><dd><code>{esc(subtype)}</code></dd>
                         <dt>Warnings</dt><dd><code>{esc(', '.join(warnings) or '-')}</code></dd>
                         <dt>Reasons</dt><dd><code>{esc(', '.join(reasons) or '-')}</code></dd>
                       </dl>
@@ -807,6 +920,19 @@ def build_audit_html(
     stream_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(stream_counts.items()))
     artifact_type_counts = Counter(row.get("artifact_type", "unknown") for row in candidate_rows if row.get("stream_type") == "page_artifact_candidate")
     artifact_type_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(artifact_type_counts.items()))
+    artifact_pattern_rows_html, false_positive_rows_html = artifact_review_groups()
+    bucket_options = "\n".join(
+        f"<option value=\"{esc(value)}\">{esc(value)}</option>"
+        for value in sorted({bucket_label(row) for row in candidate_rows})
+    )
+    subtype_options = "\n".join(
+        f"<option value=\"{esc(value)}\">{esc(value)}</option>"
+        for value in sorted({str(row.get("artifact_type") or row.get("structure_type") or "-") for row in candidate_rows})
+    )
+    zone_options = "\n".join(
+        f"<option value=\"{esc(value)}\">{esc(value)}</option>"
+        for value in sorted(set(page_zones.values()))
+    )
     flagged_items = "\n".join(
         f"<li>Page {row['page_number']}: {esc(', '.join(row['review_flags']))}</li>"
         for row in flagged_pages[:40]
@@ -847,6 +973,7 @@ def build_audit_html(
     .page-audit summary {{ cursor: pointer; padding: 12px 14px; font-weight: 700; background: #f1efe6; }}
     .page-meta {{ display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 14px; border-top: 1px solid #d8d6cc; border-bottom: 1px solid #d8d6cc; }}
     .object-card {{ padding: 14px; border-top: 1px solid #d8d6cc; }}
+    .object-card.hidden {{ display: none; }}
     .object-card header {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }}
     .object-grid {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }}
     .object-grid section {{ border: 1px solid #e3e0d6; padding: 12px; background: #fbfbf8; }}
@@ -860,6 +987,10 @@ def build_audit_html(
     .structure {{ background: #edf0f7; }}
     .artifact {{ background: #f5eadb; }}
     .unknown {{ background: #f7e4e1; }}
+    .review-controls {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; padding: 14px; border: 1px solid #d8d6cc; background: #fffef9; }}
+    .review-controls label {{ display: grid; gap: 4px; font-weight: 700; }}
+    .review-controls select, .review-controls input {{ font: inherit; padding: 6px 8px; border: 1px solid #bdb8ac; background: #fbfbf8; }}
+    .review-count {{ margin: 10px 0 0; font-weight: 700; }}
     @media (max-width: 760px) {{ .object-grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
@@ -894,6 +1025,22 @@ def build_audit_html(
   <h2>Page Artifact Candidate Types</h2>
   <ul>{artifact_type_items or '<li>No page artifact candidates.</li>'}</ul>
 
+  <h2>Repeated Artifact Pattern Review</h2>
+  <table>
+    <thead>
+      <tr><th>Normalized Pattern</th><th>Subtype</th><th>Count</th><th>Pages</th><th>First</th><th>Middle</th><th>Last</th><th>Avg Y</th><th>Margin Evidence</th><th>False-Positive Signals</th></tr>
+    </thead>
+    <tbody>{artifact_pattern_rows_html or '<tr><td colspan="10">No artifact patterns detected.</td></tr>'}</tbody>
+  </table>
+
+  <h2>False-Positive Risk Review</h2>
+  <table>
+    <thead>
+      <tr><th>Normalized Pattern</th><th>Subtype</th><th>Count</th><th>Pages</th><th>Zones</th><th>Risk Signals</th></tr>
+    </thead>
+    <tbody>{false_positive_rows_html or '<tr><td colspan="6">No false-positive risk signals detected.</td></tr>'}</tbody>
+  </table>
+
   <h2>Validation</h2>
   <p><strong>Status:</strong> <code>{esc(validation_report.get('status', 'unknown'))}</code></p>
   <ul>{validation_items}</ul>
@@ -917,6 +1064,30 @@ def build_audit_html(
     Open a page to compare each raw extracted object against its candidate bucket, cleaned text,
     confidence, warnings, source lines, and bounding box evidence.
   </p>
+  <div class="review-controls" id="review-controls">
+    <label>Bucket
+      <select id="filter-bucket"><option value="">All buckets</option>{bucket_options}</select>
+    </label>
+    <label>Artifact subtype
+      <select id="filter-subtype"><option value="">All subtypes</option>{subtype_options}</select>
+    </label>
+    <label>Book zone
+      <select id="filter-zone"><option value="">All zones</option>{zone_options}</select>
+    </label>
+    <label>Page from
+      <input id="filter-page-min" type="number" min="1" max="{manifest['page_count']}" step="1" placeholder="1">
+    </label>
+    <label>Page to
+      <input id="filter-page-max" type="number" min="1" max="{manifest['page_count']}" step="1" placeholder="{manifest['page_count']}">
+    </label>
+    <label>Max confidence
+      <input id="filter-confidence" type="number" min="0" max="1" step="0.01" placeholder="Example: 0.85">
+    </label>
+    <label>Warning contains
+      <input id="filter-warning" type="text" placeholder="Example: candidate_only">
+    </label>
+  </div>
+  <p class="review-count" id="review-count"></p>
   {page_detail_html}
 
   <h2>First 12 Pages</h2>
@@ -927,6 +1098,48 @@ def build_audit_html(
     <tbody>{rows_html}</tbody>
   </table>
 </main>
+<script>
+  const controls = {{
+    bucket: document.getElementById("filter-bucket"),
+    subtype: document.getElementById("filter-subtype"),
+    zone: document.getElementById("filter-zone"),
+    pageMin: document.getElementById("filter-page-min"),
+    pageMax: document.getElementById("filter-page-max"),
+    confidence: document.getElementById("filter-confidence"),
+    warning: document.getElementById("filter-warning"),
+    count: document.getElementById("review-count")
+  }};
+  const cards = Array.from(document.querySelectorAll(".object-card"));
+  function applyReviewFilters() {{
+    const bucket = controls.bucket.value;
+    const subtype = controls.subtype.value;
+    const zone = controls.zone.value;
+    const pageMin = controls.pageMin.value === "" ? null : Number(controls.pageMin.value);
+    const pageMax = controls.pageMax.value === "" ? null : Number(controls.pageMax.value);
+    const maxConfidence = controls.confidence.value === "" ? null : Number(controls.confidence.value);
+    const warning = controls.warning.value.trim().toLowerCase();
+    let visible = 0;
+    for (const card of cards) {{
+      const confidence = Number(card.dataset.confidence || "0");
+      const page = Number(card.dataset.page || "0");
+      const matches =
+        (!bucket || card.dataset.bucket === bucket) &&
+        (!subtype || card.dataset.subtype === subtype) &&
+        (!zone || card.dataset.zone === zone) &&
+        (pageMin === null || page >= pageMin) &&
+        (pageMax === null || page <= pageMax) &&
+        (maxConfidence === null || confidence <= maxConfidence) &&
+        (!warning || (card.dataset.warnings || "").toLowerCase().includes(warning));
+      card.classList.toggle("hidden", !matches);
+      if (matches) visible += 1;
+    }}
+    controls.count.textContent = `${{visible}} of ${{cards.length}} object cards visible`;
+  }}
+  for (const control of [controls.bucket, controls.subtype, controls.zone, controls.pageMin, controls.pageMax, controls.confidence, controls.warning]) {{
+    control.addEventListener("input", applyReviewFilters);
+  }}
+  applyReviewFilters();
+</script>
 </body>
 </html>
 """
