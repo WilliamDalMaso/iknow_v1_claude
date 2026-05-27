@@ -15,6 +15,7 @@ from src.phase1_extract import (
     clean_line,
     join_paragraph_lines,
     page_status,
+    review_canonical_paragraphs,
     validate_phase1_run,
     write_jsonl,
 )
@@ -276,6 +277,31 @@ def test_paragraph_promotion_promotes_only_evidence_bound_paragraphs() -> None:
     assert report["counts"]["blocked_candidates"] == 2
 
 
+def test_canonical_paragraph_review_flags_risky_promoted_rows() -> None:
+    canonical = [
+        {
+            "book_id": "book",
+            "run_id": "phase1_v3",
+            "canonical_paragraph_id": "cp_000001",
+            "source_candidate_object_id": "book:p0001:obj001",
+            "page_number": 1,
+            "raw_text": "preface material",
+            "clean_text": "preface material",
+            "source_object_ids": ["book:p0001:obj001"],
+            "source_line_ids": ["book:p0001:line001"],
+            "bbox": {"x0": 40, "x1": 120, "top": 20, "bottom": 35},
+            "promotion_status": "promoted",
+        }
+    ]
+
+    report = review_canonical_paragraphs("book", "phase1_v3", canonical)
+
+    assert report["counts"]["total_canonical_paragraphs_reviewed"] == 1
+    assert report["safe_for_downstream"] is False
+    assert report["sample_risky_canonical_paragraphs"][0]["canonical_paragraph_id"] == "cp_000001"
+    assert "possible_metadata_or_structure_leakage" in report["warning_categories"]
+
+
 def test_review_override_moves_candidate_bucket() -> None:
     layout = []
     clean = []
@@ -392,6 +418,8 @@ def test_validation_rejects_malformed_review_override_row() -> None:
         write_jsonl(output_dir / "canonical_paragraphs.jsonl", canonical)
         write_jsonl(output_dir / "promotion_blockers.jsonl", blockers)
         (output_dir / "canonical_promotion_report.json").write_text(json.dumps(report), encoding="utf-8")
+        review_report = review_canonical_paragraphs("book", "phase1_v3", canonical)
+        (output_dir / "canonical_paragraph_review_report.json").write_text(json.dumps(review_report), encoding="utf-8")
         (output_dir / "reconstruction_map_candidate.json").write_text(json.dumps(reconstruction_map), encoding="utf-8")
         (output_dir / "reading_order_candidate.json").write_text(
             json.dumps({"object_ids": [row["object_id"] for row in layout]}),

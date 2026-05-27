@@ -87,6 +87,20 @@
     <li><code>canonical_promotion_report.json</code> records counts, warning policy, and validation status.</li>
   </ol>
 
+  <h2>Canonical Paragraph Review</h2>
+  <p>
+    Promotion proves a paragraph passed the current gate; it does not prove the promoted layer is
+    clean enough for retrieval or graph work. Phase 1 therefore reviews
+    <code>canonical_paragraphs.jsonl</code> into
+    <code>canonical_paragraph_review_report.json</code> before downstream intelligence can depend on
+    it. This review flags risks but does not demote rows by itself.
+  </p>
+  <ol>
+    <li>Look for likely merge problems, structure leakage, front-matter boundaries, unusual endings, and suspicious source spans.</li>
+    <li>Record warning categories and risky samples with source candidate ids, pages, source lines, and bounding boxes.</li>
+    <li>Use <code>safe_for_downstream</code> as a gate signal before retrieval, embeddings, reasoning, or graph work.</li>
+  </ol>
+
   <h2>Page Furniture Detection</h2>
   <p>
     Phase 1 v3 adds candidate-only page furniture detection before any OCR or model review. The

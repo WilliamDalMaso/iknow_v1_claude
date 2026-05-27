@@ -42,11 +42,13 @@
       "canonical_paragraphs.jsonl",
       "promotion_blockers.jsonl",
       "canonical_promotion_report.json",
+      "canonical_paragraph_review_report.json",
       "validation_report.json"
     ],
     "canonical_promotion_rule": {
       "meaning": "Canonical means evidence-bound, audited enough under current rules, and safe for downstream use; it does not mean flawless.",
       "first_gate": "Promote main_paragraph_candidates only.",
+      "review_gate": "Review canonical_paragraphs.jsonl with canonical_paragraph_review_report.json before downstream use.",
       "forbidden_in_first_gate": [
         "structure promotion",
         "page artifact promotion",

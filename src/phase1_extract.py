@@ -38,6 +38,7 @@ REQUIRED_ARTIFACTS = [
     "canonical_paragraphs.jsonl",
     "promotion_blockers.jsonl",
     "canonical_promotion_report.json",
+    "canonical_paragraph_review_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -934,6 +935,121 @@ def build_paragraph_promotion_artifacts(
     return canonical_paragraphs, promotion_blockers, report
 
 
+TERMINAL_PUNCTUATION = set(".?!;:'\")”’]")
+METADATA_LEAKAGE_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in [
+        r"\bcontents\b",
+        r"\bchapter\s+[ivxlcdm0-9]+\b",
+        r"\bpreface\b",
+        r"\bappendix\b",
+        r"\bcopyright\b",
+        r"\bpublished\b",
+        r"\bentered according to act\b",
+        r"\bnarrative of the life\b",
+        r"\bfrederick douglass\b",
+    ]
+]
+
+
+def bbox_height(value: Any) -> float | None:
+    if not isinstance(value, dict):
+        return None
+    top = value.get("top")
+    bottom = value.get("bottom")
+    if top is None or bottom is None:
+        return None
+    return max(0.0, float(bottom) - float(top))
+
+
+def review_canonical_paragraphs(
+    book_id: str,
+    run_id: str,
+    canonical_paragraphs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    normalized_counts = Counter(normalized_object_text(row.get("clean_text", "")) for row in canonical_paragraphs)
+    warning_counts: Counter[str] = Counter()
+    risky_samples: list[dict[str, Any]] = []
+    clean_count = 0
+
+    for row in canonical_paragraphs:
+        clean_text = str(row.get("clean_text", "")).strip()
+        raw_text = str(row.get("raw_text", "")).strip()
+        words = clean_text.split()
+        word_count = len(words)
+        warnings: list[str] = []
+        normalized = normalized_object_text(clean_text)
+        height = bbox_height(row.get("bbox"))
+        page_number = int(row.get("page_number") or 0)
+        source_line_ids = row.get("source_line_ids", [])
+
+        if "\n" in raw_text and clean_text.count(". ") == 0 and word_count > 55:
+            warnings.append("possible_broken_paragraph_merge")
+        if any(pattern.search(clean_text) for pattern in METADATA_LEAKAGE_PATTERNS):
+            warnings.append("possible_metadata_or_structure_leakage")
+        if clean_text[:1].islower() or clean_text.startswith((",", ";", ":", ")", "]")):
+            warnings.append("possible_missing_paragraph_start")
+        if clean_text and clean_text[-1] not in TERMINAL_PUNCTUATION:
+            warnings.append("unusual_paragraph_ending")
+        if re.search(r"\w-\s+\w", clean_text):
+            warnings.append("possible_bad_hyphenation_join")
+        if height is None:
+            warnings.append("missing_bbox_visual_evidence")
+        elif height > 220:
+            warnings.append("suspicious_source_line_vertical_span")
+        if page_number <= 20:
+            warnings.append("front_matter_or_chapter_boundary_risk")
+        if normalized and normalized_counts[normalized] > 1 and word_count <= 16:
+            warnings.append("possible_repeated_header_or_furniture_leakage")
+        if word_count < 25:
+            warnings.append("suspiciously_short_promoted_paragraph")
+        if word_count > 170:
+            warnings.append("suspiciously_long_promoted_paragraph")
+        if len(source_line_ids) >= 8 and height is not None and height > 160:
+            warnings.append("source_lines_span_suspicious_distance")
+
+        if warnings:
+            warning_counts.update(warnings)
+            if len(risky_samples) < 40:
+                risky_samples.append(
+                    {
+                        "canonical_paragraph_id": row.get("canonical_paragraph_id"),
+                        "source_candidate_object_id": row.get("source_candidate_object_id"),
+                        "page_number": page_number,
+                        "warnings": warnings,
+                        "word_count": word_count,
+                        "bbox": row.get("bbox"),
+                        "source_line_ids": source_line_ids,
+                        "raw_text_sample": raw_text[:360],
+                        "clean_text_sample": clean_text[:360],
+                    }
+                )
+        else:
+            clean_count += 1
+
+    warning_total = sum(warning_counts.values())
+    safe_for_downstream = warning_total == 0
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "review_method": "deterministic_canonical_paragraph_review_v1",
+        "scope": "promoted_canonical_paragraphs_only",
+        "does_not_demote": True,
+        "safe_for_downstream": safe_for_downstream,
+        "recommendation": "hold_downstream_intelligence_until_risks_are_reviewed" if not safe_for_downstream else "safe_for_limited_downstream_trial",
+        "counts": {
+            "total_canonical_paragraphs_reviewed": len(canonical_paragraphs),
+            "clean_looking_count": clean_count,
+            "warning_count": warning_total,
+            "risky_paragraph_count": len(canonical_paragraphs) - clean_count,
+            "sample_risky_paragraphs": len(risky_samples),
+        },
+        "warning_categories": dict(sorted(warning_counts.items())),
+        "sample_risky_canonical_paragraphs": risky_samples,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -985,6 +1101,7 @@ def build_audit_html(
     canonical_paragraphs = read_jsonl(output_dir / "canonical_paragraphs.jsonl") if (output_dir / "canonical_paragraphs.jsonl").exists() else []
     promotion_blockers = read_jsonl(output_dir / "promotion_blockers.jsonl") if (output_dir / "promotion_blockers.jsonl").exists() else []
     promotion_report = read_json(output_dir / "canonical_promotion_report.json") if (output_dir / "canonical_promotion_report.json").exists() else {}
+    canonical_review_report = read_json(output_dir / "canonical_paragraph_review_report.json") if (output_dir / "canonical_paragraph_review_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
     candidate_by_object_id = {row["object_id"]: row for row in candidate_rows if row.get("object_id")}
@@ -1326,6 +1443,21 @@ def build_audit_html(
         f"<li><strong>{esc(row.get('object_id'))}</strong> ({esc(row.get('stream_type'))}): <code>{esc(', '.join(row.get('blocker_reasons', [])))}</code></li>"
         for row in promotion_blockers[:40]
     )
+    canonical_review_counts = canonical_review_report.get("counts", {})
+    canonical_review_warning_items = "\n".join(
+        f"<li><code>{esc(key)}</code>: {value}</li>"
+        for key, value in sorted((canonical_review_report.get("warning_categories") or {}).items())
+    )
+    canonical_review_sample_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('canonical_paragraph_id'))}</code></td>"
+        f"<td>{esc(row.get('page_number'))}</td>"
+        f"<td><code>{esc(row.get('source_candidate_object_id'))}</code></td>"
+        f"<td>{esc(', '.join(row.get('warnings', [])))}</td>"
+        f"<td>{esc(row.get('clean_text_sample', ''))}</td>"
+        "</tr>"
+        for row in (canonical_review_report.get("sample_risky_canonical_paragraphs") or [])[:20]
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -1493,6 +1625,29 @@ def build_audit_html(
   <ul>{promotion_warning_items or '<li>No warnings recorded.</li>'}</ul>
   <h3>Promotion Blocker Samples</h3>
   <ul>{promotion_blocker_items or '<li>No blockers recorded.</li>'}</ul>
+
+  <h2>Canonical Paragraph Review</h2>
+  <div class="rule">
+    This review inspects promoted canonical paragraphs for likely quality risks. It does not demote
+    paragraphs or change promotion rules.
+  </div>
+  <ul>
+    <li>Safe for downstream: <code>{esc(canonical_review_report.get('safe_for_downstream', 'unknown'))}</code></li>
+    <li>Recommendation: <code>{esc(canonical_review_report.get('recommendation', 'unknown'))}</code></li>
+    <li>Total reviewed: <code>{esc(canonical_review_counts.get('total_canonical_paragraphs_reviewed', 0))}</code></li>
+    <li>Clean-looking: <code>{esc(canonical_review_counts.get('clean_looking_count', 0))}</code></li>
+    <li>Risky paragraphs: <code>{esc(canonical_review_counts.get('risky_paragraph_count', 0))}</code></li>
+    <li>Warning count: <code>{esc(canonical_review_counts.get('warning_count', 0))}</code></li>
+  </ul>
+  <h3>Canonical Review Warning Categories</h3>
+  <ul>{canonical_review_warning_items or '<li>No canonical paragraph review warnings.</li>'}</ul>
+  <h3>Risky Canonical Paragraph Samples</h3>
+  <table>
+    <thead>
+      <tr><th>Canonical ID</th><th>Page</th><th>Source Candidate</th><th>Warnings</th><th>Clean Text Sample</th></tr>
+    </thead>
+    <tbody>{canonical_review_sample_rows or '<tr><td colspan="5">No risky canonical paragraph samples.</td></tr>'}</tbody>
+  </table>
 
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
@@ -1746,6 +1901,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     canonical_paragraphs = read_jsonl(output_dir / "canonical_paragraphs.jsonl")
     promotion_blockers = read_jsonl(output_dir / "promotion_blockers.jsonl")
     canonical_promotion_report = read_json(output_dir / "canonical_promotion_report.json")
+    canonical_paragraph_review_report = read_json(output_dir / "canonical_paragraph_review_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
     page_image_files = sorted((output_dir / PAGE_IMAGES_DIR_NAME).glob("page_*.jpg"))
@@ -1844,6 +2000,24 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
         },
     )
     add_check("promotion_report_status_pass", canonical_promotion_report.get("status") == "pass")
+    canonical_review_counts = canonical_paragraph_review_report.get("counts", {})
+    add_check(
+        "canonical_paragraph_review_count_matches_canonical",
+        canonical_review_counts.get("total_canonical_paragraphs_reviewed") == len(canonical_paragraphs),
+    )
+    add_check(
+        "canonical_paragraph_review_counts_add_up",
+        canonical_review_counts.get("clean_looking_count", 0) + canonical_review_counts.get("risky_paragraph_count", 0)
+        == len(canonical_paragraphs),
+    )
+    add_check(
+        "canonical_paragraph_review_samples_trace_to_canonical",
+        {
+            row.get("canonical_paragraph_id")
+            for row in canonical_paragraph_review_report.get("sample_risky_canonical_paragraphs", [])
+        }.issubset(set(canonical_ids)),
+    )
+    add_check("audit_has_canonical_paragraph_review", "Canonical Paragraph Review" in audit_html)
     known_ids = set(layout_ids)
     override_object_ids = [row.get("object_id") for row in review_overrides]
     add_check("review_overrides_reference_known_objects", set(override_object_ids).issubset(known_ids))
@@ -1880,6 +2054,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             "unknown_rows": len(unknown),
             "canonical_paragraph_rows": len(canonical_paragraphs),
             "promotion_blocker_rows": len(promotion_blockers),
+            "canonical_paragraph_review_warning_rows": canonical_review_counts.get("warning_count", 0),
             "review_override_rows": len(review_overrides),
             "page_image_rows": len(page_image_files),
             "cleanup_log_rows": len(cleanup_log),
@@ -1968,6 +2143,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "canonical_paragraphs": "canonical_paragraphs.jsonl",
             "promotion_blockers": "promotion_blockers.jsonl",
             "canonical_promotion_report": "canonical_promotion_report.json",
+            "canonical_paragraph_review_report": "canonical_paragraph_review_report.json",
         },
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
@@ -1977,6 +2153,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     canonical_paragraphs, promotion_blockers, canonical_promotion_report = build_paragraph_promotion_artifacts(
         book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
     )
+    canonical_paragraph_review_report = review_canonical_paragraphs(book_id, run_id, canonical_paragraphs)
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
         "structure_candidates": len(structure),
@@ -2024,6 +2201,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_jsonl(output_dir / "canonical_paragraphs.jsonl", canonical_paragraphs)
     write_jsonl(output_dir / "promotion_blockers.jsonl", promotion_blockers)
     write_json(output_dir / "canonical_promotion_report.json", canonical_promotion_report)
+    write_json(output_dir / "canonical_paragraph_review_report.json", canonical_paragraph_review_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
         "created_at": utc_now(),
