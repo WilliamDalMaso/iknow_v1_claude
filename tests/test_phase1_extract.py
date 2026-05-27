@@ -305,6 +305,38 @@ def test_canonical_paragraph_review_flags_risky_promoted_rows() -> None:
     assert report["recommendation_detail"]["top_risk_to_fix_first"]
 
 
+def test_canonical_paragraph_review_adds_bbox_span_diagnostics() -> None:
+    raw_lines = [f"line {index} continues the same promoted paragraph" for index in range(1, 13)]
+    canonical = [
+        {
+            "book_id": "book",
+            "run_id": "phase1_v3",
+            "canonical_paragraph_id": "cp_000002",
+            "source_candidate_object_id": "book:p0002:obj003",
+            "page_number": 2,
+            "raw_text": "\n".join(raw_lines),
+            "clean_text": " ".join(raw_lines),
+            "source_object_ids": ["book:p0002:obj003"],
+            "source_line_ids": [f"book:p0002:line{index:03d}" for index in range(1, 13)],
+            "bbox": {"x0": 40, "x1": 360, "top": 40, "bottom": 330},
+            "promotion_status": "promoted",
+        }
+    ]
+
+    report = review_canonical_paragraphs("book", "phase1_v3", canonical, {2: 600})
+
+    diagnostics = report["bbox_span_risk_diagnostics"]
+    assert report["bbox_span_risk_summary"]["total"] == 1
+    assert diagnostics[0]["canonical_paragraph_id"] == "cp_000002"
+    assert diagnostics[0]["source_line_count"] == 12
+    assert diagnostics[0]["page_height_ratio"] == 290 / 600
+    assert diagnostics[0]["warning_severity"] == "high"
+    assert diagnostics[0]["likely_interpretation"] == "possible accidental merge"
+    assert diagnostics[0]["likely_corrective_path"] == ["paragraph merge rule adjustment", "manual inspection"]
+    assert diagnostics[0]["audit_anchor"] == "#card-book-p0002-obj003"
+    assert report["bbox_span_risk_summary"]["by_source_line_count_range"][0]["source_line_count_range"] == "11+"
+
+
 def test_review_override_moves_candidate_bucket() -> None:
     layout = []
     clean = []

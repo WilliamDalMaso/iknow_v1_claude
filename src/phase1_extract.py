@@ -1050,16 +1050,88 @@ def first_unique(values: list[Any], limit: int) -> list[Any]:
     return result
 
 
+def source_line_count_range(count: int) -> str:
+    if count <= 3:
+        return "1-3"
+    if count <= 6:
+        return "4-6"
+    if count <= 10:
+        return "7-10"
+    return "11+"
+
+
+def page_height_ratio_range(ratio: float | None) -> str:
+    if ratio is None:
+        return "unknown"
+    if ratio < 0.18:
+        return "lt_18_percent"
+    if ratio < 0.28:
+        return "18_to_28_percent"
+    if ratio < 0.40:
+        return "28_to_40_percent"
+    return "gte_40_percent"
+
+
+def bbox_span_severity(line_count: int, page_height_ratio: float | None, word_count: int) -> str:
+    if page_height_ratio is not None and page_height_ratio >= 0.40:
+        return "high"
+    if line_count >= 11:
+        return "high"
+    if page_height_ratio is not None and page_height_ratio >= 0.28:
+        return "medium"
+    if word_count > 170:
+        return "medium"
+    return "low"
+
+
+def bbox_span_interpretation(
+    line_count: int,
+    page_height_ratio: float | None,
+    word_count: int,
+    warnings: list[str],
+) -> str:
+    if "possible_metadata_or_structure_leakage" in warnings:
+        return "page layout artifact"
+    if page_height_ratio is not None and page_height_ratio >= 0.40:
+        return "possible accidental merge"
+    if line_count >= 11:
+        return "possible accidental merge"
+    if word_count > 170 and page_height_ratio is not None and page_height_ratio < 0.28:
+        return "normal long paragraph"
+    if page_height_ratio is not None and page_height_ratio < 0.18:
+        return "threshold too strict"
+    return "needs manual inspection"
+
+
+def bbox_span_corrective_path(interpretation: str) -> list[str]:
+    if interpretation == "possible accidental merge":
+        return ["paragraph merge rule adjustment", "manual inspection"]
+    if interpretation == "threshold too strict":
+        return ["promotion blocker threshold adjustment", "manual inspection"]
+    if interpretation == "page layout artifact":
+        return ["curated review override", "manual inspection"]
+    if interpretation == "normal long paragraph":
+        return ["promotion blocker threshold adjustment"]
+    return ["manual inspection"]
+
+
+def audit_anchor_for_object(object_id: Any) -> str:
+    return "#card-" + re.sub(r"[^a-zA-Z0-9_-]+", "-", str(object_id))
+
+
 def review_canonical_paragraphs(
     book_id: str,
     run_id: str,
     canonical_paragraphs: list[dict[str, Any]],
+    page_heights_by_page: dict[int, float] | None = None,
 ) -> dict[str, Any]:
+    page_heights_by_page = page_heights_by_page or {}
     normalized_counts = Counter(normalized_object_text(row.get("clean_text", "")) for row in canonical_paragraphs)
     warning_counts: Counter[str] = Counter()
     risky_samples: list[dict[str, Any]] = []
     warning_records: dict[str, list[dict[str, Any]]] = {}
     cluster_records: dict[str, list[dict[str, Any]]] = {}
+    bbox_span_diagnostics: list[dict[str, Any]] = []
     clean_count = 0
 
     for row in canonical_paragraphs:
@@ -1127,6 +1199,54 @@ def review_canonical_paragraphs(
                         "clean_text_sample": clean_text[:360],
                     }
                 )
+            if any(
+                warning in warnings
+                for warning in [
+                    "missing_bbox_visual_evidence",
+                    "suspicious_source_line_vertical_span",
+                    "source_lines_span_suspicious_distance",
+                ]
+            ):
+                page_height = page_heights_by_page.get(page_number)
+                page_height_ratio = height / page_height if height is not None and page_height else None
+                raw_lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+                first_line_preview = raw_lines[0][:180] if raw_lines else clean_text[:180]
+                last_line_preview = raw_lines[-1][:180] if raw_lines else clean_text[-180:]
+                severity = bbox_span_severity(len(source_line_ids), page_height_ratio, word_count)
+                interpretation = bbox_span_interpretation(len(source_line_ids), page_height_ratio, word_count, warnings)
+                bbox_span_diagnostics.append(
+                    {
+                        "canonical_paragraph_id": row.get("canonical_paragraph_id"),
+                        "page_number": page_number,
+                        "source_candidate_object_id": row.get("source_candidate_object_id"),
+                        "source_line_count": len(source_line_ids),
+                        "source_line_count_range": source_line_count_range(len(source_line_ids)),
+                        "vertical_bbox_span": height,
+                        "page_height": page_height,
+                        "page_height_ratio": page_height_ratio,
+                        "page_height_ratio_range": page_height_ratio_range(page_height_ratio),
+                        "text_length": len(clean_text),
+                        "word_count": word_count,
+                        "first_source_line_preview": first_line_preview,
+                        "last_source_line_preview": last_line_preview,
+                        "warning_severity": severity,
+                        "likely_interpretation": interpretation,
+                        "likely_corrective_path": bbox_span_corrective_path(interpretation),
+                        "bbox_span_warnings": [
+                            warning
+                            for warning in warnings
+                            if warning
+                            in {
+                                "missing_bbox_visual_evidence",
+                                "suspicious_source_line_vertical_span",
+                                "source_lines_span_suspicious_distance",
+                            }
+                        ],
+                        "all_warnings": warnings,
+                        "audit_anchor": audit_anchor_for_object(row.get("source_candidate_object_id")),
+                        "page_anchor": f"#page-{page_number}",
+                    }
+                )
         else:
             clean_count += 1
 
@@ -1189,6 +1309,36 @@ def review_canonical_paragraphs(
 
     warning_drilldown = warning_drilldown_rows()
     cluster_drilldown = cluster_drilldown_rows()
+    bbox_span_diagnostics = sorted(
+        bbox_span_diagnostics,
+        key=lambda row: (
+            -SEVERITY_RANK.get(str(row.get("warning_severity", "low")), 1),
+            int(row.get("page_number") or 0),
+            str(row.get("canonical_paragraph_id")),
+        ),
+    )
+
+    def grouped_bbox_span_rows(key: str) -> list[dict[str, Any]]:
+        grouped: dict[Any, list[dict[str, Any]]] = {}
+        for diagnostic in bbox_span_diagnostics:
+            grouped.setdefault(diagnostic.get(key), []).append(diagnostic)
+        return [
+            {
+                key: group_key,
+                "count": len(rows),
+                "sample_canonical_paragraph_ids": first_unique([row.get("canonical_paragraph_id") for row in rows], 6),
+                "affected_pages": first_unique([row.get("page_number") for row in rows], 12),
+            }
+            for group_key, rows in sorted(grouped.items(), key=lambda item: (-len(item[1]), str(item[0])))
+        ]
+
+    bbox_span_risk_summary = {
+        "total": len(bbox_span_diagnostics),
+        "by_page": grouped_bbox_span_rows("page_number"),
+        "by_severity": grouped_bbox_span_rows("warning_severity"),
+        "by_source_line_count_range": grouped_bbox_span_rows("source_line_count_range"),
+        "by_page_height_ratio_range": grouped_bbox_span_rows("page_height_ratio_range"),
+    }
     top_risk = cluster_drilldown[0] if cluster_drilldown else None
     warning_total = sum(warning_counts.values())
     safe_for_downstream = warning_total == 0
@@ -1225,6 +1375,8 @@ def review_canonical_paragraphs(
         "warning_categories": dict(sorted(warning_counts.items())),
         "warning_category_drilldown": warning_drilldown,
         "risky_paragraph_clusters": cluster_drilldown,
+        "bbox_span_risk_summary": bbox_span_risk_summary,
+        "bbox_span_risk_diagnostics": bbox_span_diagnostics,
         "recommendation_detail": recommendation,
         "sample_risky_canonical_paragraphs": risky_samples,
     }
@@ -1662,6 +1814,42 @@ def build_audit_html(
         "</tr>"
         for row in (canonical_review_report.get("risky_paragraph_clusters") or [])
     )
+    bbox_span_summary = canonical_review_report.get("bbox_span_risk_summary") or {}
+    def fmt_decimal(value: Any, digits: int = 1) -> str:
+        return f"{float(value):.{digits}f}" if isinstance(value, (int, float)) else "-"
+
+    bbox_span_diag_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page_number'))}</a></td>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('source_candidate_object_id'))}</code></a></td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('vertical_bbox_span'), 1))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('page_height_ratio'), 3))}</td>"
+        f"<td>{esc(row.get('text_length'))}</td>"
+        f"<td>{esc(row.get('warning_severity'))}</td>"
+        f"<td>{esc(row.get('likely_interpretation'))}</td>"
+        f"<td>{esc(', '.join(row.get('likely_corrective_path', [])))}</td>"
+        f"<td>{esc(row.get('first_source_line_preview', ''))}</td>"
+        f"<td>{esc(row.get('last_source_line_preview', ''))}</td>"
+        "</tr>"
+        for row in (canonical_review_report.get("bbox_span_risk_diagnostics") or [])
+    )
+
+    def bbox_span_group_items(group_name: str, label_key: str) -> str:
+        return "\n".join(
+            "<li>"
+            f"<code>{esc(row.get(label_key))}</code>: {esc(row.get('count'))} "
+            f"(samples: <code>{esc(', '.join(str(item) for item in row.get('sample_canonical_paragraph_ids', [])))}</code>; "
+            f"pages: <code>{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</code>)"
+            "</li>"
+            for row in (bbox_span_summary.get(group_name) or [])
+        )
+
+    bbox_span_by_severity = bbox_span_group_items("by_severity", "warning_severity")
+    bbox_span_by_page = bbox_span_group_items("by_page", "page_number")
+    bbox_span_by_line_count = bbox_span_group_items("by_source_line_count_range", "source_line_count_range")
+    bbox_span_by_ratio = bbox_span_group_items("by_page_height_ratio_range", "page_height_ratio_range")
     canonical_review_recommendation = canonical_review_report.get("recommendation_detail") or {}
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
@@ -1859,6 +2047,33 @@ def build_audit_html(
       <tr><th>Cluster</th><th>Severity</th><th>Count</th><th>Warnings</th><th>Affected Pages</th><th>Likely Next Action</th><th>May Require</th></tr>
     </thead>
     <tbody>{canonical_review_cluster_rows or '<tr><td colspan="7">No risk clusters.</td></tr>'}</tbody>
+  </table>
+  <h3>BBox Span Risk Diagnostics</h3>
+  <p>
+    This diagnostic view focuses on canonical paragraphs flagged by bounding-box or source-line span warnings.
+    It is evidence-only: it does not split, demote, promote, or rewrite any paragraph.
+  </p>
+  <ul>
+    <li>Total bbox span diagnostics: <code>{esc(bbox_span_summary.get('total', 0))}</code></li>
+  </ul>
+  <h4>Grouped By Severity</h4>
+  <ul>{bbox_span_by_severity or '<li>No bbox span severity groups.</li>'}</ul>
+  <h4>Grouped By Source Line Count Range</h4>
+  <ul>{bbox_span_by_line_count or '<li>No source line count groups.</li>'}</ul>
+  <h4>Grouped By Page Height Ratio Range</h4>
+  <ul>{bbox_span_by_ratio or '<li>No page-height ratio groups.</li>'}</ul>
+  <h4>Grouped By Page</h4>
+  <ul>{bbox_span_by_page or '<li>No page groups.</li>'}</ul>
+  <table>
+    <thead>
+      <tr>
+        <th>Canonical ID</th><th>Page</th><th>Source Candidate</th><th>Line Count</th>
+        <th>BBox Span</th><th>Page Ratio</th><th>Text Length</th><th>Severity</th>
+        <th>Likely Interpretation</th><th>Likely Corrective Path</th>
+        <th>First Source Line</th><th>Last Source Line</th>
+      </tr>
+    </thead>
+    <tbody>{bbox_span_diag_rows or '<tr><td colspan="12">No bbox span diagnostics.</td></tr>'}</tbody>
   </table>
   <h3>Recommendation</h3>
   <ul>
@@ -2256,8 +2471,38 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
         bool((canonical_paragraph_review_report.get("recommendation_detail") or {}).get("top_risk_to_fix_first"))
         or canonical_review_counts.get("warning_count", 0) == 0,
     )
+    bbox_span_diagnostics = canonical_paragraph_review_report.get("bbox_span_risk_diagnostics", [])
+    bbox_span_summary = canonical_paragraph_review_report.get("bbox_span_risk_summary", {})
+    required_bbox_diagnostic_fields = {
+        "canonical_paragraph_id",
+        "page_number",
+        "source_candidate_object_id",
+        "source_line_count",
+        "vertical_bbox_span",
+        "page_height_ratio",
+        "text_length",
+        "first_source_line_preview",
+        "last_source_line_preview",
+        "warning_severity",
+        "likely_interpretation",
+        "likely_corrective_path",
+        "audit_anchor",
+    }
+    add_check(
+        "bbox_span_diagnostic_count_matches_summary",
+        bbox_span_summary.get("total") == len(bbox_span_diagnostics),
+    )
+    add_check(
+        "bbox_span_diagnostics_have_required_fields",
+        all(required_bbox_diagnostic_fields.issubset(row) for row in bbox_span_diagnostics),
+    )
+    add_check(
+        "bbox_span_diagnostics_trace_to_canonical",
+        {row.get("canonical_paragraph_id") for row in bbox_span_diagnostics}.issubset(set(canonical_ids)),
+    )
     add_check("audit_has_canonical_paragraph_review", "Canonical Paragraph Review" in audit_html)
     add_check("audit_has_canonical_review_drilldown", "Canonical Warning Drilldown" in audit_html and "Risk Clusters" in audit_html)
+    add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     known_ids = set(layout_ids)
     override_object_ids = [row.get("object_id") for row in review_overrides]
     add_check("review_overrides_reference_known_objects", set(override_object_ids).issubset(known_ids))
@@ -2393,7 +2638,14 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     canonical_paragraphs, promotion_blockers, canonical_promotion_report = build_paragraph_promotion_artifacts(
         book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
     )
-    canonical_paragraph_review_report = review_canonical_paragraphs(book_id, run_id, canonical_paragraphs)
+    page_heights_by_page = {
+        int(row["page_number"]): float(row["height"])
+        for row in inventory
+        if row.get("page_number") is not None and row.get("height") is not None
+    }
+    canonical_paragraph_review_report = review_canonical_paragraphs(
+        book_id, run_id, canonical_paragraphs, page_heights_by_page
+    )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
         "structure_candidates": len(structure),
