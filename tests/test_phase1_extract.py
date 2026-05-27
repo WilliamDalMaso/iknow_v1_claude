@@ -11,6 +11,7 @@ from src.phase1_extract import (
     build_paragraph_promotion_artifacts,
     build_reconstruction_streams,
     build_segmented_objects,
+    build_paragraph_merge_failure_taxonomy_report,
     classify_line,
     clean_line,
     join_paragraph_lines,
@@ -360,6 +361,46 @@ def test_canonical_paragraph_review_adds_bbox_span_diagnostics() -> None:
     assert report["bbox_span_decision_summary"]["by_likely_cause"][0]["likely_cause"] == "true_accidental_merge"
 
 
+def test_merge_failure_taxonomy_samples_likely_true_merges() -> None:
+    canonical = [
+            {
+                "canonical_paragraph_id": "cp_000010",
+                "clean_text": "First sentence ends. Second paragraph probably starts here. It continues with enough text to inspect.",
+            }
+    ]
+    review_report = {
+        "bbox_span_decisions": [
+            {
+                "canonical_paragraph_id": "cp_000010",
+                "likely_cause": "true_accidental_merge",
+            }
+        ],
+        "bbox_span_risk_diagnostics": [
+            {
+                "canonical_paragraph_id": "cp_000010",
+                "page_number": 30,
+                "source_candidate_object_id": "book:p0030:obj002",
+                "warning_severity": "high",
+                "source_line_count": 12,
+                "vertical_bbox_span": 210.0,
+                "page_height_ratio": 0.34,
+                "first_source_line_preview": "First sentence ends.",
+                "last_source_line_preview": "Second paragraph probably starts here.",
+                "all_warnings": ["source_lines_span_suspicious_distance"],
+                "audit_anchor": "#card-book-p0030-obj002",
+                "page_anchor": "#page-30",
+            }
+        ],
+    }
+
+    report = build_paragraph_merge_failure_taxonomy_report("book", "phase1_v3", canonical, review_report)
+
+    assert report["summary"]["sampled_rows"] == 1
+    assert report["samples"][0]["canonical_paragraph_id"] == "cp_000010"
+    assert report["samples"][0]["provisional_category"] == "merged_across_paragraph_break"
+    assert report["summary"]["count_by_category"]["merged_across_paragraph_break"] == 1
+
+
 def test_review_override_moves_candidate_bucket() -> None:
     layout = []
     clean = []
@@ -502,6 +543,19 @@ def test_validation_rejects_malformed_review_override_row() -> None:
                         "baseline_blocked_paragraph_count": sum(1 for row in blockers if row.get("stream_type") == "main_paragraph_candidate"),
                         "new_blocked_paragraph_count": sum(1 for row in blockers if row.get("stream_type") == "main_paragraph_candidate"),
                     }
+                }
+            ),
+            encoding="utf-8",
+        )
+        (output_dir / "paragraph_merge_failure_taxonomy_report.json").write_text(
+            json.dumps(
+                {
+                    "summary": {
+                        "sampled_rows": 0,
+                        "count_by_category": {},
+                        "count_by_recommended_action": {},
+                    },
+                    "samples": [],
                 }
             ),
             encoding="utf-8",

@@ -40,6 +40,7 @@ REQUIRED_ARTIFACTS = [
     "canonical_promotion_report.json",
     "canonical_paragraph_review_report.json",
     "paragraph_merge_experiment_report.json",
+    "paragraph_merge_failure_taxonomy_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -1719,6 +1720,103 @@ def build_paragraph_merge_experiment_report(
     return report
 
 
+def merge_failure_taxonomy_decision(
+    diagnostic: dict[str, Any],
+    canonical_row: dict[str, Any],
+) -> tuple[str, float, str]:
+    warnings = set(str(warning) for warning in diagnostic.get("all_warnings", []))
+    ratio = diagnostic.get("page_height_ratio")
+    ratio_value = float(ratio) if isinstance(ratio, (int, float)) else None
+    source_line_count = int(diagnostic.get("source_line_count") or 0)
+    clean_text = str(canonical_row.get("clean_text", ""))
+    sentence_boundary_count = clean_text.count(". ") + clean_text.count("? ") + clean_text.count("! ")
+    word_count = len(clean_text.split())
+
+    if "possible_metadata_or_structure_leakage" in warnings:
+        return "merged_heading_or_metadata_into_paragraph", 0.74, "inspect manually and consider curated override"
+    if ratio_value is not None and ratio_value >= 0.40:
+        return "merged_across_large_vertical_whitespace", 0.72, "inspect page whitespace before changing merge rule"
+    if source_line_count >= 10 and sentence_boundary_count >= 2:
+        return "merged_across_paragraph_break", 0.68, "inspect manually and design narrower paragraph-break rule"
+    if word_count > 170 and ratio_value is not None and ratio_value < 0.35:
+        return "normal_long_paragraph_false_positive", 0.62, "no action until visually confirmed"
+    if ratio_value is not None and ratio_value < 0.28:
+        return "bbox_or_threshold_artifact", 0.60, "adjust review threshold only after visual inspection"
+    return "needs_manual_inspection", 0.55, "inspect manually"
+
+
+def build_paragraph_merge_failure_taxonomy_report(
+    book_id: str,
+    run_id: str,
+    canonical_paragraphs: list[dict[str, Any]],
+    canonical_review_report: dict[str, Any],
+    sample_size: int = 10,
+) -> dict[str, Any]:
+    canonical_by_id = {row.get("canonical_paragraph_id"): row for row in canonical_paragraphs}
+    decisions_by_id = {
+        row.get("canonical_paragraph_id"): row
+        for row in canonical_review_report.get("bbox_span_decisions", [])
+    }
+    diagnostics = [
+        row
+        for row in canonical_review_report.get("bbox_span_risk_diagnostics", [])
+        if (decisions_by_id.get(row.get("canonical_paragraph_id")) or {}).get("likely_cause") == "true_accidental_merge"
+    ]
+    diagnostics = sorted(
+        diagnostics,
+        key=lambda row: (
+            -SEVERITY_RANK.get(str(row.get("warning_severity", "low")), 1),
+            int(row.get("page_number") or 0),
+            str(row.get("canonical_paragraph_id")),
+        ),
+    )[:sample_size]
+    samples = []
+    for diagnostic in diagnostics:
+        canonical_row = canonical_by_id.get(diagnostic.get("canonical_paragraph_id"), {})
+        category, confidence, recommended_action = merge_failure_taxonomy_decision(diagnostic, canonical_row)
+        samples.append(
+            {
+                "canonical_paragraph_id": diagnostic.get("canonical_paragraph_id"),
+                "page_number": diagnostic.get("page_number"),
+                "source_candidate_object_id": diagnostic.get("source_candidate_object_id"),
+                "severity": diagnostic.get("warning_severity"),
+                "text_preview": str(canonical_row.get("clean_text", ""))[:320],
+                "first_source_line_preview": diagnostic.get("first_source_line_preview"),
+                "last_source_line_preview": diagnostic.get("last_source_line_preview"),
+                "source_line_count": diagnostic.get("source_line_count"),
+                "vertical_bbox_span": diagnostic.get("vertical_bbox_span"),
+                "page_height_ratio": diagnostic.get("page_height_ratio"),
+                "provisional_category": category,
+                "confidence": confidence,
+                "recommended_next_action": recommended_action,
+                "audit_anchor": diagnostic.get("audit_anchor"),
+                "page_anchor": diagnostic.get("page_anchor"),
+            }
+        )
+
+    category_counts = Counter(row["provisional_category"] for row in samples)
+    action_counts = Counter(row["recommended_next_action"] for row in samples)
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "method": "deterministic_merge_failure_taxonomy_v1",
+        "scope": "sampled_likely_true_accidental_merge_rows_only",
+        "analysis_only": True,
+        "sample_selection": {
+            "requested_sample_size": sample_size,
+            "actual_sample_size": len(samples),
+            "selection_rule": "highest-severity likely true_accidental_merge rows sorted by severity, page, and canonical id",
+        },
+        "summary": {
+            "sampled_rows": len(samples),
+            "count_by_category": dict(sorted(category_counts.items())),
+            "count_by_recommended_action": dict(sorted(action_counts.items())),
+        },
+        "samples": samples,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -1772,6 +1870,7 @@ def build_audit_html(
     promotion_report = read_json(output_dir / "canonical_promotion_report.json") if (output_dir / "canonical_promotion_report.json").exists() else {}
     canonical_review_report = read_json(output_dir / "canonical_paragraph_review_report.json") if (output_dir / "canonical_paragraph_review_report.json").exists() else {}
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json") if (output_dir / "paragraph_merge_experiment_report.json").exists() else {}
+    paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json") if (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
     candidate_by_object_id = {row["object_id"]: row for row in candidate_rows if row.get("object_id")}
@@ -2113,6 +2212,10 @@ def build_audit_html(
         f"<li><strong>{esc(row.get('object_id'))}</strong> ({esc(row.get('stream_type'))}): <code>{esc(', '.join(row.get('blocker_reasons', [])))}</code></li>"
         for row in promotion_blockers[:40]
     )
+
+    def fmt_decimal(value: Any, digits: int = 1) -> str:
+        return f"{float(value):.{digits}f}" if isinstance(value, (int, float)) else "-"
+
     merge_experiment_counts = paragraph_merge_experiment_report.get("counts") or {}
     merge_experiment_safety = paragraph_merge_experiment_report.get("downstream_safety") or {}
     merge_split_rows = "\n".join(
@@ -2135,6 +2238,32 @@ def build_audit_html(
         f"<td>{esc(' | '.join(str(child.get('text_preview', '')) for child in row.get('new_paragraphs', [])))}</td>"
         "</tr>"
         for row in (paragraph_merge_experiment_report.get("examples_of_possible_oversplitting_risk") or [])[:20]
+    )
+    merge_taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary") or {}
+    merge_taxonomy_category_items = "\n".join(
+        f"<li><code>{esc(key)}</code>: {esc(value)}</li>"
+        for key, value in sorted((merge_taxonomy_summary.get("count_by_category") or {}).items())
+    )
+    merge_taxonomy_action_items = "\n".join(
+        f"<li><code>{esc(key)}</code>: {esc(value)}</li>"
+        for key, value in sorted((merge_taxonomy_summary.get("count_by_recommended_action") or {}).items())
+    )
+    merge_taxonomy_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page_number'))}</a></td>"
+        f"<td>{esc(row.get('severity'))}</td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('vertical_bbox_span'), 1))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('page_height_ratio'), 3))}</td>"
+        f"<td><code>{esc(row.get('provisional_category'))}</code></td>"
+        f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
+        f"<td>{esc(row.get('recommended_next_action'))}</td>"
+        f"<td>{esc(row.get('first_source_line_preview', ''))}</td>"
+        f"<td>{esc(row.get('last_source_line_preview', ''))}</td>"
+        f"<td>{esc(row.get('text_preview', ''))}</td>"
+        "</tr>"
+        for row in (paragraph_merge_failure_taxonomy_report.get("samples") or [])
     )
     canonical_review_counts = canonical_review_report.get("counts", {})
     canonical_review_warning_items = "\n".join(
@@ -2176,9 +2305,6 @@ def build_audit_html(
         for row in (canonical_review_report.get("risky_paragraph_clusters") or [])
     )
     bbox_span_summary = canonical_review_report.get("bbox_span_risk_summary") or {}
-    def fmt_decimal(value: Any, digits: int = 1) -> str:
-        return f"{float(value):.{digits}f}" if isinstance(value, (int, float)) else "-"
-
     bbox_span_diag_rows = "\n".join(
         "<tr>"
         f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
@@ -2456,6 +2582,29 @@ def build_audit_html(
       <tr><th>Baseline Object</th><th>Page</th><th>Risk</th><th>Baseline Preview</th><th>New Previews</th></tr>
     </thead>
     <tbody>{merge_oversplit_rows or '<tr><td colspan="5">No possible over-splitting risks recorded.</td></tr>'}</tbody>
+  </table>
+
+  <h2>Merge Failure Taxonomy</h2>
+  <div class="rule">
+    This is a deterministic sample of likely true accidental merge rows. It classifies failure
+    patterns for review only and does not change active extraction behavior.
+  </div>
+  <ul>
+    <li>Sampled rows: <code>{esc(merge_taxonomy_summary.get('sampled_rows', 0))}</code></li>
+  </ul>
+  <h3>Taxonomy Category Counts</h3>
+  <ul>{merge_taxonomy_category_items or '<li>No sampled taxonomy categories.</li>'}</ul>
+  <h3>Recommended Action Counts</h3>
+  <ul>{merge_taxonomy_action_items or '<li>No sampled taxonomy actions.</li>'}</ul>
+  <table>
+    <thead>
+      <tr>
+        <th>Canonical ID</th><th>Page</th><th>Severity</th><th>Lines</th><th>BBox Span</th>
+        <th>Page Ratio</th><th>Category</th><th>Confidence</th><th>Recommended Action</th>
+        <th>First Source Line</th><th>Last Source Line</th><th>Text Preview</th>
+      </tr>
+    </thead>
+    <tbody>{merge_taxonomy_rows or '<tr><td colspan="12">No merge taxonomy samples.</td></tr>'}</tbody>
   </table>
 
   <h2>Canonical Paragraph Review</h2>
@@ -2807,6 +2956,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     canonical_promotion_report = read_json(output_dir / "canonical_promotion_report.json")
     canonical_paragraph_review_report = read_json(output_dir / "canonical_paragraph_review_report.json")
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json")
+    paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
     page_image_files = sorted((output_dir / PAGE_IMAGES_DIR_NAME).glob("page_*.jpg"))
@@ -2836,7 +2986,10 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("raw_text_preserved", all("raw_text" in row for row in raw_pages))
     add_check("review_flags_present", "review_flags" in reading_order)
     add_check("paragraph_merge_experiment_report_exists", (output_dir / "paragraph_merge_experiment_report.json").exists())
+    add_check("paragraph_merge_failure_taxonomy_report_exists", (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
+    taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
+    taxonomy_samples = paragraph_merge_failure_taxonomy_report.get("samples", [])
     add_check("paragraph_merge_policy_recorded", manifest.get("paragraph_merge_policy") == BASELINE_PARAGRAPH_MERGE_POLICY)
     add_check("paragraph_merge_experiment_policy_recorded", manifest.get("paragraph_merge_experiment_policy") == ACTIVE_PARAGRAPH_MERGE_POLICY)
     add_check(
@@ -2859,6 +3012,26 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
                 "new_likely_true_accidental_merge_count",
             ]
         ),
+    )
+    valid_taxonomy_categories = {
+        "merged_across_paragraph_break",
+        "merged_heading_or_metadata_into_paragraph",
+        "merged_across_large_vertical_whitespace",
+        "normal_long_paragraph_false_positive",
+        "bbox_or_threshold_artifact",
+        "needs_manual_inspection",
+    }
+    add_check(
+        "paragraph_merge_failure_taxonomy_counts_match_samples",
+        taxonomy_summary.get("sampled_rows") == len(taxonomy_samples),
+    )
+    add_check(
+        "paragraph_merge_failure_taxonomy_categories_valid",
+        all(row.get("provisional_category") in valid_taxonomy_categories for row in taxonomy_samples),
+    )
+    add_check(
+        "paragraph_merge_failure_taxonomy_samples_trace_to_canonical",
+        {row.get("canonical_paragraph_id") for row in taxonomy_samples}.issubset({row.get("canonical_paragraph_id") for row in canonical_paragraphs}),
     )
     add_check("page_image_count_matches_manifest", len(page_image_files) == page_count, f"{len(page_image_files)} images / {page_count} pages")
     add_check("page_images_nonempty", all(path.stat().st_size > 0 for path in page_image_files))
@@ -3023,6 +3196,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     )
     add_check("audit_has_canonical_paragraph_review", "Canonical Paragraph Review" in audit_html)
     add_check("audit_has_canonical_review_drilldown", "Canonical Warning Drilldown" in audit_html and "Risk Clusters" in audit_html)
+    add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
     known_ids = set(layout_ids)
@@ -3165,6 +3339,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "canonical_promotion_report": "canonical_promotion_report.json",
             "canonical_paragraph_review_report": "canonical_paragraph_review_report.json",
             "paragraph_merge_experiment_report": "paragraph_merge_experiment_report.json",
+            "paragraph_merge_failure_taxonomy_report": "paragraph_merge_failure_taxonomy_report.json",
         },
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
@@ -3204,6 +3379,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     canonical_paragraph_review_report = baseline_evaluation["review_report"]
     paragraph_merge_experiment_report = build_paragraph_merge_experiment_report(
         book_id, run_id, baseline_evaluation, experimental_evaluation
+    )
+    paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
+        book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
@@ -3254,6 +3432,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "canonical_promotion_report.json", canonical_promotion_report)
     write_json(output_dir / "canonical_paragraph_review_report.json", canonical_paragraph_review_report)
     write_json(output_dir / "paragraph_merge_experiment_report.json", paragraph_merge_experiment_report)
+    write_json(output_dir / "paragraph_merge_failure_taxonomy_report.json", paragraph_merge_failure_taxonomy_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
         "created_at": utc_now(),

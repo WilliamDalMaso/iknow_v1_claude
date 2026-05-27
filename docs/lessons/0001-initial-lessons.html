@@ -42,6 +42,7 @@
     <li>When bbox/source-line span risk dominates, create diagnostics that distinguish true bad merges from long paragraphs, threshold noise, and page layout artifacts before rewriting the merger.</li>
     <li>After diagnostics, classify likely causes and recommended actions before correction; warning labels alone are not enough to justify changing extraction behavior.</li>
     <li>A plausible merge rule can make measured extraction risk worse. Keep merge changes as experiments until before/after evidence proves improvement.</li>
+    <li>After a failed merge experiment, classify a small sample of actual failure patterns before trying another rule.</li>
   </ol>
 
   <h2>Lessons Not Carried Forward</h2>
