@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Durable Curated Review Decisions</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    pre { background: #ece9df; padding: 14px; overflow: auto; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Durable Curated Review Decisions</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Problem</h2>
+  <p>
+    The review override loop worked, but the first real override rows lived inside generated run
+    output under <code>data/runs/</code>. That directory is intentionally ignored by git, so reviewed
+    decisions would not survive a fresh clone or a clean regeneration.
+  </p>
+
+  <div class="rule">
+    Durable review decisions live in tracked <code>reviews/</code>. Generated runs only record which
+    curated decisions were replayed.
+  </div>
+
+  <h2>New Shape</h2>
+  <pre>reviews/&lt;book_id&gt;/review_overrides.jsonl
+        ↓ replayed during extraction
+data/runs/&lt;book_id&gt;/&lt;run_id&gt;/review_overrides_applied.jsonl</pre>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Added tracked curated overrides at <code>reviews/douglass_narrative/review_overrides.jsonl</code>.</li>
+    <li>Phase 1 now reads curated overrides from <code>reviews/</code> instead of from generated run output.</li>
+    <li>Each run writes replayed rows to <code>review_overrides_applied.jsonl</code>.</li>
+    <li>The audit page now distinguishes detector bucket, override bucket, and final candidate bucket.</li>
+    <li>Validation checks required fields, duplicate object ids, object existence, valid buckets, source path, curated source marker, and original-bucket agreement.</li>
+  </ol>
+
+  <h2>First Curated Decisions</h2>
+  <p>
+    The four Douglass trial overrides were promoted from local generated output into the tracked
+    curated review source. They remain candidate-only and do not promote anything to canonical.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated successfully.</li>
+    <li><code>validation_report.json</code> returned <code>pass</code>.</li>
+    <li>Applied override rows: <code>4</code>.</li>
+    <li>The generated run contains <code>review_overrides_applied.jsonl</code>.</li>
+    <li>The audit exposes detector, override, and final candidate buckets.</li>
+    <li>No OCR, AI, embeddings, retrieval, graph work, or canonical promotion was introduced.</li>
+  </ol>
+
+  <h2>Remaining Weakness</h2>
+  <p>
+    Review decisions are durable now, but they are still edited by hand. A future step can add a
+    small review UI or command that writes valid curated rows without requiring manual JSONL editing.
+  </p>
+</main>
+</body>
+</html>

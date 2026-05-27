@@ -15,6 +15,7 @@ import pdfplumber
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = ROOT / "data" / "runs"
+REVIEWS_DIR = ROOT / "reviews"
 CID_PATTERN = re.compile(r"\(cid:\d+\)")
 ROMAN_PATTERN = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
 TEXT_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
@@ -30,7 +31,7 @@ REQUIRED_ARTIFACTS = [
     "unknown_objects.jsonl",
     "reconstruction_map_candidate.json",
     "reading_order_candidate.json",
-    "review_overrides.jsonl",
+    "review_overrides_applied.jsonl",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -82,17 +83,6 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def ensure_review_overrides_template(path: Path) -> None:
-    if path.exists():
-        return
-    path.write_text(
-        "# Add one JSON object per line. Lines starting with # are ignored.\n"
-        "# Required: object_id, original_bucket, corrected_bucket, reason, reviewer, date, evidence_reference.\n"
-        "# Optional: corrected_subtype, confidence.\n",
-        encoding="utf-8",
-    )
-
-
 def read_review_overrides(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -105,6 +95,20 @@ def read_review_overrides(path: Path) -> list[dict[str, Any]]:
         row["_line_number"] = line_number
         rows.append(row)
     return rows
+
+
+def curated_review_overrides_path(book_id: str) -> Path:
+    return REVIEWS_DIR / book_id / "review_overrides.jsonl"
+
+
+def prepare_applied_review_overrides(review_overrides: list[dict[str, Any]], source_path: Path) -> list[dict[str, Any]]:
+    applied: list[dict[str, Any]] = []
+    for row in review_overrides:
+        applied_row = dict(row)
+        applied_row["review_source"] = "curated"
+        applied_row["review_source_path"] = str(source_path.relative_to(ROOT) if source_path.is_relative_to(ROOT) else source_path)
+        applied.append(applied_row)
+    return applied
 
 
 def clean_line(raw: str) -> tuple[str, list[str]]:
@@ -933,6 +937,8 @@ def build_audit_html(
                 if override
                 else "-"
             )
+            detector_bucket = override.get("original_bucket") if override else candidate.get("original_stream_type", label) if candidate else "-"
+            override_bucket = override.get("corrected_bucket") if override else "-"
             object_cards.append(
                 f"""<article class="object-card" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}">
                   <header>
@@ -954,6 +960,9 @@ def build_audit_html(
                       <h4>Candidate Assignment</h4>
                       <p>{esc(candidate.get('clean_text', '') if candidate else '')}</p>
                       <dl>
+                        <dt>Detector bucket</dt><dd><code>{esc(detector_bucket)}</code></dd>
+                        <dt>Override bucket</dt><dd><code>{esc(override_bucket)}</code></dd>
+                        <dt>Final candidate bucket</dt><dd><code>{esc(label)}</code></dd>
                         <dt>Confidence</dt><dd><code>{esc(confidence)}</code></dd>
                         <dt>Subtype</dt><dd><code>{esc(subtype)}</code></dd>
                         <dt>Review override</dt><dd><code>{esc(override_text)}</code></dd>
@@ -1114,8 +1123,10 @@ def build_audit_html(
 
   <h2>Review Overrides</h2>
   <p>
-    Persistent reviewer decisions live in <code>review_overrides.jsonl</code>. Overrides change
-    candidate bucket assignment for review purposes only; they do not promote content to canonical.
+    Curated reviewer decisions live in <code>reviews/{esc(book_id)}/review_overrides.jsonl</code>.
+    The generated run records replayed decisions in <code>review_overrides_applied.jsonl</code>.
+    Overrides change candidate bucket assignment for review purposes only; they do not promote
+    content to canonical.
   </p>
   <ul>
     <li>Applied overrides: <code>{validation_report.get('summary', {}).get('review_override_rows', 0)}</code></li>
@@ -1256,7 +1267,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     layout_objects = read_jsonl(output_dir / "layout_objects.jsonl")
     clean_objects = read_jsonl(output_dir / "clean_objects.jsonl")
     cleanup_log = read_jsonl(output_dir / "cleanup_log.jsonl")
-    review_overrides = read_review_overrides(output_dir / "review_overrides.jsonl")
+    review_overrides = read_review_overrides(output_dir / "review_overrides_applied.jsonl")
     main_paragraphs = read_jsonl(output_dir / "main_paragraph_candidates.jsonl")
     structure = read_jsonl(output_dir / "structure_candidates.jsonl")
     page_artifacts = read_jsonl(output_dir / "page_artifacts_candidates.jsonl")
@@ -1309,6 +1320,8 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     )
     add_check("review_override_original_buckets_valid", all(row.get("original_bucket") in VALID_OVERRIDE_BUCKETS for row in review_overrides))
     add_check("review_override_buckets_valid", all(row.get("corrected_bucket") in VALID_OVERRIDE_BUCKETS for row in review_overrides))
+    add_check("review_overrides_are_curated_source", all(row.get("review_source") == "curated" for row in review_overrides))
+    add_check("review_overrides_record_source_path", all(str(row.get("review_source_path", "")).strip() for row in review_overrides))
     stream_by_id = {row["object_id"]: row for row in stream_rows}
     add_check(
         "review_override_original_bucket_matches_detector",
@@ -1344,9 +1357,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
 
     output_dir = RUNS_DIR / book_id / run_id
     output_dir.mkdir(parents=True, exist_ok=True)
-    review_overrides_path = output_dir / "review_overrides.jsonl"
-    ensure_review_overrides_template(review_overrides_path)
+    review_overrides_path = curated_review_overrides_path(book_id)
     review_overrides = read_review_overrides(review_overrides_path)
+    applied_review_overrides = prepare_applied_review_overrides(review_overrides, review_overrides_path)
 
     inventory: list[dict[str, Any]] = []
     raw_pages: list[dict[str, Any]] = []
@@ -1408,7 +1421,8 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "layout_objects": "layout_objects.jsonl",
             "clean_objects": "clean_objects.jsonl",
             "reading_order_candidate": "reading_order_candidate.json",
-            "review_overrides": "review_overrides.jsonl",
+            "review_overrides_source": str(review_overrides_path.relative_to(ROOT)),
+            "review_overrides_applied": "review_overrides_applied.jsonl",
             "cleanup_log": "cleanup_log.jsonl",
             "validation_report": "validation_report.json",
             "phase1_audit": "phase1_audit.html",
@@ -1416,7 +1430,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
     main_paragraphs, structure, page_artifacts, unknown, reconstruction_map = build_reconstruction_streams(
-        book_id, run_id, layout_objects, clean_objects, inventory, page_count, review_overrides
+        book_id, run_id, layout_objects, clean_objects, inventory, page_count, applied_review_overrides
     )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
@@ -1433,7 +1447,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         "object_type_counts": dict(sorted(object_counts.items())),
         "candidate_stream_counts": stream_counts,
         "artifact_type_counts": artifact_type_counts,
-        "review_override_count": len(review_overrides),
+        "review_override_count": len(applied_review_overrides),
         "page_count": page_count,
         "object_ids": [row["object_id"] for row in layout_objects],
         "main_paragraph_candidate_ids": [row["paragraph_id"] for row in main_paragraphs],
@@ -1460,6 +1474,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_jsonl(output_dir / "unknown_objects.jsonl", unknown)
     write_json(output_dir / "reconstruction_map_candidate.json", reconstruction_map)
     write_json(output_dir / "reading_order_candidate.json", reading_order_candidate)
+    write_jsonl(output_dir / "review_overrides_applied.jsonl", applied_review_overrides)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
         "created_at": utc_now(),

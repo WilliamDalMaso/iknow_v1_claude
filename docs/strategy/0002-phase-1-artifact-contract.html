@@ -99,13 +99,18 @@
         <td>Defines the provisional reading sequence for audit.</td>
       </tr>
       <tr>
-        <td><code>review_overrides.jsonl</code></td>
+        <td><code>reviews/&lt;book_id&gt;/review_overrides.jsonl</code></td>
         <td>
-          Persistent reviewer corrections for candidate bucket assignment, one JSON object per line.
+          Tracked curated reviewer corrections for candidate bucket assignment, one JSON object per line.
           Required fields: <code>object_id</code>, <code>original_bucket</code>,
           <code>corrected_bucket</code>, <code>reason</code>, <code>reviewer</code>,
           <code>date</code>, and <code>evidence_reference</code>.
         </td>
+        <td>Preserves reviewed extraction decisions across fresh clones, machines, and regenerated runs.</td>
+      </tr>
+      <tr>
+        <td><code>review_overrides_applied.jsonl</code></td>
+        <td>Generated record of curated review decisions replayed into a specific Phase 1 run.</td>
         <td>Lets review decisions change candidate streams without changing detector rules or promoting content to canonical.</td>
       </tr>
       <tr>

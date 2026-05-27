@@ -22,9 +22,9 @@
 
   <h2>Purpose</h2>
   <p>
-    The audit can now reveal likely false positives. This step adds the persistent correction layer:
-    <code>review_overrides.jsonl</code>. It lets a reviewer correct a candidate bucket without changing
-    detector code and without promoting content to canonical.
+    The audit can now reveal likely false positives. This step introduced the correction layer that
+    later became <code>reviews/&lt;book_id&gt;/review_overrides.jsonl</code>. It lets a reviewer correct
+    a candidate bucket without changing detector code and without promoting content to canonical.
   </p>
 
   <div class="rule">
@@ -52,8 +52,7 @@
 
   <h2>What Changed</h2>
   <ol>
-    <li>Each Phase 1 run now creates <code>review_overrides.jsonl</code> if it does not exist.</li>
-    <li>Overrides are loaded before candidate streams are written.</li>
+    <li>Phase 1 can load review overrides before candidate streams are written.</li>
     <li>Validation checks override object ids, required fields, bucket names, uniqueness, original-bucket agreement, and reconstruction-map counts.</li>
     <li>The audit page shows applied override count and per-object override details.</li>
   </ol>

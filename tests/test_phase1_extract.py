@@ -224,6 +224,10 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "filter-bucket" in html
     assert "filter-page-min" in html
     assert "review_overrides.jsonl" in html
+    assert "review_overrides_applied.jsonl" in html
+    assert "Detector bucket" in html
+    assert "Override bucket" in html
+    assert "Final candidate bucket" in html
 
 
 def test_review_override_moves_candidate_bucket() -> None:
@@ -282,14 +286,6 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             "This is a real paragraph line.",
         ],
     )
-    override = {
-        "object_id": layout[0]["object_id"],
-        "original_bucket": "main_paragraph_candidate",
-        "corrected_bucket": "structure_candidate",
-        "reason": "missing evidence reference should fail validation",
-        "reviewer": "test",
-        "date": "2026-05-27",
-    }
     paragraphs, structure, artifacts, unknown, reconstruction_map = build_reconstruction_streams(
         "book",
         "phase1_v3",
@@ -297,8 +293,41 @@ def test_validation_rejects_malformed_review_override_row() -> None:
         clean,
         [inventory_row(1)],
         page_count=1,
-        review_overrides=[override],
     )
+    malformed_overrides = [
+        {
+            "object_id": layout[0]["object_id"],
+            "original_bucket": "structure_candidate",
+            "corrected_bucket": "not_a_bucket",
+            "reason": "bad row should fail multiple checks",
+            "reviewer": "test",
+            "date": "2026-05-27",
+            "review_source": "curated",
+            "review_source_path": "reviews/book/review_overrides.jsonl",
+        },
+        {
+            "object_id": layout[0]["object_id"],
+            "original_bucket": "main_paragraph_candidate",
+            "corrected_bucket": "structure_candidate",
+            "reason": "duplicate object id",
+            "reviewer": "test",
+            "date": "2026-05-27",
+            "evidence_reference": "unit test",
+            "review_source": "curated",
+            "review_source_path": "reviews/book/review_overrides.jsonl",
+        },
+        {
+            "object_id": "book:p0001:obj999",
+            "original_bucket": "main_paragraph_candidate",
+            "corrected_bucket": "structure_candidate",
+            "reason": "missing object id",
+            "reviewer": "test",
+            "date": "2026-05-27",
+            "evidence_reference": "unit test",
+            "review_source": "curated",
+            "review_source_path": "reviews/book/review_overrides.jsonl",
+        },
+    ]
 
     with TemporaryDirectory() as tmp:
         output_dir = Path(tmp)
@@ -316,7 +345,7 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             json.dumps({"object_ids": [row["object_id"] for row in layout]}),
             encoding="utf-8",
         )
-        write_jsonl(output_dir / "review_overrides.jsonl", [override])
+        write_jsonl(output_dir / "review_overrides_applied.jsonl", malformed_overrides)
         write_jsonl(output_dir / "cleanup_log.jsonl", cleanup)
         (output_dir / "validation_report.json").write_text("{}", encoding="utf-8")
         (output_dir / "phase1_audit.html").write_text("<html></html>", encoding="utf-8")
@@ -325,4 +354,8 @@ def test_validation_rejects_malformed_review_override_row() -> None:
 
     assert report["status"] == "fail"
     failed = {row["name"] for row in report["checks"] if row["status"] == "fail"}
+    assert "review_overrides_reference_known_objects" in failed
+    assert "review_override_object_ids_unique" in failed
     assert "review_override_required_fields_present" in failed
+    assert "review_override_buckets_valid" in failed
+    assert "review_override_original_bucket_matches_detector" in failed
