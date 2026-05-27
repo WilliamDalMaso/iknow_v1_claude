@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Self Review: Cracks and Next Risks</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 8px 10px; vertical-align: top; }
+    th { background: #ece9df; text-align: left; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Self Review: Cracks and Next Risks</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <div class="warn">
+    This review checks whether the current project setup is disciplined enough to build the engine
+    we actually want. The answer is: directionally yes, but only if Phase 1 remains gated and we
+    keep documenting failures before adding downstream intelligence.
+  </div>
+
+  <h2>What Is Solid So Far</h2>
+  <ol>
+    <li>The source of truth puts clean extraction before retrieval, reasoning, and graph construction.</li>
+    <li>The old-project mistakes were reviewed and converted into rules instead of copied blindly.</li>
+    <li>The repo has a durable HTML documentation spine, a GitHub README adapter, and machine-readable guidance.</li>
+    <li>The first Phase 1 run produced raw, clean, page inventory, object, canonical, cleanup, and audit artifacts.</li>
+    <li>Observability now uses one fixed endpoint: <code>http://127.0.0.1:8765</code>.</li>
+    <li>The first book choice is conservative: <code>douglass_narrative</code> is small enough to audit but not trivial.</li>
+  </ol>
+
+  <h2>Cracks</h2>
+  <table>
+    <thead>
+      <tr><th>Crack</th><th>Risk</th><th>Correction</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Observability is not yet supervised</td>
+        <td>The dashboard can stop between sessions and must be restarted manually.</td>
+        <td>Keep port <code>8765</code>. Later add a local launcher or health check, but do not create new ports.</td>
+      </tr>
+      <tr>
+        <td>Phase 1 v0 is line-based</td>
+        <td>Line objects are audit-friendly but not clean document objects. Downstream use would be premature.</td>
+        <td>Next slice must build paragraph/object segmentation before any retrieval work.</td>
+      </tr>
+      <tr>
+        <td>No visual/OCR inspection yet</td>
+        <td>Image-only page 2 is flagged but not understood. Content could be missed.</td>
+        <td>Add page-image rendering or OCR review for flagged image/no-text pages.</td>
+      </tr>
+      <tr>
+        <td>Heading detection is provisional</td>
+        <td>False headings can contaminate canonical structure.</td>
+        <td>Separate heading candidates from accepted structure until audited.</td>
+      </tr>
+      <tr>
+        <td>No schema-level artifact validator yet</td>
+        <td>Future extractor changes could silently break artifact contracts.</td>
+        <td>Add a contract validator that checks required files, row counts, fields, and page coverage.</td>
+      </tr>
+      <tr>
+        <td>No dependency/project environment file yet</td>
+        <td>Reproducibility depends on ambient Python packages such as <code>pdfplumber</code>.</td>
+        <td>Add dependency management before the extractor grows much further.</td>
+      </tr>
+      <tr>
+        <td>Runtime artifacts are ignored by git</td>
+        <td>Good for repo hygiene, but important run findings can disappear if not curated.</td>
+        <td>Promote meaningful findings into <code>docs/history</code> or <code>docs/lessons</code> immediately.</td>
+      </tr>
+      <tr>
+        <td>Books are local-only</td>
+        <td>Remote clone cannot reproduce the exact run without local source PDFs.</td>
+        <td>Keep PDFs local for now, but record source manifest hashes and document local setup expectations.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Model Judgment</h2>
+  <p>
+    No model should be used as the extractor of record at this point. The current best use of models
+    would be bounded review after deterministic artifacts exist: classify flagged failures, compare
+    cleaned objects against raw text, or suggest repair options for specific noisy spans. Using a model
+    earlier would make the system look smarter while weakening auditability.
+  </p>
+
+  <h2>Competence Check</h2>
+  <p>
+    Codex is useful enough to build this engine if it remains constrained by contracts, audits, and
+    human-readable evidence. Codex is not reliable enough to simply "understand the PDF" and produce
+    trusted clean content without deterministic artifacts and review gates. The build strategy should
+    therefore keep Codex as an engineering agent, not as an unquestioned document authority.
+  </p>
+
+  <h2>Next Correct Move</h2>
+  <div class="rule">
+    Build Phase 1 v1 paragraph/object segmentation and artifact validation. Do not start retrieval,
+    embeddings, claims, entities, or graph work yet.
+  </div>
+</main>
+</body>
+</html>
