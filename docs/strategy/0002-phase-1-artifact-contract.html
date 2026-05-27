@@ -99,6 +99,11 @@
         <td>Defines the provisional reading sequence for audit.</td>
       </tr>
       <tr>
+        <td><code>page_images/</code></td>
+        <td>Generated rendered JPEG image for each PDF page, named <code>page_0001.jpg</code> and so on.</td>
+        <td>Provides visual evidence for audit without OCR, AI review, or canonical promotion.</td>
+      </tr>
+      <tr>
         <td><code>reviews/&lt;book_id&gt;/review_overrides.jsonl</code></td>
         <td>
           Tracked curated reviewer corrections for candidate bucket assignment, one JSON object per line.
@@ -142,6 +147,8 @@
     <li>Heading detections remain <code>structure_candidate</code> rows until audited.</li>
     <li>Every extracted object appears in exactly one candidate bucket unless duplicated only as a linked reference.</li>
     <li>No output is named canonical before audit promotion.</li>
+    <li>Rendered page image count matches source page count.</li>
+    <li>The audit page links each inspected page to its rendered page image.</li>
     <li>Repeated page furniture is detected from deterministic repetition, position, and page-number evidence.</li>
     <li>Artifact false-positive risks are visible before any canonical exclusion is allowed.</li>
     <li>Review overrides are validated, evidence-bound, and candidate-only.</li>

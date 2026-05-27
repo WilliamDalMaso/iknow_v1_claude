@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import pdfplumber
+import pypdfium2 as pdfium
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = ROOT / "data" / "runs"
 REVIEWS_DIR = ROOT / "reviews"
+PAGE_IMAGES_DIR_NAME = "page_images"
 CID_PATTERN = re.compile(r"\(cid:\d+\)")
 ROMAN_PATTERN = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
 TEXT_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
@@ -31,6 +33,7 @@ REQUIRED_ARTIFACTS = [
     "unknown_objects.jsonl",
     "reconstruction_map_candidate.json",
     "reading_order_candidate.json",
+    PAGE_IMAGES_DIR_NAME,
     "review_overrides_applied.jsonl",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -109,6 +112,41 @@ def prepare_applied_review_overrides(review_overrides: list[dict[str, Any]], sou
         applied_row["review_source_path"] = str(source_path.relative_to(ROOT) if source_path.is_relative_to(ROOT) else source_path)
         applied.append(applied_row)
     return applied
+
+
+def page_image_filename(page_number: int) -> str:
+    return f"page_{page_number:04d}.jpg"
+
+
+def render_page_images(pdf_path: Path, output_dir: Path, scale: float = 1.5) -> list[dict[str, Any]]:
+    page_images_dir = output_dir / PAGE_IMAGES_DIR_NAME
+    page_images_dir.mkdir(parents=True, exist_ok=True)
+    for existing in page_images_dir.glob("page_*.jpg"):
+        existing.unlink()
+
+    rendered: list[dict[str, Any]] = []
+    document = pdfium.PdfDocument(str(pdf_path))
+    try:
+        for page_index in range(len(document)):
+            page_number = page_index + 1
+            image_path = page_images_dir / page_image_filename(page_number)
+            page = document[page_index]
+            try:
+                bitmap = page.render(scale=scale)
+                image = bitmap.to_pil()
+                image.save(image_path, "JPEG", quality=86, optimize=True)
+            finally:
+                page.close()
+            rendered.append(
+                {
+                    "page_number": page_number,
+                    "path": f"{PAGE_IMAGES_DIR_NAME}/{image_path.name}",
+                    "file_size_bytes": image_path.stat().st_size,
+                }
+            )
+    finally:
+        document.close()
+    return rendered
 
 
 def clean_line(raw: str) -> tuple[str, list[str]]:
@@ -918,6 +956,7 @@ def build_audit_html(
     page_detail_sections = []
     for page in inventory:
         page_number = int(page["page_number"])
+        page_image_href = f"{PAGE_IMAGES_DIR_NAME}/{page_image_filename(page_number)}"
         page_objects = objects_by_page.get(page_number, [])
         bucket_counts: Counter[str] = Counter()
         object_cards = []
@@ -993,8 +1032,17 @@ def build_audit_html(
                 <span>Images: <code>{page['image_count']}</code></span>
                 <span>Tables: <code>{page['table_count']}</code></span>
                 <span>Flags: <code>{esc(', '.join(page['review_flags']) or '-')}</code></span>
+                <span>Page image: <a href="{esc(page_image_href)}">{esc(page_image_href)}</a></span>
               </div>
-              {''.join(object_cards) or '<p>No extracted objects for this page.</p>'}
+              <div class="page-review-grid">
+                <figure class="page-image-witness">
+                  <a href="{esc(page_image_href)}"><img src="{esc(page_image_href)}" alt="Rendered PDF page {page_number}"></a>
+                  <figcaption>Rendered PDF page {page_number}</figcaption>
+                </figure>
+                <div class="page-object-list">
+                  {''.join(object_cards) or '<p>No extracted objects for this page.</p>'}
+                </div>
+              </div>
             </details>"""
         )
 
@@ -1068,7 +1116,13 @@ def build_audit_html(
     .page-audit {{ border: 1px solid #d8d6cc; margin: 12px 0; background: #fffef9; }}
     .page-audit summary {{ cursor: pointer; padding: 12px 14px; font-weight: 700; background: #f1efe6; }}
     .page-meta {{ display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 14px; border-top: 1px solid #d8d6cc; border-bottom: 1px solid #d8d6cc; }}
+    .page-review-grid {{ display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); align-items: start; gap: 14px; padding: 14px; }}
+    .page-image-witness {{ position: sticky; top: 12px; margin: 0; border: 1px solid #d8d6cc; background: #fbfbf8; padding: 10px; }}
+    .page-image-witness img {{ display: block; width: 100%; height: auto; border: 1px solid #e3e0d6; background: white; }}
+    .page-image-witness figcaption {{ margin-top: 8px; font-size: 0.9rem; color: #56616b; }}
+    .page-object-list {{ min-width: 0; }}
     .object-card {{ padding: 14px; border-top: 1px solid #d8d6cc; }}
+    .page-object-list .object-card:first-child {{ border-top: 0; }}
     .object-card.hidden {{ display: none; }}
     .object-card header {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }}
     .object-grid {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }}
@@ -1087,6 +1141,7 @@ def build_audit_html(
     .review-controls label {{ display: grid; gap: 4px; font-weight: 700; }}
     .review-controls select, .review-controls input {{ font: inherit; padding: 6px 8px; border: 1px solid #bdb8ac; background: #fbfbf8; }}
     .review-count {{ margin: 10px 0 0; font-weight: 700; }}
+    @media (max-width: 900px) {{ .page-review-grid {{ grid-template-columns: 1fr; }} .page-image-witness {{ position: static; }} }}
     @media (max-width: 760px) {{ .object-grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
@@ -1262,6 +1317,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
         add_check(f"artifact_exists:{artifact}", (output_dir / artifact).exists())
 
     manifest = read_json(output_dir / "source_manifest.json")
+    audit_html = (output_dir / "phase1_audit.html").read_text(encoding="utf-8")
     inventory = read_jsonl(output_dir / "page_inventory.jsonl")
     raw_pages = read_jsonl(output_dir / "raw_pages.jsonl")
     layout_objects = read_jsonl(output_dir / "layout_objects.jsonl")
@@ -1274,6 +1330,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     unknown = read_jsonl(output_dir / "unknown_objects.jsonl")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
+    page_image_files = sorted((output_dir / PAGE_IMAGES_DIR_NAME).glob("page_*.jpg"))
 
     page_count = int(manifest.get("page_count", 0))
     add_check("page_inventory_matches_manifest", len(inventory) == page_count, f"{len(inventory)} inventory rows / {page_count} manifest pages")
@@ -1293,6 +1350,12 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("cleanup_log_references_known_objects", {row.get("object_id") for row in cleanup_log}.issubset(set(layout_ids)))
     add_check("raw_text_preserved", all("raw_text" in row for row in raw_pages))
     add_check("review_flags_present", "review_flags" in reading_order)
+    add_check("page_image_count_matches_manifest", len(page_image_files) == page_count, f"{len(page_image_files)} images / {page_count} pages")
+    add_check("page_images_nonempty", all(path.stat().st_size > 0 for path in page_image_files))
+    add_check(
+        "audit_links_page_images",
+        all(f"{PAGE_IMAGES_DIR_NAME}/{page_image_filename(page_number)}" in audit_html for page_number in range(1, page_count + 1)),
+    )
     stream_object_ids = (
         {row.get("object_id") for row in main_paragraphs}
         | {row.get("object_id") for row in structure}
@@ -1345,6 +1408,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             "page_artifact_rows": len(page_artifacts),
             "unknown_rows": len(unknown),
             "review_override_rows": len(review_overrides),
+            "page_image_rows": len(page_image_files),
             "cleanup_log_rows": len(cleanup_log),
         },
     }
@@ -1405,6 +1469,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             layout_objects.extend(page_layout_objects)
             clean_objects.extend(page_clean_objects)
             cleanup_log.extend(page_cleanup_log)
+    page_images = render_page_images(pdf_path, output_dir)
 
     manifest = {
         "book_id": book_id,
@@ -1420,6 +1485,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "raw_pages": "raw_pages.jsonl",
             "layout_objects": "layout_objects.jsonl",
             "clean_objects": "clean_objects.jsonl",
+            "page_images": PAGE_IMAGES_DIR_NAME,
             "reading_order_candidate": "reading_order_candidate.json",
             "review_overrides_source": str(review_overrides_path.relative_to(ROOT)),
             "review_overrides_applied": "review_overrides_applied.jsonl",
@@ -1448,6 +1514,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         "candidate_stream_counts": stream_counts,
         "artifact_type_counts": artifact_type_counts,
         "review_override_count": len(applied_review_overrides),
+        "page_image_count": len(page_images),
         "page_count": page_count,
         "object_ids": [row["object_id"] for row in layout_objects],
         "main_paragraph_candidate_ids": [row["paragraph_id"] for row in main_paragraphs],

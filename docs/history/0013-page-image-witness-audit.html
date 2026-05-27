@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page Image Witness Audit</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Page Image Witness Audit</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The audit now includes visual page evidence. This lets a reviewer compare the rendered PDF page
+    against extracted objects, detector bucket, override bucket, and final candidate bucket before
+    trusting any Phase 1 classification.
+  </p>
+
+  <div class="rule">
+    Page images are visual witnesses only. They are not OCR, not AI review, not retrieval input, and
+    not canonical promotion.
+  </div>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Phase 1 renders each PDF page into <code>data/runs/&lt;book_id&gt;/&lt;run_id&gt;/page_images/</code>.</li>
+    <li>Image filenames are stable: <code>page_0001.jpg</code>, <code>page_0002.jpg</code>, and so on.</li>
+    <li>Each page inspection section in <code>phase1_audit.html</code> now shows the rendered page beside object cards.</li>
+    <li>The observability server can serve generated page images under the existing fixed port.</li>
+    <li>Validation checks page image count and audit image links.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated successfully.</li>
+    <li>Rendered page images: <code>126</code>.</li>
+    <li><code>validation_report.json</code> returned <code>pass</code>.</li>
+    <li>Browser verification loaded <code>page_images/page_0001.jpg</code> with nonzero dimensions.</li>
+    <li>Existing curated review overrides still applied: <code>4</code>.</li>
+  </ol>
+
+  <h2>What Remains Weak</h2>
+  <p>
+    Object bounding boxes are listed as text, but the audit does not yet draw visual overlays on the
+    page image. The next possible trust improvement is an overlay view that highlights the source
+    object location on the rendered page.
+  </p>
+</main>
+</body>
+</html>

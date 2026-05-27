@@ -225,6 +225,8 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "filter-page-min" in html
     assert "review_overrides.jsonl" in html
     assert "review_overrides_applied.jsonl" in html
+    assert "page_images/page_0001.jpg" in html
+    assert "Rendered PDF page 1" in html
     assert "Detector bucket" in html
     assert "Override bucket" in html
     assert "Final candidate bucket" in html

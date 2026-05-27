@@ -105,6 +105,14 @@
     reusable without hiding the evidence trail.
   </p>
 
+  <h2>Visual Page Witness</h2>
+  <p>
+    Phase 1 renders each source PDF page into <code>page_images/</code> inside the generated run.
+    These images are visual evidence only. They let a reviewer compare the original page, extracted
+    objects, detector bucket, override bucket, and final candidate bucket without adding OCR, model
+    review, retrieval, graph work, or canonical promotion.
+  </p>
+
   <h2>First Book Strategy</h2>
   <p>
     We will choose one book and build Phase 1 around it until it passes cleanliness gates. This is intentionally

@@ -339,20 +339,34 @@ class ObservabilityHandler(BaseHTTPRequestHandler):
 
     def serve_run_artifact(self, request_path: str) -> None:
         parts = [part for part in request_path.split("/") if part]
-        if len(parts) != 4 or parts[0] != "runs":
+        if len(parts) < 4 or parts[0] != "runs":
             self.respond(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"Not found")
             return
-        _, book_id, run_id, filename = parts
-        allowed = {"phase1_audit.html", "source_manifest.json"}
-        if filename not in allowed:
+        _, book_id, run_id, *artifact_parts = parts
+        artifact_path = Path(*artifact_parts)
+        is_allowed_top_level = len(artifact_parts) == 1 and artifact_parts[0] in {"phase1_audit.html", "source_manifest.json"}
+        is_allowed_page_image = (
+            len(artifact_parts) == 2
+            and artifact_parts[0] == "page_images"
+            and artifact_parts[1].startswith("page_")
+            and artifact_parts[1].endswith(".jpg")
+        )
+        if not (is_allowed_top_level or is_allowed_page_image):
             self.respond(HTTPStatus.FORBIDDEN, "text/plain; charset=utf-8", b"Forbidden")
             return
-        candidate = (RUNS_DIR / book_id / run_id / filename).resolve()
+        candidate = (RUNS_DIR / book_id / run_id / artifact_path).resolve()
         runs_root = RUNS_DIR.resolve()
         if not str(candidate).startswith(str(runs_root)) or not candidate.exists():
             self.respond(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"Not found")
             return
-        content_type = "text/html; charset=utf-8" if filename.endswith(".html") else "application/json; charset=utf-8"
+        if candidate.suffix == ".html":
+            content_type = "text/html; charset=utf-8"
+        elif candidate.suffix == ".json":
+            content_type = "application/json; charset=utf-8"
+        elif candidate.suffix == ".jpg":
+            content_type = "image/jpeg"
+        else:
+            content_type = "application/octet-stream"
         self.respond(HTTPStatus.OK, content_type, candidate.read_bytes())
 
 
