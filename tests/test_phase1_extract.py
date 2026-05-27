@@ -8,6 +8,7 @@ from pathlib import Path
 import src.phase1_extract as phase1_extract
 from src.phase1_extract import (
     CID_PATTERN,
+    apply_cross_page_continuation_experiment,
     build_audit_html,
     build_paragraph_promotion_artifacts,
     build_reconstruction_streams,
@@ -123,6 +124,62 @@ def test_paragraph_break_guarded_merge_policy_splits_likely_break() -> None:
     assert [row["object_type"] for row in guarded_layout] == ["paragraph", "paragraph"]
     assert guarded_clean[0]["clean_text"] == "First paragraph begins with a normal sentence. It continues until this sentence ends."
     assert guarded_clean[1]["clean_text"] == "Second paragraph begins after a visual gap. It continues here."
+
+
+def test_cross_page_continuation_experiment_joins_incomplete_page_boundary() -> None:
+    layout = [
+        {
+            "book_id": "book",
+            "object_id": "book:p0001:obj001",
+            "page_number": 1,
+            "object_index": 1,
+            "object_type": "paragraph",
+            "classification_reasons": ["merged_consecutive_paragraph_lines"],
+            "source_line_ids": ["book:p0001:line001"],
+            "source_line_indexes": [1],
+            "bbox": {"x0": 40, "x1": 300, "top": 500, "bottom": 520},
+            "raw_text": "This paragraph continues with",
+        },
+        {
+            "book_id": "book",
+            "object_id": "book:p0002:obj001",
+            "page_number": 2,
+            "object_index": 1,
+            "object_type": "heading_candidate",
+            "classification_reasons": ["page_artifact"],
+            "source_line_ids": ["book:p0002:line001"],
+            "source_line_indexes": [1],
+            "bbox": {"x0": 40, "x1": 220, "top": 30, "bottom": 42},
+            "raw_text": "2 NARRATIVE OF THE",
+        },
+        {
+            "book_id": "book",
+            "object_id": "book:p0002:obj002",
+            "page_number": 2,
+            "object_index": 2,
+            "object_type": "paragraph",
+            "classification_reasons": ["merged_consecutive_paragraph_lines"],
+            "source_line_ids": ["book:p0002:line002"],
+            "source_line_indexes": [2],
+            "bbox": {"x0": 40, "x1": 300, "top": 70, "bottom": 90},
+            "raw_text": "the next page text.",
+        },
+    ]
+    clean = [
+        {"book_id": "book", "object_id": "book:p0001:obj001", "page_number": 1, "object_type": "paragraph", "clean_text": "This paragraph continues with", "cleanup_operations": []},
+        {"book_id": "book", "object_id": "book:p0002:obj001", "page_number": 2, "object_type": "heading_candidate", "clean_text": "2 NARRATIVE OF THE", "cleanup_operations": []},
+        {"book_id": "book", "object_id": "book:p0002:obj002", "page_number": 2, "object_type": "paragraph", "clean_text": "the next page text.", "cleanup_operations": []},
+    ]
+
+    merged_layout, merged_clean, details = apply_cross_page_continuation_experiment(layout, clean)
+
+    paragraph_rows = [row for row in merged_layout if row["object_type"] == "paragraph"]
+    clean_by_id = {row["object_id"]: row for row in merged_clean}
+    assert len(paragraph_rows) == 1
+    assert paragraph_rows[0]["source_object_ids"] == ["book:p0001:obj001", "book:p0002:obj002"]
+    assert paragraph_rows[0]["source_line_ids"] == ["book:p0001:line001", "book:p0002:line002"]
+    assert details["joined_count"] == 1
+    assert "the next page text" in clean_by_id[paragraph_rows[0]["object_id"]]["clean_text"]
 
 
 def test_build_reconstruction_streams_buckets_every_object_once() -> None:
@@ -581,7 +638,7 @@ def test_validation_rejects_malformed_review_override_row() -> None:
                     {
                         "page_count": 1,
                         "paragraph_merge_policy": "v1_consecutive_lines",
-                        "paragraph_merge_experiment_policy": "v2_paragraph_break_guarded",
+                        "paragraph_merge_experiment_policy": "v2_cross_page_continuation",
                     }
             ),
             encoding="utf-8",

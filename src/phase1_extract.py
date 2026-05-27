@@ -53,8 +53,14 @@ VALID_OVERRIDE_BUCKETS = {
     "unknown_needs_review",
 }
 BASELINE_PARAGRAPH_MERGE_POLICY = "v1_consecutive_lines"
-ACTIVE_PARAGRAPH_MERGE_POLICY = "v2_paragraph_break_guarded"
-VALID_PARAGRAPH_MERGE_POLICIES = {BASELINE_PARAGRAPH_MERGE_POLICY, ACTIVE_PARAGRAPH_MERGE_POLICY}
+PARAGRAPH_BREAK_GUARDED_POLICY = "v2_paragraph_break_guarded"
+CROSS_PAGE_CONTINUATION_POLICY = "v2_cross_page_continuation"
+ACTIVE_PARAGRAPH_MERGE_POLICY = CROSS_PAGE_CONTINUATION_POLICY
+VALID_PARAGRAPH_MERGE_POLICIES = {
+    BASELINE_PARAGRAPH_MERGE_POLICY,
+    PARAGRAPH_BREAK_GUARDED_POLICY,
+    CROSS_PAGE_CONTINUATION_POLICY,
+}
 REQUIRED_OVERRIDE_FIELDS = {
     "object_id",
     "original_bucket",
@@ -422,7 +428,7 @@ def build_segmented_objects(
         if line_type == "paragraph_line":
             if paragraph_buffer and starts_new_indented_paragraph(record, left_margin):
                 flush_paragraph()
-            elif paragraph_merge_policy == ACTIVE_PARAGRAPH_MERGE_POLICY:
+            elif paragraph_merge_policy == PARAGRAPH_BREAK_GUARDED_POLICY:
                 split_reason = paragraph_break_guarded_split_reason(paragraph_buffer, record, left_margin)
                 if split_reason:
                     paragraph_buffer[-1].setdefault("cleanup_operations", []).append(split_reason)
@@ -481,6 +487,202 @@ def build_segmented_objects(
         append_cleanup_entries(object_id, operations, raw_line, cleaned_text)
     flush_paragraph()
     return layout_objects, clean_objects, cleanup_log
+
+
+def looks_like_running_page_furniture(layout: dict[str, Any]) -> bool:
+    text = normalized_object_text(str(layout.get("raw_text", "")))
+    bbox = layout.get("bbox") or {}
+    top = bbox.get("top")
+    if top is not None and float(top) <= 60:
+        return True
+    return bool(re.search(r"\b(narrative|life of frederick douglass)\b", text))
+
+
+def intervening_structure_before_first_paragraph(page_objects: list[dict[str, Any]], first_paragraph: dict[str, Any]) -> list[dict[str, Any]]:
+    blockers = []
+    for row in page_objects:
+        if row.get("object_id") == first_paragraph.get("object_id"):
+            break
+        if row.get("object_type") == "paragraph":
+            continue
+        if looks_like_running_page_furniture(row):
+            continue
+        blockers.append(row)
+    return blockers
+
+
+def paragraph_text_looks_incomplete(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if stripped[-1] not in TERMINAL_PUNCTUATION:
+        return True
+    return bool(re.search(r"\b(and|or|than|to|of|with|from|for|in|by|the|a|an|new|must|enough)$", stripped, re.IGNORECASE))
+
+
+def paragraph_text_looks_like_continuation(text: str) -> bool:
+    stripped = text.lstrip()
+    if not stripped:
+        return False
+    if stripped[0].islower():
+        return True
+    if stripped[0] in ",;:)]}”’":
+        return True
+    first_token = stripped.split()[0].strip(".,;:!?\"“”‘’")
+    return first_token.istitle() and len(first_token) <= 12
+
+
+def combine_bbox_for_cross_page(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    first_bbox = first.get("bbox") or {}
+    second_bbox = second.get("bbox") or {}
+    x0_values = [value for value in [first_bbox.get("x0"), second_bbox.get("x0")] if value is not None]
+    x1_values = [value for value in [first_bbox.get("x1"), second_bbox.get("x1")] if value is not None]
+    return {
+        "x0": min(x0_values) if x0_values else None,
+        "x1": max(x1_values) if x1_values else None,
+        "top": first_bbox.get("top"),
+        "bottom": second_bbox.get("bottom"),
+        "cross_page": True,
+        "page_numbers": [first.get("page_number"), second.get("page_number")],
+    }
+
+
+def apply_cross_page_continuation_experiment(
+    layout_objects: list[dict[str, Any]],
+    clean_objects: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    clean_by_id = {row["object_id"]: row for row in clean_objects}
+    by_page: dict[int, list[dict[str, Any]]] = {}
+    for row in layout_objects:
+        by_page.setdefault(int(row.get("page_number") or 0), []).append(row)
+    for rows in by_page.values():
+        rows.sort(key=lambda row: int(row.get("object_index") or 0))
+
+    skipped_ids: set[str] = set()
+    merged_by_first_id: dict[str, tuple[dict[str, Any], dict[str, Any], str]] = {}
+    joined_examples = []
+    rejected_examples = []
+
+    for page_number in sorted(by_page):
+        next_page = page_number + 1
+        if next_page not in by_page:
+            continue
+        current_paragraphs = [row for row in by_page[page_number] if row.get("object_type") == "paragraph"]
+        next_paragraphs = [row for row in by_page[next_page] if row.get("object_type") == "paragraph"]
+        if not current_paragraphs or not next_paragraphs:
+            continue
+        first = current_paragraphs[-1]
+        second = next_paragraphs[0]
+        if first.get("object_id") in skipped_ids or second.get("object_id") in skipped_ids:
+            continue
+        first_clean = str(clean_by_id.get(first["object_id"], {}).get("clean_text", ""))
+        second_clean = str(clean_by_id.get(second["object_id"], {}).get("clean_text", ""))
+        blockers = intervening_structure_before_first_paragraph(by_page[next_page], second)
+        previous_incomplete = paragraph_text_looks_incomplete(first_clean)
+        next_continuation = paragraph_text_looks_like_continuation(second_clean)
+        no_structure = not blockers
+        reasons = []
+        if previous_incomplete:
+            reasons.append("previous_page_last_paragraph_incomplete")
+        if next_continuation:
+            reasons.append("next_page_first_paragraph_looks_like_continuation")
+        if no_structure:
+            reasons.append("no_intervening_structure_candidate")
+
+        if previous_incomplete and next_continuation and no_structure:
+            merged_by_first_id[first["object_id"]] = (first, second, ";".join(reasons))
+            skipped_ids.add(second["object_id"])
+            joined_examples.append(
+                {
+                    "first_object_id": first.get("object_id"),
+                    "second_object_id": second.get("object_id"),
+                    "pages": [page_number, next_page],
+                    "source_line_count": len(first.get("source_line_ids", [])) + len(second.get("source_line_ids", [])),
+                    "join_reasons": reasons,
+                    "first_text_end": first_clean[-160:],
+                    "second_text_start": second_clean[:160],
+                }
+            )
+        else:
+            rejected_examples.append(
+                {
+                    "first_object_id": first.get("object_id"),
+                    "second_object_id": second.get("object_id"),
+                    "pages": [page_number, next_page],
+                    "reasons_present": reasons,
+                    "rejection_reasons": [
+                        reason
+                        for condition, reason in [
+                            (previous_incomplete, "previous_page_last_paragraph_appears_complete"),
+                            (next_continuation, "next_page_first_paragraph_does_not_look_like_continuation"),
+                            (no_structure, "intervening_structure_candidate_present"),
+                        ]
+                        if not condition
+                    ],
+                    "intervening_structure_object_ids": [row.get("object_id") for row in blockers],
+                    "first_text_end": first_clean[-120:],
+                    "second_text_start": second_clean[:120],
+                }
+            )
+
+    merged_layout: list[dict[str, Any]] = []
+    merged_clean: list[dict[str, Any]] = []
+    for row in layout_objects:
+        object_id = row["object_id"]
+        if object_id in skipped_ids:
+            continue
+        if object_id in merged_by_first_id:
+            first, second, reason = merged_by_first_id[object_id]
+            first_clean = clean_by_id[first["object_id"]]
+            second_clean = clean_by_id[second["object_id"]]
+            merged_id = f"{first['object_id']}__xpage__{second['object_id'].split(':')[-1]}"
+            source_object_ids = (first.get("source_object_ids") or [first["object_id"]]) + (second.get("source_object_ids") or [second["object_id"]])
+            source_line_ids = list(first.get("source_line_ids", [])) + list(second.get("source_line_ids", []))
+            source_line_indexes = list(first.get("source_line_indexes", [])) + list(second.get("source_line_indexes", []))
+            raw_text = f"{first.get('raw_text', '').rstrip()}\n{second.get('raw_text', '').lstrip()}"
+            clean_text = f"{first_clean.get('clean_text', '').rstrip()} {second_clean.get('clean_text', '').lstrip()}".strip()
+            operations = list(
+                dict.fromkeys(
+                    list(first_clean.get("cleanup_operations", []))
+                    + list(second_clean.get("cleanup_operations", []))
+                    + ["cross_page_paragraph_continuation_join"]
+                )
+            )
+            merged_layout.append(
+                {
+                    **first,
+                    "object_id": merged_id,
+                    "source_object_ids": source_object_ids,
+                    "source_line_ids": source_line_ids,
+                    "source_line_indexes": source_line_indexes,
+                    "bbox": combine_bbox_for_cross_page(first, second),
+                    "raw_text": raw_text,
+                    "classification_reasons": list(
+                        dict.fromkeys(
+                            list(first.get("classification_reasons", []))
+                            + ["paragraph_merge_policy:v2_cross_page_continuation", reason]
+                        )
+                    ),
+                }
+            )
+            merged_clean.append(
+                {
+                    **first_clean,
+                    "object_id": merged_id,
+                    "clean_text": clean_text,
+                    "cleanup_operations": operations,
+                }
+            )
+            continue
+        merged_layout.append(row)
+        merged_clean.append(clean_by_id[object_id])
+
+    return merged_layout, merged_clean, {
+        "joined_cross_page_paragraphs": joined_examples,
+        "rejected_cross_page_candidates": rejected_examples,
+        "joined_count": len(joined_examples),
+        "rejected_count": len(rejected_examples),
+    }
 
 
 def page_status(text: str, image_count: int) -> str:
@@ -743,7 +945,7 @@ def build_reconstruction_streams(
             "run_id": run_id,
             "object_id": object_id,
             "page_number": page_number,
-            "source_object_ids": [object_id],
+            "source_object_ids": layout.get("source_object_ids") or [object_id],
             "source_line_ids": layout.get("source_line_ids", []),
             "source_line_indexes": layout.get("source_line_indexes", []),
             "bbox": layout.get("bbox"),
@@ -1597,6 +1799,7 @@ def paragraph_policy_evaluation(
         book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
     )
     review_report = review_canonical_paragraphs(book_id, run_id, canonical_paragraphs, page_heights_by_page)
+    gold_evaluation_report = evaluate_gold_reviews(book_id, run_id, main_paragraphs, structure, page_artifacts, unknown)
     return {
         "main_paragraphs": main_paragraphs,
         "structure": structure,
@@ -1607,6 +1810,7 @@ def paragraph_policy_evaluation(
         "promotion_blockers": promotion_blockers,
         "promotion_report": promotion_report,
         "review_report": review_report,
+        "gold_evaluation_report": gold_evaluation_report,
     }
 
 
@@ -1641,7 +1845,9 @@ def build_paragraph_merge_experiment_report(
     run_id: str,
     baseline: dict[str, Any],
     active: dict[str, Any],
+    experiment_details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    experiment_details = experiment_details or {}
     baseline_paragraphs = baseline["main_paragraphs"]
     active_paragraphs = active["main_paragraphs"]
     active_by_page: dict[int, list[dict[str, Any]]] = {}
@@ -1688,6 +1894,12 @@ def build_paragraph_merge_experiment_report(
 
     baseline_review = baseline["review_report"]
     active_review = active["review_report"]
+    baseline_gold = baseline.get("gold_evaluation_report", {})
+    active_gold = active.get("gold_evaluation_report", {})
+    baseline_gold_counts = baseline_gold.get("counts", {})
+    active_gold_counts = active_gold.get("counts", {})
+    baseline_gold_scores = baseline_gold.get("scores", {})
+    active_gold_scores = active_gold.get("scores", {})
     baseline_promotion_counts = baseline["promotion_report"].get("counts", {})
     active_promotion_counts = active["promotion_report"].get("counts", {})
     baseline_review_counts = baseline_review.get("counts", {})
@@ -1698,30 +1910,45 @@ def build_paragraph_merge_experiment_report(
     active_taxonomy_counts = taxonomy_counts_for_review(active["canonical_paragraphs"], active_review)
     baseline_bbox_span = (baseline_review.get("bbox_span_risk_summary") or {}).get("total", 0)
     active_bbox_span = (active_review.get("bbox_span_risk_summary") or {}).get("total", 0)
-    improved = (
-        active_true_merges < baseline_true_merges
-        and active_taxonomy_counts.get("merged_across_paragraph_break", 0) < baseline_taxonomy_counts.get("merged_across_paragraph_break", 0)
-        and active_bbox_span <= baseline_bbox_span
-        and len(oversplit_examples) <= max(3, len(split_examples) // 4)
+    baseline_precision = baseline_gold_scores.get("paragraph_precision")
+    active_precision = active_gold_scores.get("paragraph_precision")
+    baseline_recall = baseline_gold_scores.get("paragraph_recall")
+    active_recall = active_gold_scores.get("paragraph_recall")
+    gold_score_improved = (
+        isinstance(active_precision, (int, float))
+        and isinstance(baseline_precision, (int, float))
+        and isinstance(active_recall, (int, float))
+        and isinstance(baseline_recall, (int, float))
+        and active_precision > baseline_precision
+        and active_recall > baseline_recall
     )
-    worsened = active_true_merges > baseline_true_merges or active_bbox_span > baseline_bbox_span
+    over_splits_decreased = active_gold_counts.get("over_split_paragraphs", 0) < baseline_gold_counts.get("over_split_paragraphs", 0)
+    over_merges_not_increased = active_gold_counts.get("over_merged_paragraphs", 0) <= baseline_gold_counts.get("over_merged_paragraphs", 0)
+    warning_regression = active_review_counts.get("warning_count", 0) > baseline_review_counts.get("warning_count", 0) + 5
+    bbox_regression = active_bbox_span > baseline_bbox_span + 5
+    improved = gold_score_improved and over_splits_decreased and over_merges_not_increased and not warning_regression and not bbox_regression
+    worsened = (
+        active_gold_counts.get("over_merged_paragraphs", 0) > baseline_gold_counts.get("over_merged_paragraphs", 0)
+        or warning_regression
+        or bbox_regression
+    )
     experiment_outcome = (
-        "new_policy_improved_risk"
+        "new_policy_improved_gold_score"
         if improved
-        else "new_policy_not_adopted_risk_increased"
+        else "new_policy_not_adopted_gold_or_safety_regression"
         if worsened
-        else "new_policy_not_adopted_no_risk_reduction"
+        else "new_policy_not_adopted_insufficient_gold_improvement"
     )
     experiment_recommendation = (
-        "review_split_examples_then_consider_narrow_adoption"
-        if experiment_outcome == "new_policy_improved_risk"
-        else "do_not_adopt_guarded_policy_yet_refine_split_conditions"
+        "review_join_examples_then_consider_narrow_adoption"
+        if experiment_outcome == "new_policy_improved_gold_score"
+        else "do_not_adopt_cross_page_policy_yet_refine_continuation_conditions"
     )
     report = {
         "book_id": book_id,
         "run_id": run_id,
         "created_at": utc_now(),
-        "experiment": "paragraph_merge_policy_v2_paragraph_break_guarded",
+        "experiment": f"paragraph_merge_policy_{ACTIVE_PARAGRAPH_MERGE_POLICY}",
         "baseline_paragraph_merge_policy": BASELINE_PARAGRAPH_MERGE_POLICY,
         "new_paragraph_merge_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
         "scope": "deterministic_paragraph_merge_policy_experiment_only",
@@ -1744,6 +1971,33 @@ def build_paragraph_merge_experiment_report(
             "new_blocked_paragraph_count": active_promotion_counts.get("paragraph_candidates_blocked", 0),
             "split_example_count": len(split_examples),
             "possible_oversplitting_risk_count": len(oversplit_examples),
+            "baseline_gold_matched_paragraphs": baseline_gold_counts.get("matched_paragraphs", 0),
+            "new_gold_matched_paragraphs": active_gold_counts.get("matched_paragraphs", 0),
+            "baseline_gold_over_split_paragraphs": baseline_gold_counts.get("over_split_paragraphs", 0),
+            "new_gold_over_split_paragraphs": active_gold_counts.get("over_split_paragraphs", 0),
+            "baseline_gold_over_merged_paragraphs": baseline_gold_counts.get("over_merged_paragraphs", 0),
+            "new_gold_over_merged_paragraphs": active_gold_counts.get("over_merged_paragraphs", 0),
+            "baseline_gold_missing_paragraphs": baseline_gold_counts.get("missing_paragraphs", 0),
+            "new_gold_missing_paragraphs": active_gold_counts.get("missing_paragraphs", 0),
+            "cross_page_join_count": experiment_details.get("joined_count", 0),
+            "cross_page_rejected_count": experiment_details.get("rejected_count", 0),
+        },
+        "gold_scores": {
+            "baseline_paragraph_precision": baseline_precision,
+            "new_paragraph_precision": active_precision,
+            "baseline_paragraph_recall": baseline_recall,
+            "new_paragraph_recall": active_recall,
+            "baseline_object_label_accuracy": baseline_gold_scores.get("object_label_accuracy"),
+            "new_object_label_accuracy": active_gold_scores.get("object_label_accuracy"),
+            "sufficient_to_judge_policy": bool(baseline_gold.get("sufficient_to_judge_merge_policy_adoption")),
+        },
+        "acceptance_rule": {
+            "gold_score_improved": gold_score_improved,
+            "over_splits_decreased": over_splits_decreased,
+            "over_merges_not_increased": over_merges_not_increased,
+            "audit_warning_regression": warning_regression,
+            "bbox_span_regression": bbox_regression,
+            "adoptable": improved,
         },
         "taxonomy_counts": {
             "baseline": dict(sorted(baseline_taxonomy_counts.items())),
@@ -1762,6 +2016,8 @@ def build_paragraph_merge_experiment_report(
         },
         "examples_of_paragraphs_split_by_new_policy": split_examples[:30],
         "examples_of_possible_oversplitting_risk": oversplit_examples[:30],
+        "examples_of_joined_cross_page_paragraphs": (experiment_details.get("joined_cross_page_paragraphs") or [])[:30],
+        "examples_of_rejected_cross_page_candidates": (experiment_details.get("rejected_cross_page_candidates") or [])[:30],
     }
     return report
 
@@ -1897,7 +2153,11 @@ def evaluate_gold_reviews(
     label_rows = read_jsonl(gold_labels_path) if gold_labels_path.exists() else []
 
     candidate_rows = main_paragraphs + structure + page_artifacts + unknown
-    candidate_by_object_id = {row.get("object_id"): row for row in candidate_rows}
+    candidate_by_object_id = {}
+    for row in candidate_rows:
+        candidate_by_object_id[row.get("object_id")] = row
+        for source_object_id in row.get("source_object_ids", []):
+            candidate_by_object_id.setdefault(source_object_id, row)
     paragraph_line_sets = [
         {
             "object_id": row.get("object_id"),
@@ -2434,6 +2694,8 @@ def build_audit_html(
 
     merge_experiment_counts = paragraph_merge_experiment_report.get("counts") or {}
     merge_experiment_safety = paragraph_merge_experiment_report.get("downstream_safety") or {}
+    merge_experiment_gold_scores = paragraph_merge_experiment_report.get("gold_scores") or {}
+    merge_experiment_acceptance = paragraph_merge_experiment_report.get("acceptance_rule") or {}
     merge_split_rows = "\n".join(
         "<tr>"
         f"<td><code>{esc(row.get('baseline_object_id'))}</code></td>"
@@ -2454,6 +2716,30 @@ def build_audit_html(
         f"<td>{esc(' | '.join(str(child.get('text_preview', '')) for child in row.get('new_paragraphs', [])))}</td>"
         "</tr>"
         for row in (paragraph_merge_experiment_report.get("examples_of_possible_oversplitting_risk") or [])[:20]
+    )
+    merge_join_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('first_object_id'))}</code></td>"
+        f"<td><code>{esc(row.get('second_object_id'))}</code></td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('pages', [])))}</td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(', '.join(row.get('join_reasons', [])))}</td>"
+        f"<td>{esc(row.get('first_text_end', ''))}</td>"
+        f"<td>{esc(row.get('second_text_start', ''))}</td>"
+        "</tr>"
+        for row in (paragraph_merge_experiment_report.get("examples_of_joined_cross_page_paragraphs") or [])[:20]
+    )
+    merge_rejected_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('first_object_id'))}</code></td>"
+        f"<td><code>{esc(row.get('second_object_id'))}</code></td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('pages', [])))}</td>"
+        f"<td>{esc(', '.join(row.get('rejection_reasons', [])))}</td>"
+        f"<td>{esc(', '.join(str(item) for item in row.get('intervening_structure_object_ids', [])))}</td>"
+        f"<td>{esc(row.get('first_text_end', ''))}</td>"
+        f"<td>{esc(row.get('second_text_start', ''))}</td>"
+        "</tr>"
+        for row in (paragraph_merge_experiment_report.get("examples_of_rejected_cross_page_candidates") or [])[:20]
     )
     merge_taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary") or {}
     merge_taxonomy_category_items = "\n".join(
@@ -2770,7 +3056,7 @@ def build_audit_html(
 
   <h2>Paragraph Merge Experiment</h2>
   <div class="rule">
-    This compares the baseline paragraph merge policy with the active guarded policy. It is a
+    This compares the baseline paragraph merge policy with the active experimental policy. It is a
     deterministic correction experiment; OCR, AI review, retrieval, graph work, and structure
     promotion are still excluded.
   </div>
@@ -2792,9 +3078,34 @@ def build_audit_html(
     <li>New merged across large vertical whitespace: <code>{esc(merge_experiment_counts.get('new_merged_across_large_vertical_whitespace_count', 0))}</code></li>
     <li>Baseline blocked paragraphs: <code>{esc(merge_experiment_counts.get('baseline_blocked_paragraph_count', 0))}</code></li>
     <li>New blocked paragraphs: <code>{esc(merge_experiment_counts.get('new_blocked_paragraph_count', 0))}</code></li>
+    <li>Baseline gold paragraph precision: <code>{esc(fmt_decimal(merge_experiment_gold_scores.get('baseline_paragraph_precision'), 3))}</code></li>
+    <li>New gold paragraph precision: <code>{esc(fmt_decimal(merge_experiment_gold_scores.get('new_paragraph_precision'), 3))}</code></li>
+    <li>Baseline gold paragraph recall: <code>{esc(fmt_decimal(merge_experiment_gold_scores.get('baseline_paragraph_recall'), 3))}</code></li>
+    <li>New gold paragraph recall: <code>{esc(fmt_decimal(merge_experiment_gold_scores.get('new_paragraph_recall'), 3))}</code></li>
+    <li>Baseline gold over-split paragraphs: <code>{esc(merge_experiment_counts.get('baseline_gold_over_split_paragraphs', 0))}</code></li>
+    <li>New gold over-split paragraphs: <code>{esc(merge_experiment_counts.get('new_gold_over_split_paragraphs', 0))}</code></li>
+    <li>Baseline gold over-merged paragraphs: <code>{esc(merge_experiment_counts.get('baseline_gold_over_merged_paragraphs', 0))}</code></li>
+    <li>New gold over-merged paragraphs: <code>{esc(merge_experiment_counts.get('new_gold_over_merged_paragraphs', 0))}</code></li>
+    <li>Cross-page joins: <code>{esc(merge_experiment_counts.get('cross_page_join_count', 0))}</code></li>
+    <li>Cross-page rejected candidates: <code>{esc(merge_experiment_counts.get('cross_page_rejected_count', 0))}</code></li>
+    <li>Acceptance adoptable: <code>{esc(merge_experiment_acceptance.get('adoptable', False))}</code></li>
     <li>Possible oversplitting risks: <code>{esc(merge_experiment_counts.get('possible_oversplitting_risk_count', 0))}</code></li>
     <li>Recommendation: <code>{esc(merge_experiment_safety.get('recommendation', '-'))}</code></li>
   </ul>
+  <h3>Joined Cross-Page Paragraphs</h3>
+  <table>
+    <thead>
+      <tr><th>First Object</th><th>Second Object</th><th>Pages</th><th>Lines</th><th>Reasons</th><th>First End</th><th>Second Start</th></tr>
+    </thead>
+    <tbody>{merge_join_rows or '<tr><td colspan="7">No cross-page joins recorded.</td></tr>'}</tbody>
+  </table>
+  <h3>Rejected Cross-Page Candidates</h3>
+  <table>
+    <thead>
+      <tr><th>First Object</th><th>Second Object</th><th>Pages</th><th>Rejection Reasons</th><th>Intervening Structure</th><th>First End</th><th>Second Start</th></tr>
+    </thead>
+    <tbody>{merge_rejected_rows or '<tr><td colspan="7">No rejected cross-page candidates recorded.</td></tr>'}</tbody>
+  </table>
   <h3>Paragraphs Split By New Policy</h3>
   <table>
     <thead>
@@ -3529,6 +3840,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     experimental_layout_objects: list[dict[str, Any]] = []
     experimental_clean_objects: list[dict[str, Any]] = []
     experimental_cleanup_log: list[dict[str, Any]] = []
+    cross_page_experiment_details: dict[str, Any] = {}
 
     with pdfplumber.open(str(pdf_path)) as pdf:
         page_count = len(pdf.pages)
@@ -3576,6 +3888,11 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             experimental_layout_objects.extend(page_experimental_layout)
             experimental_clean_objects.extend(page_experimental_clean)
             experimental_cleanup_log.extend(page_experimental_cleanup)
+    if ACTIVE_PARAGRAPH_MERGE_POLICY == CROSS_PAGE_CONTINUATION_POLICY:
+        experimental_layout_objects, experimental_clean_objects, cross_page_experiment_details = apply_cross_page_continuation_experiment(
+            experimental_layout_objects,
+            experimental_clean_objects,
+        )
     page_images = render_page_images(pdf_path, output_dir)
 
     manifest = {
@@ -3646,14 +3963,12 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     canonical_promotion_report = baseline_evaluation["promotion_report"]
     canonical_paragraph_review_report = baseline_evaluation["review_report"]
     paragraph_merge_experiment_report = build_paragraph_merge_experiment_report(
-        book_id, run_id, baseline_evaluation, experimental_evaluation
+        book_id, run_id, baseline_evaluation, experimental_evaluation, cross_page_experiment_details
     )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
-    gold_evaluation_report = evaluate_gold_reviews(
-        book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
-    )
+    gold_evaluation_report = baseline_evaluation["gold_evaluation_report"]
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
         "structure_candidates": len(structure),

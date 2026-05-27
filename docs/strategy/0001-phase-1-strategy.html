@@ -105,6 +105,7 @@
     <li>When a merge experiment fails, sample and classify failure patterns before attempting another merge-policy correction.</li>
     <li>A paragraph-break experiment must reduce likely true accidental merges and paragraph-break taxonomy counts without unacceptable over-splitting before adoption.</li>
     <li>No paragraph merge policy may become active from heuristic warning improvement alone; it must improve against authoritative gold review rows and preserve audit safety metrics.</li>
+    <li>When gold rows show cross-page over-splitting, test cross-page continuation as a narrow experiment and review joined examples before adoption.</li>
     <li>Use <code>safe_for_downstream</code> as a gate signal before retrieval, embeddings, reasoning, or graph work.</li>
   </ol>
 
@@ -121,6 +122,21 @@
     <li><code>gold_object_labels.jsonl</code> records expected labels for selected objects.</li>
     <li><code>gold_review_instructions.html</code> explains how to inspect the audit and author rows without guessing.</li>
     <li>Seed rows are excluded from scoring until explicitly marked authoritative after review.</li>
+  </ol>
+
+  <h2>Cross-Page Continuation Experiment</h2>
+  <p>
+    The first authoritative gold set showed that reviewed object labels were correct, while paragraph
+    boundaries failed where one logical paragraph crossed a page break. The
+    <code>v2_cross_page_continuation</code> experiment targets that specific failure by joining the
+    last body paragraph candidate on page <code>N</code> with the first body paragraph candidate on
+    page <code>N+1</code> only when deterministic continuation evidence is present and no structure
+    boundary intervenes.
+  </p>
+  <ol>
+    <li>The active canonical extraction policy remains <code>v1_consecutive_lines</code> until adoption is explicit.</li>
+    <li>Experiment reports must compare gold precision, recall, over-splits, over-merges, warning counts, and joined examples.</li>
+    <li>A cross-page policy can only be adopted after reviewing joined examples and confirming no material audit-safety regression.</li>
   </ol>
 
   <h2>Page Furniture Detection</h2>
