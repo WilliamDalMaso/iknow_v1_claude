@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = ROOT / "data" / "runs"
 CID_PATTERN = re.compile(r"\(cid:\d+\)")
 ROMAN_PATTERN = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
+TEXT_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 REQUIRED_ARTIFACTS = [
     "source_manifest.json",
     "page_inventory.jsonl",
@@ -77,6 +78,23 @@ def clean_line(raw: str) -> tuple[str, list[str]]:
     if CID_PATTERN.search(text):
         operations.append("flag_cid_noise")
     return text, operations
+
+
+def normalized_object_text(text: str) -> str:
+    return " ".join(TEXT_TOKEN_PATTERN.findall(text.lower()))
+
+
+def is_page_number_token(value: str) -> bool:
+    return value.isdigit() or bool(ROMAN_PATTERN.fullmatch(value))
+
+
+def normalized_furniture_text(text: str) -> str:
+    tokens = normalized_object_text(text).split()
+    if len(tokens) > 1 and is_page_number_token(tokens[0]):
+        tokens = tokens[1:]
+    if len(tokens) > 1 and is_page_number_token(tokens[-1]):
+        tokens = tokens[:-1]
+    return " ".join(tokens)
 
 
 def classify_line(line: str, page_number: int) -> tuple[str, float, list[str]]:
@@ -322,23 +340,180 @@ def confidence_for_paragraph(clean_text: str, classification_reasons: list[str])
     return max(0.0, round(confidence, 2)), warnings
 
 
-def classify_stream_object(layout: dict[str, Any], clean: dict[str, Any]) -> tuple[str, str, float, list[str]]:
+def page_height(inventory_by_page: dict[int, dict[str, Any]], page_number: int) -> float | None:
+    page = inventory_by_page.get(page_number)
+    if not page:
+        return None
+    height = page.get("height")
+    return float(height) if height is not None else None
+
+
+def object_margin_zone(layout: dict[str, Any], height: float | None) -> str | None:
+    if height is None:
+        return None
+    bbox = layout.get("bbox") or {}
+    top = bbox.get("top")
+    bottom = bbox.get("bottom")
+    if top is not None and float(top) / height <= 0.12:
+        return "top"
+    if bottom is not None and float(bottom) / height >= 0.88:
+        return "bottom"
+    return None
+
+
+def top_position_bucket(layout: dict[str, Any]) -> int | None:
+    bbox = layout.get("bbox") or {}
+    top = bbox.get("top")
+    if top is None:
+        return None
+    return round(float(top) / 8) * 8
+
+
+def page_number_attached_to_text(raw_text: str) -> bool:
+    normalized = normalized_object_text(raw_text)
+    stripped = normalized_furniture_text(raw_text)
+    return bool(normalized and stripped and normalized != stripped)
+
+
+def build_page_furniture_profiles(
+    layout_objects: list[dict[str, Any]],
+    clean_objects: list[dict[str, Any]],
+    inventory: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    clean_by_id = {row["object_id"]: row for row in clean_objects}
+    inventory_by_page = {int(row["page_number"]): row for row in inventory}
+    repeated_pages: dict[str, set[int]] = {}
+    repeated_position_pages: dict[tuple[str, str | None, int | None], set[int]] = {}
+    object_evidence: dict[str, dict[str, Any]] = {}
+
+    for layout in layout_objects:
+        object_id = layout["object_id"]
+        clean_text = str(clean_by_id[object_id].get("clean_text", ""))
+        page_number = int(layout["page_number"])
+        normalized = normalized_object_text(clean_text)
+        furniture_text = normalized_furniture_text(clean_text)
+        height = page_height(inventory_by_page, page_number)
+        zone = object_margin_zone(layout, height)
+        position_bucket = top_position_bucket(layout)
+        word_count = len(clean_text.split())
+        object_evidence[object_id] = {
+            "normalized_text": normalized,
+            "normalized_furniture_text": furniture_text,
+            "margin_zone": zone,
+            "position_bucket": position_bucket,
+            "word_count": word_count,
+            "short_text": word_count <= 10 and len(clean_text) <= 90,
+            "page_number_attached_to_text": page_number_attached_to_text(clean_text),
+        }
+        if furniture_text:
+            repeated_pages.setdefault(furniture_text, set()).add(page_number)
+            repeated_position_pages.setdefault((furniture_text, zone, position_bucket), set()).add(page_number)
+
+    profiles: dict[str, dict[str, Any]] = {}
+    for layout in layout_objects:
+        object_id = layout["object_id"]
+        evidence = object_evidence[object_id]
+        furniture_text = evidence["normalized_furniture_text"]
+        page_repeat_count = len(repeated_pages.get(furniture_text, set()))
+        position_repeat_count = len(
+            repeated_position_pages.get((furniture_text, evidence["margin_zone"], evidence["position_bucket"]), set())
+        )
+        reasons: list[str] = []
+        warnings: list[str] = ["candidate_only_page_furniture_detection"]
+        artifact_subtype = None
+        confidence = 0.0
+        object_type = layout.get("object_type")
+        clean_text = str(clean_by_id[object_id].get("clean_text", ""))
+
+        if object_type == "page_artifact":
+            artifact_subtype = "page_number_candidate" if is_page_number_token(normalized_object_text(clean_text)) else "preexisting_page_artifact_candidate"
+            confidence = 0.72
+            reasons.append("preexisting_page_artifact_classification")
+        elif (
+            object_type == "heading_candidate"
+            and evidence["margin_zone"] in {"top", "bottom"}
+            and evidence["short_text"]
+            and page_repeat_count >= 3
+            and position_repeat_count >= 2
+        ):
+            artifact_subtype = "running_header_candidate" if evidence["margin_zone"] == "top" else "running_footer_candidate"
+            confidence = 0.9 if page_repeat_count >= 8 else 0.82
+            reasons.extend(
+                [
+                    f"normalized_furniture_text_repeats_on_{page_repeat_count}_pages",
+                    f"same_margin_position_repeats_on_{position_repeat_count}_pages",
+                    f"{evidence['margin_zone']}_margin",
+                    "short_text",
+                ]
+            )
+            if evidence["page_number_attached_to_text"]:
+                reasons.append("page_number_attached_to_repeated_text")
+        elif (
+            object_type == "heading_candidate"
+            and evidence["margin_zone"] in {"top", "bottom"}
+            and evidence["short_text"]
+            and evidence["page_number_attached_to_text"]
+            and page_repeat_count >= 2
+        ):
+            artifact_subtype = "page_number_plus_running_title_candidate"
+            confidence = 0.78
+            reasons.extend(
+                [
+                    f"normalized_furniture_text_repeats_on_{page_repeat_count}_pages",
+                    "page_number_attached_to_repeated_text",
+                    f"{evidence['margin_zone']}_margin",
+                    "short_text",
+                ]
+            )
+
+        profiles[object_id] = {
+            **evidence,
+            "repeat_page_count": page_repeat_count,
+            "repeat_position_page_count": position_repeat_count,
+            "artifact_subtype": artifact_subtype,
+            "artifact_confidence": round(confidence, 2),
+            "classification_reasons": reasons,
+            "warnings": warnings if artifact_subtype else [],
+        }
+    return profiles
+
+
+def classify_stream_object(
+    layout: dict[str, Any],
+    clean: dict[str, Any],
+    furniture_profile: dict[str, Any] | None = None,
+) -> tuple[str, str, float, list[str], dict[str, Any]]:
     object_type = layout.get("object_type")
     clean_text = str(clean.get("clean_text", ""))
     reasons = list(layout.get("classification_reasons", []))
+    if furniture_profile and furniture_profile.get("artifact_subtype"):
+        confidence = max(float(layout.get("confidence", 0.6)), float(furniture_profile["artifact_confidence"]))
+        warnings = furniture_profile.get("warnings", [])
+        extra = {
+            "artifact_subtype": furniture_profile["artifact_subtype"],
+            "furniture_evidence": {
+                "normalized_furniture_text": furniture_profile.get("normalized_furniture_text"),
+                "margin_zone": furniture_profile.get("margin_zone"),
+                "repeat_page_count": furniture_profile.get("repeat_page_count"),
+                "repeat_position_page_count": furniture_profile.get("repeat_position_page_count"),
+                "position_bucket": furniture_profile.get("position_bucket"),
+            },
+            "classification_reasons": furniture_profile.get("classification_reasons", []),
+        }
+        return "page_artifact", "page_artifact_candidate", round(confidence, 2), warnings, extra
     if object_type == "paragraph":
         confidence, warnings = confidence_for_paragraph(clean_text, reasons)
-        return "main_paragraph", "main_paragraph_candidate", confidence, warnings
+        return "main_paragraph", "main_paragraph_candidate", confidence, warnings, {}
     if object_type == "heading_candidate":
         confidence = float(layout.get("confidence", 0.55))
         warnings = ["not_canonical_heading_yet"]
         if CID_PATTERN.search(clean_text):
             warnings.append("cid_noise_detected")
             confidence = min(confidence, 0.4)
-        return "structure", "structure_candidate", round(confidence, 2), warnings
+        return "structure", "structure_candidate", round(confidence, 2), warnings, {}
     if object_type == "page_artifact":
-        return "page_artifact", "page_artifact_candidate", float(layout.get("confidence", 0.6)), reasons
-    return "unknown", "unknown_needs_review", float(layout.get("confidence", 0.3)), reasons or ["unclassified_object"]
+        return "page_artifact", "page_artifact_candidate", float(layout.get("confidence", 0.6)), reasons, {}
+    return "unknown", "unknown_needs_review", float(layout.get("confidence", 0.3)), reasons or ["unclassified_object"], {}
 
 
 def build_reconstruction_streams(
@@ -346,9 +521,11 @@ def build_reconstruction_streams(
     run_id: str,
     layout_objects: list[dict[str, Any]],
     clean_objects: list[dict[str, Any]],
+    inventory: list[dict[str, Any]],
     page_count: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     clean_by_id = {row["object_id"]: row for row in clean_objects}
+    furniture_profiles = build_page_furniture_profiles(layout_objects, clean_objects, inventory)
     main_paragraph_candidates: list[dict[str, Any]] = []
     structure_candidates: list[dict[str, Any]] = []
     page_artifacts_candidates: list[dict[str, Any]] = []
@@ -364,7 +541,9 @@ def build_reconstruction_streams(
         object_id = layout["object_id"]
         clean = clean_by_id[object_id]
         page_number = int(layout["page_number"])
-        stream, stream_type, confidence, warnings = classify_stream_object(layout, clean)
+        stream, stream_type, confidence, warnings, extra = classify_stream_object(layout, clean, furniture_profiles.get(object_id))
+        classification_reasons = list(layout.get("classification_reasons", [])) + list(extra.get("classification_reasons", []))
+        classification_reasons = list(dict.fromkeys(classification_reasons))
         common = {
             "book_id": book_id,
             "run_id": run_id,
@@ -377,6 +556,7 @@ def build_reconstruction_streams(
             "raw_text": layout.get("raw_text", ""),
             "clean_text": clean.get("clean_text", ""),
             "confidence": confidence,
+            "classification_reasons": classification_reasons,
             "warnings": warnings,
         }
         object_to_stream[object_id] = stream
@@ -400,7 +580,7 @@ def build_reconstruction_streams(
                     "structure_type": layout.get("object_type"),
                     **common,
                     "evidence": {
-                        "classification_reasons": layout.get("classification_reasons", []),
+                        "classification_reasons": classification_reasons,
                         "x0": layout.get("x0"),
                         "top": layout.get("top"),
                         "bottom": layout.get("bottom"),
@@ -412,9 +592,10 @@ def build_reconstruction_streams(
             page_artifacts_candidates.append(
                 {
                     "stream_type": stream_type,
-                    "artifact_type": layout.get("object_type"),
+                    "artifact_type": extra.get("artifact_subtype") or layout.get("object_type"),
                     **common,
-                    "reason": ", ".join(layout.get("classification_reasons", [])) or "deterministic_page_artifact_candidate",
+                    "reason": ", ".join(classification_reasons) or "deterministic_page_artifact_candidate",
+                    "furniture_evidence": extra.get("furniture_evidence", {}),
                 }
             )
             artifacts_by_page.setdefault(page_key, []).append(object_id)
@@ -442,7 +623,13 @@ def build_reconstruction_streams(
             "page_artifacts_candidates": len(page_artifacts_candidates),
             "unknown_objects": len(unknown_objects),
         },
+        "artifact_type_counts": dict(sorted(Counter(row.get("artifact_type", "unknown") for row in page_artifacts_candidates).items())),
         "object_to_stream": object_to_stream,
+        "artifact_candidate_object_ids": [row["object_id"] for row in page_artifacts_candidates],
+        "candidate_only_exclusions": {
+            "page_artifact_candidate_object_ids": [row["object_id"] for row in page_artifacts_candidates],
+            "rule": "These objects are excluded from structure candidates only as candidates; no content is deleted.",
+        },
         "paragraphs_by_page": paragraphs_by_page,
         "structure_by_page": structure_by_page,
         "artifacts_by_page": artifacts_by_page,
@@ -569,6 +756,7 @@ def build_audit_html(
                       <p>{esc(candidate.get('clean_text', '') if candidate else '')}</p>
                       <dl>
                         <dt>Confidence</dt><dd><code>{esc(candidate.get('confidence', '-') if candidate else '-')}</code></dd>
+                        <dt>Subtype</dt><dd><code>{esc(candidate.get('artifact_type') or candidate.get('structure_type') or '-')}</code></dd>
                         <dt>Warnings</dt><dd><code>{esc(', '.join(warnings) or '-')}</code></dd>
                         <dt>Reasons</dt><dd><code>{esc(', '.join(reasons) or '-')}</code></dd>
                       </dl>
@@ -617,6 +805,8 @@ def build_audit_html(
     status_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(status_counts.items()))
     object_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(object_counts.items()))
     stream_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(stream_counts.items()))
+    artifact_type_counts = Counter(row.get("artifact_type", "unknown") for row in candidate_rows if row.get("stream_type") == "page_artifact_candidate")
+    artifact_type_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(artifact_type_counts.items()))
     flagged_items = "\n".join(
         f"<li>Page {row['page_number']}: {esc(', '.join(row['review_flags']))}</li>"
         for row in flagged_pages[:40]
@@ -700,6 +890,9 @@ def build_audit_html(
 
   <h2>Reconstruction Stream Counts</h2>
   <ul>{stream_items}</ul>
+
+  <h2>Page Artifact Candidate Types</h2>
+  <ul>{artifact_type_items or '<li>No page artifact candidates.</li>'}</ul>
 
   <h2>Validation</h2>
   <p><strong>Status:</strong> <code>{esc(validation_report.get('status', 'unknown'))}</code></p>
@@ -817,7 +1010,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     }
 
 
-def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v2") -> Path:
+def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     pdf_path = pdf_path.expanduser().resolve()
     if not pdf_path.exists():
         raise FileNotFoundError(pdf_path)
@@ -892,7 +1085,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v2") -> Path:
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
     main_paragraphs, structure, page_artifacts, unknown, reconstruction_map = build_reconstruction_streams(
-        book_id, run_id, layout_objects, clean_objects, page_count
+        book_id, run_id, layout_objects, clean_objects, inventory, page_count
     )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
@@ -900,6 +1093,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v2") -> Path:
         "page_artifacts_candidates": len(page_artifacts),
         "unknown_objects": len(unknown),
     }
+    artifact_type_counts = dict(sorted(Counter(row.get("artifact_type", "unknown") for row in page_artifacts).items()))
     reading_order_candidate = {
         "book_id": book_id,
         "run_id": run_id,
@@ -907,6 +1101,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v2") -> Path:
         "object_count": len(layout_objects),
         "object_type_counts": dict(sorted(object_counts.items())),
         "candidate_stream_counts": stream_counts,
+        "artifact_type_counts": artifact_type_counts,
         "page_count": page_count,
         "object_ids": [row["object_id"] for row in layout_objects],
         "main_paragraph_candidate_ids": [row["paragraph_id"] for row in main_paragraphs],
@@ -965,7 +1160,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run deterministic Phase 1 PDF extraction.")
     parser.add_argument("pdf_path", help="Path to the source PDF.")
     parser.add_argument("--book-id", required=True, help="Stable book id for output paths.")
-    parser.add_argument("--run-id", default="phase1_v2", help="Run id for output paths.")
+    parser.add_argument("--run-id", default="phase1_v3", help="Run id for output paths.")
     return parser.parse_args()
 
 

@@ -72,6 +72,21 @@
     <li><code>reconstruction_map_candidate.json</code> links the candidates back to pages and source objects.</li>
   </ol>
 
+  <h2>Page Furniture Detection</h2>
+  <p>
+    Phase 1 v3 adds candidate-only page furniture detection before any OCR or model review. The
+    purpose is to prevent repeated running titles, page numbers, headers, and footers from being
+    mistaken for book structure. These objects are not deleted; they move into
+    <code>page_artifacts_candidates.jsonl</code> with evidence and remain inspectable in the audit.
+  </p>
+  <ol>
+    <li>Normalize object text and strip attached page-number tokens.</li>
+    <li>Look for repeated normalized furniture text across pages.</li>
+    <li>Require margin position evidence near the top or bottom of the page.</li>
+    <li>Require repeated nearby vertical position for strong running-header/footer candidates.</li>
+    <li>Keep all exclusions candidate-only until audit promotion.</li>
+  </ol>
+
   <h2>First Book Strategy</h2>
   <p>
     We will choose one book and build Phase 1 around it until it passes cleanliness gates. This is intentionally

@@ -80,7 +80,7 @@
       </tr>
       <tr>
         <td><code>page_artifacts_candidates.jsonl</code></td>
-        <td>Likely page numbers, repeated headers, running footers, and other page artifacts.</td>
+        <td>Likely page numbers, repeated headers, running footers, and other page artifacts with subtype, confidence, warnings, source ids, source lines, bounding boxes, and furniture evidence.</td>
         <td>Prevents page artifacts from polluting paragraph retrieval while keeping them inspectable.</td>
       </tr>
       <tr>
@@ -127,6 +127,7 @@
     <li>Heading detections remain <code>structure_candidate</code> rows until audited.</li>
     <li>Every extracted object appears in exactly one candidate bucket unless duplicated only as a linked reference.</li>
     <li>No output is named canonical before audit promotion.</li>
+    <li>Repeated page furniture is detected from deterministic repetition, position, and page-number evidence.</li>
     <li>The audit page lets a reviewer compare raw extracted objects against their candidate bucket assignments.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>

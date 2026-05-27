@@ -15,6 +15,22 @@ from src.phase1_extract import (
 )
 
 
+def inventory_row(page_number: int = 1) -> dict:
+    return {
+        "book_id": "book",
+        "page_number": page_number,
+        "width": 400,
+        "height": 600,
+        "status": "text",
+        "raw_char_count": 32,
+        "line_count": 3,
+        "image_count": 0,
+        "table_count": 0,
+        "review_flags": [],
+        "sample": "sample",
+    }
+
+
 def test_clean_line_flags_cid_noise() -> None:
     text, operations = clean_line("Title (cid:3)  text  ")
     assert text == "Title (cid:3) text"
@@ -93,7 +109,7 @@ def test_build_reconstruction_streams_buckets_every_object_once() -> None:
         ],
     )
     paragraphs, structure, artifacts, unknown, reconstruction_map = build_reconstruction_streams(
-        "book", "phase1_v2", layout, clean, page_count=3
+        "book", "phase1_v3", layout, clean, [inventory_row(3)], page_count=3
     )
     assert len(paragraphs) == 1
     assert len(structure) == 1
@@ -111,6 +127,41 @@ def test_build_reconstruction_streams_buckets_every_object_once() -> None:
     }
 
 
+def test_repeated_margin_heading_becomes_page_artifact_candidate() -> None:
+    layout = []
+    clean = []
+    for page_number, printed_page in [(20, "2"), (22, "4"), (24, "6")]:
+        page_layout, page_clean, _ = build_segmented_objects(
+            "book",
+            page_number,
+            [
+                {"text": f"{printed_page} NARRATIVE OF THE", "x0": 42, "top": 37, "bottom": 49},
+                {"text": "This is a real paragraph line.", "x0": 64, "top": 80, "bottom": 92},
+            ],
+        )
+        layout.extend(page_layout)
+        clean.extend(page_clean)
+
+    paragraphs, structure, artifacts, unknown, reconstruction_map = build_reconstruction_streams(
+        "book",
+        "phase1_v3",
+        layout,
+        clean,
+        [inventory_row(20), inventory_row(22), inventory_row(24)],
+        page_count=24,
+    )
+
+    assert len(paragraphs) == 3
+    assert len(structure) == 0
+    assert len(artifacts) == 3
+    assert unknown == []
+    assert {row["artifact_type"] for row in artifacts} == {"running_header_candidate"}
+    assert all("page_number_attached_to_repeated_text" in row["classification_reasons"] for row in artifacts)
+    assert reconstruction_map["candidate_only_exclusions"]["page_artifact_candidate_object_ids"] == [
+        row["object_id"] for row in artifacts
+    ]
+
+
 def test_build_audit_html_contains_page_object_inspection() -> None:
     layout, clean, _ = build_segmented_objects(
         "book",
@@ -122,7 +173,7 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
         ],
     )
     paragraphs, structure, artifacts, unknown, _ = build_reconstruction_streams(
-        "book", "phase1_v2", layout, clean, page_count=1
+        "book", "phase1_v3", layout, clean, [inventory_row(1)], page_count=1
     )
     stream_samples = {
         "main_paragraph_candidates": paragraphs[:8],

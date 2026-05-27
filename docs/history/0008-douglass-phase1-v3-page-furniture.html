@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Douglass Phase 1 v3 Page Furniture</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 8px 10px; vertical-align: top; }
+    th { background: #ece9df; text-align: left; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Douglass Phase 1 v3 Page Furniture</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    V3 tested whether deterministic evidence can separate repeated page furniture from real book
+    structure. The trigger was the v2 result: only one page artifact candidate across 126 pages,
+    while the audit showed many repeated running headers.
+  </p>
+
+  <div class="rule">
+    Page furniture is excluded only as a candidate. No source content is deleted, and every artifact
+    remains inspectable in <code>phase1_audit.html</code>.
+  </div>
+
+  <h2>Method</h2>
+  <ol>
+    <li>Normalize object text.</li>
+    <li>Strip leading or trailing page-number-like tokens before repetition checks.</li>
+    <li>Require short text near a page margin.</li>
+    <li>Require the normalized furniture text to repeat across pages.</li>
+    <li>Require repeated nearby vertical position for strong running-header candidates.</li>
+    <li>Record artifact subtype, confidence, warnings, classification reasons, and furniture evidence.</li>
+  </ol>
+
+  <h2>Run Summary</h2>
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>v2</th><th>v3</th><th>Interpretation</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Validation status</td><td><code>pass</code></td><td><code>pass</code></td><td>The candidate contract still holds.</td></tr>
+      <tr><td>Main paragraph candidates</td><td><code>352</code></td><td><code>352</code></td><td>Body paragraph stream stayed stable.</td></tr>
+      <tr><td>Structure candidates</td><td><code>163</code></td><td><code>47</code></td><td>Likely running headers moved out of structure.</td></tr>
+      <tr><td>Page artifact candidates</td><td><code>1</code></td><td><code>117</code></td><td>The detector found the repeated page furniture class.</td></tr>
+      <tr><td>Unknown objects</td><td><code>1</code></td><td><code>1</code></td><td>The CID-noise object remains isolated.</td></tr>
+      <tr><td>Artifact subtypes</td><td><code>page_number_candidate: 1</code></td><td><code>running_header_candidate: 116; page_number_candidate: 1</code></td><td>V3 exposes artifact subtype counts.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>What Went Right</h2>
+  <ol>
+    <li>Headers like <code>10 NARRATIVE OF THE</code> now normalize to repeated furniture text after stripping the page number.</li>
+    <li>The run did not use OCR, AI, embeddings, retrieval, or graph work.</li>
+    <li>The audit page now makes artifact subtype candidates visible.</li>
+    <li>The reconstruction map records candidate-only artifact exclusions.</li>
+  </ol>
+
+  <h2>Risks</h2>
+  <div class="warn">
+    The detector is intentionally deterministic, but it still needs human audit before promotion.
+  </div>
+  <ol>
+    <li>Some front-matter running headers such as <code>PREFACE vii</code> are now artifacts, which is probably correct but should be inspected.</li>
+    <li>Repeated section labels could be misclassified if they appear near a margin with attached page numbers.</li>
+    <li>Page images are still not shown beside objects, so visual confirmation is not complete.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li><code>phase1_v3</code> generated successfully for <code>douglass_narrative</code>.</li>
+    <li><code>validation_report.json</code> returned <code>pass</code>.</li>
+    <li>Direct Phase 1 checks passed: <code>9</code>.</li>
+    <li>Config checks passed: <code>3</code>.</li>
+  </ol>
+
+  <h2>Next Correct Move</h2>
+  <p>
+    Review the v3 audit page for false positive page-furniture detections, especially front matter
+    and appendix pages. If the artifact candidates look right, the next improvement should add a
+    correction/review layer or visual page-image witness.
+  </p>
+</main>
+</body>
+</html>
