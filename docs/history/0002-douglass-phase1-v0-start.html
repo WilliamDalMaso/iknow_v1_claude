@@ -35,6 +35,26 @@
     artifact contract at <code>docs/strategy/0002-phase-1-artifact-contract.html</code>.
   </p>
 
+  <h2>Method Used</h2>
+  <ol>
+    <li>Use <code>pdfplumber</code> as the deterministic extractor of record for v0.</li>
+    <li>Compute a source manifest with file size, page count, SHA-256 hash, run id, and extraction tooling.</li>
+    <li>Build a page inventory before any cleanup so every page is visible, including image-only pages.</li>
+    <li>Preserve raw page text unchanged in <code>raw_pages.jsonl</code>.</li>
+    <li>Create line-level layout objects as a provisional object model.</li>
+    <li>Apply only minimal text cleanup: right-strip, whitespace collapse, and noise flagging.</li>
+    <li>Write every cleanup operation to <code>cleanup_log.jsonl</code>.</li>
+    <li>Generate a local HTML audit page for human review.</li>
+  </ol>
+
+  <h2>Model Use Decision</h2>
+  <p>
+    No LLM was used for the v0 extraction. That was intentional. At this stage, a model would add
+    interpretation before the deterministic evidence layer is stable. A model can become useful later
+    as a reviewer for flagged pages, ambiguous object classification, or OCR repair suggestions, but
+    it should not be the extractor of record.
+  </p>
+
   <h2>V0 Run Summary</h2>
   <table>
     <thead>
@@ -60,6 +80,23 @@
     <li>Heading detection is intentionally provisional and likely over-detects short uppercase lines.</li>
   </ol>
 
+  <h2>What Went Right</h2>
+  <ol>
+    <li>The source PDF was fully accounted for: <code>126</code> inventory rows for <code>126</code> PDF pages.</li>
+    <li>Raw and clean layers are separate, so cleanup is not hiding the original extraction.</li>
+    <li>The first real extraction defects are visible immediately rather than buried downstream.</li>
+    <li>The generated audit is local HTML and follows the project formatting standard.</li>
+  </ol>
+
+  <h2>What Is Still Weak</h2>
+  <ol>
+    <li>Line-level objects are too primitive for final clean extraction.</li>
+    <li>Paragraph reconstruction has not started yet.</li>
+    <li>Heading detection is heuristic and should not be treated as canonical structure.</li>
+    <li>Image-only page handling only flags the issue; it does not yet OCR or visually describe the page.</li>
+    <li>The audit summarizes the first pages and flags, but it does not yet provide page-by-page navigation.</li>
+  </ol>
+
   <div class="rule">
     This is the right failure shape for v0: we have a complete page inventory and visible risks,
     not a silent claim that extraction is clean.
@@ -74,4 +111,3 @@
 </main>
 </body>
 </html>
-

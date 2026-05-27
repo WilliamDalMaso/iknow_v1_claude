@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Observability Strategy</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Observability Strategy</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <div class="rule">
+    Observability should make the extraction process inspectable while it is being built. It should
+    show evidence, run state, and quality risks, not just activity.
+  </div>
+
+  <h2>Current Capabilities</h2>
+  <ol>
+    <li>Local black-and-white dashboard at <code>http://127.0.0.1:8765</code>.</li>
+    <li>Append-only runtime events in ignored JSONL.</li>
+    <li>Phase 1 run summaries discovered from <code>data/runs/*/phase1_v0/</code>.</li>
+    <li>Links to generated Phase 1 audit pages and source manifests through localhost.</li>
+  </ol>
+
+  <h2>What Observability Should Track Next</h2>
+  <ol>
+    <li>Page coverage: total pages, text pages, image-only pages, blank/unreadable pages.</li>
+    <li>Object coverage: headings, paragraphs, page artifacts, unknown objects, tables, figures, footnotes.</li>
+    <li>Extraction risk: CID noise, missing text, OCR-needed pages, suspiciously short pages.</li>
+    <li>Cleanup risk: operations applied, objects changed, objects needing review.</li>
+    <li>Gate status: whether Phase 1 acceptance checks pass or fail.</li>
+  </ol>
+
+  <h2>Boundary</h2>
+  <p>
+    Runtime observability logs are not durable project history. When an observation matters, promote
+    it into <code>docs/history/</code>, <code>docs/lessons/</code>, or <code>docs/strategy/</code>.
+  </p>
+</main>
+</body>
+</html>

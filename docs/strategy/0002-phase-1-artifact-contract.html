@@ -97,7 +97,22 @@
     Phase 1 v0 is line-object based. It is allowed to be imperfect, but not opaque. Its job is to
     reveal extraction risks and establish the artifact spine before we improve object segmentation.
   </p>
+
+  <h2>Model Assistance Policy</h2>
+  <p>
+    No model is required for the first extraction pass. Phase 1 starts deterministic-first because
+    clean extraction depends on visible evidence, not fluent interpretation. Models may be introduced
+    only after raw/page/object artifacts exist, and only for bounded review tasks such as:
+  </p>
+  <ol>
+    <li>reviewing flagged pages for likely extraction failure type,</li>
+    <li>suggesting object classifications for ambiguous objects,</li>
+    <li>checking whether a cleaned paragraph appears to preserve the raw text,</li>
+    <li>proposing OCR repair for specific noisy spans, with human or deterministic verification.</li>
+  </ol>
+  <p>
+    A model must not silently rewrite the source text or become the extractor of record.
+  </p>
 </main>
 </body>
 </html>
-
