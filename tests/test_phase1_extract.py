@@ -229,6 +229,9 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "Rendered PDF page 1" in html
     assert "bbox-overlay" in html
     assert "data-object-id=\"book:p0001:obj001\"" in html
+    assert "overlay-show-all" in html
+    assert "overlay-hide-all" in html
+    assert "selected-object-detail" in html
     assert "Detector bucket" in html
     assert "Override bucket" in html
     assert "Final candidate bucket" in html

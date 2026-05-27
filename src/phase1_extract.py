@@ -1030,7 +1030,7 @@ def build_audit_html(
             style = overlay_style(obj.get("bbox"), page)
             if style:
                 overlay_boxes.append(
-                    f"""<button type="button" class="{esc(overlay_class(label, bool(override)))}" style="{esc(style)}" data-object-id="{esc(object_id)}" aria-label="Highlight {esc(object_id)}" title="{esc(label)} · {esc(object_id)}"></button>"""
+                    f"""<button type="button" class="{esc(overlay_class(label, bool(override)))}" style="{esc(style)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-overridden="{str(bool(override)).lower()}" aria-label="Highlight {esc(object_id)}" title="{esc(label)} · {esc(object_id)}"></button>"""
                 )
             object_cards.append(
                 f"""<article class="object-card" id="card-{esc(dom_id)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}" tabindex="0">
@@ -1096,7 +1096,14 @@ def build_audit_html(
                       {''.join(overlay_boxes)}
                     </div>
                   </div>
-                  <figcaption>Rendered PDF page {page_number}</figcaption>
+                  <figcaption>
+                    Rendered PDF page {page_number}
+                    <button type="button" class="zoom-toggle">Toggle page zoom</button>
+                  </figcaption>
+                  <aside class="selected-object-detail" aria-live="polite">
+                    <strong>Selected object</strong>
+                    <span>Click a box or object card.</span>
+                  </aside>
                 </figure>
                 <div class="page-object-list">
                   {''.join(object_cards) or '<p>No extracted objects for this page.</p>'}
@@ -1177,9 +1184,13 @@ def build_audit_html(
     .page-meta {{ display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 14px; border-top: 1px solid #d8d6cc; border-bottom: 1px solid #d8d6cc; }}
     .page-review-grid {{ display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); align-items: start; gap: 14px; padding: 14px; }}
     .page-image-witness {{ position: sticky; top: 12px; margin: 0; border: 1px solid #d8d6cc; background: #fbfbf8; padding: 10px; }}
+    .page-image-witness.is-zoomed {{ grid-column: 1 / -1; position: static; max-width: 860px; }}
     .page-image-stage {{ position: relative; }}
     .page-image-witness img {{ display: block; width: 100%; height: auto; border: 1px solid #e3e0d6; background: white; }}
     .page-image-witness figcaption {{ margin-top: 8px; font-size: 0.9rem; color: #56616b; }}
+    .zoom-toggle {{ margin-left: 8px; font: inherit; padding: 3px 8px; border: 1px solid #9c978b; background: #fffef9; cursor: pointer; }}
+    .selected-object-detail {{ margin-top: 10px; padding: 10px; border: 1px solid #d8d6cc; background: #fffef9; font-size: 0.9rem; }}
+    .selected-object-detail span {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
     .bbox-layer {{ position: absolute; inset: 1px; pointer-events: none; }}
     .bbox-overlay {{ position: absolute; box-sizing: border-box; border: 2px solid #111; background: rgba(255,255,255,0.08); padding: 0; pointer-events: auto; cursor: pointer; }}
     .bbox-overlay.hidden {{ display: none; }}
@@ -1210,6 +1221,11 @@ def build_audit_html(
     .review-controls {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; padding: 14px; border: 1px solid #d8d6cc; background: #fffef9; }}
     .review-controls label {{ display: grid; gap: 4px; font-weight: 700; }}
     .review-controls select, .review-controls input {{ font: inherit; padding: 6px 8px; border: 1px solid #bdb8ac; background: #fbfbf8; }}
+    .overlay-controls {{ margin-top: 12px; display: grid; gap: 10px; padding: 14px; border: 1px solid #d8d6cc; background: #fffef9; }}
+    .overlay-actions {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+    .overlay-actions button {{ font: inherit; padding: 6px 10px; border: 1px solid #9c978b; background: #fbfbf8; cursor: pointer; }}
+    .overlay-buckets {{ display: flex; flex-wrap: wrap; gap: 12px; }}
+    .overlay-buckets label {{ display: flex; gap: 6px; align-items: center; font-weight: 700; }}
     .review-count {{ margin: 10px 0 0; font-weight: 700; }}
     @media (max-width: 900px) {{ .page-review-grid {{ grid-template-columns: 1fr; }} .page-image-witness {{ position: static; }} }}
     @media (max-width: 760px) {{ .object-grid {{ grid-template-columns: 1fr; }} }}
@@ -1319,6 +1335,20 @@ def build_audit_html(
       <input id="filter-warning" type="text" placeholder="Example: candidate_only">
     </label>
   </div>
+  <div class="overlay-controls" id="overlay-controls">
+    <div class="overlay-actions">
+      <button type="button" id="overlay-show-all">Show all overlays</button>
+      <button type="button" id="overlay-hide-all">Hide all overlays</button>
+      <button type="button" id="overlay-overrides-only">Highlight only overridden objects</button>
+    </div>
+    <div class="overlay-buckets" aria-label="Overlay bucket toggles">
+      <label><input type="checkbox" data-overlay-bucket="main_paragraph_candidate" checked> Main paragraphs</label>
+      <label><input type="checkbox" data-overlay-bucket="structure_candidate" checked> Structure</label>
+      <label><input type="checkbox" data-overlay-bucket="page_artifact_candidate" checked> Page artifacts</label>
+      <label><input type="checkbox" data-overlay-bucket="unknown_needs_review" checked> Unknown</label>
+      <label><input type="checkbox" id="overlay-overridden-toggle" checked> Overridden</label>
+    </div>
+  </div>
   <p class="review-count" id="review-count"></p>
   {page_detail_html}
 
@@ -1345,11 +1375,29 @@ def build_audit_html(
   const overlays = Array.from(document.querySelectorAll(".bbox-overlay"));
   const overlayByObjectId = new Map(overlays.map(box => [box.dataset.objectId, box]));
   const cardByObjectId = new Map(cards.map(card => [card.dataset.objectId, card]));
+  const overlayBucketToggles = Array.from(document.querySelectorAll("[data-overlay-bucket]"));
+  const overriddenToggle = document.getElementById("overlay-overridden-toggle");
+  let overlayHideAll = false;
+  let overlayOverridesOnly = false;
+  function selectedDetailFor(card) {{
+    if (!card) return "";
+    const rawText = card.querySelector("section:first-child p")?.textContent.trim() || "";
+    return [
+      card.dataset.objectId,
+      `bucket: ${{card.dataset.bucket || "-"}}`,
+      `subtype: ${{card.dataset.subtype || "-"}}`,
+      rawText ? `raw: ${{rawText.slice(0, 220)}}` : ""
+    ].filter(Boolean).join("\\n");
+  }}
   function setActiveObject(objectId, shouldScroll = false) {{
     for (const card of cards) card.classList.toggle("is-active", card.dataset.objectId === objectId);
     for (const box of overlays) box.classList.toggle("is-active", box.dataset.objectId === objectId);
+    const card = cardByObjectId.get(objectId);
+    const detail = selectedDetailFor(card);
+    const pageSection = card ? card.closest(".page-audit") : null;
+    const selectedDetail = pageSection ? pageSection.querySelector(".selected-object-detail span") : null;
+    if (selectedDetail) selectedDetail.textContent = detail || "No object details available.";
     if (shouldScroll) {{
-      const card = cardByObjectId.get(objectId);
       if (card) card.scrollIntoView({{ behavior: "smooth", block: "center" }});
     }}
   }}
@@ -1362,6 +1410,41 @@ def build_audit_html(
     box.addEventListener("mouseenter", () => setActiveObject(box.dataset.objectId));
     box.addEventListener("focus", () => setActiveObject(box.dataset.objectId));
     box.addEventListener("click", () => setActiveObject(box.dataset.objectId, true));
+  }}
+  for (const button of document.querySelectorAll(".zoom-toggle")) {{
+    button.addEventListener("click", () => button.closest(".page-image-witness").classList.toggle("is-zoomed"));
+  }}
+  document.getElementById("overlay-show-all").addEventListener("click", () => {{
+    overlayHideAll = false;
+    overlayOverridesOnly = false;
+    for (const toggle of overlayBucketToggles) toggle.checked = true;
+    overriddenToggle.checked = true;
+    applyReviewFilters();
+  }});
+  document.getElementById("overlay-hide-all").addEventListener("click", () => {{
+    overlayHideAll = true;
+    overlayOverridesOnly = false;
+    applyReviewFilters();
+  }});
+  document.getElementById("overlay-overrides-only").addEventListener("click", () => {{
+    overlayHideAll = false;
+    overlayOverridesOnly = true;
+    overriddenToggle.checked = true;
+    applyReviewFilters();
+  }});
+  for (const toggle of [...overlayBucketToggles, overriddenToggle]) {{
+    toggle.addEventListener("input", () => {{
+      overlayHideAll = false;
+      overlayOverridesOnly = false;
+      applyReviewFilters();
+    }});
+  }}
+  function overlayAllowedByControls(overlay) {{
+    if (overlayHideAll) return false;
+    if (overlayOverridesOnly && overlay.dataset.overridden !== "true") return false;
+    if (overlay.dataset.overridden === "true" && !overriddenToggle.checked) return false;
+    const bucketToggle = overlayBucketToggles.find(toggle => toggle.dataset.overlayBucket === overlay.dataset.bucket);
+    return !bucketToggle || bucketToggle.checked;
   }}
   function applyReviewFilters() {{
     const bucket = controls.bucket.value;
@@ -1385,7 +1468,7 @@ def build_audit_html(
         (!warning || (card.dataset.warnings || "").toLowerCase().includes(warning));
       card.classList.toggle("hidden", !matches);
       const overlay = overlayByObjectId.get(card.dataset.objectId);
-      if (overlay) overlay.classList.toggle("hidden", !matches);
+      if (overlay) overlay.classList.toggle("hidden", !(matches && overlayAllowedByControls(overlay)));
       if (matches) visible += 1;
     }}
     controls.count.textContent = `${{visible}} of ${{cards.length}} object cards visible`;
@@ -1458,6 +1541,8 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     overlay_count = audit_html.count('class="bbox-overlay')
     add_check("overlay_data_exists_for_bbox_objects", all(f'data-object-id="{object_id}"' in audit_html for object_id in bbox_object_ids))
     add_check("audit_renders_overlay_elements", overlay_count >= len(bbox_object_ids), f"{overlay_count} overlays / {len(bbox_object_ids)} bbox objects")
+    add_check("audit_has_overlay_controls", all(token in audit_html for token in ["overlay-show-all", "overlay-hide-all", "overlay-overrides-only", "data-overlay-bucket"]))
+    add_check("audit_has_selected_object_detail", "selected-object-detail" in audit_html)
     stream_object_ids = (
         {row.get("object_id") for row in main_paragraphs}
         | {row.get("object_id") for row in structure}
