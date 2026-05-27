@@ -312,18 +312,18 @@ def test_canonical_paragraph_review_adds_bbox_span_diagnostics() -> None:
             "book_id": "book",
             "run_id": "phase1_v3",
             "canonical_paragraph_id": "cp_000002",
-            "source_candidate_object_id": "book:p0002:obj003",
-            "page_number": 2,
+            "source_candidate_object_id": "book:p0022:obj003",
+            "page_number": 22,
             "raw_text": "\n".join(raw_lines),
             "clean_text": " ".join(raw_lines),
-            "source_object_ids": ["book:p0002:obj003"],
-            "source_line_ids": [f"book:p0002:line{index:03d}" for index in range(1, 13)],
+            "source_object_ids": ["book:p0022:obj003"],
+            "source_line_ids": [f"book:p0022:line{index:03d}" for index in range(1, 13)],
             "bbox": {"x0": 40, "x1": 360, "top": 40, "bottom": 330},
             "promotion_status": "promoted",
         }
     ]
 
-    report = review_canonical_paragraphs("book", "phase1_v3", canonical, {2: 600})
+    report = review_canonical_paragraphs("book", "phase1_v3", canonical, {22: 600})
 
     diagnostics = report["bbox_span_risk_diagnostics"]
     assert report["bbox_span_risk_summary"]["total"] == 1
@@ -333,8 +333,12 @@ def test_canonical_paragraph_review_adds_bbox_span_diagnostics() -> None:
     assert diagnostics[0]["warning_severity"] == "high"
     assert diagnostics[0]["likely_interpretation"] == "possible accidental merge"
     assert diagnostics[0]["likely_corrective_path"] == ["paragraph merge rule adjustment", "manual inspection"]
-    assert diagnostics[0]["audit_anchor"] == "#card-book-p0002-obj003"
+    assert diagnostics[0]["audit_anchor"] == "#card-book-p0022-obj003"
     assert report["bbox_span_risk_summary"]["by_source_line_count_range"][0]["source_line_count_range"] == "11+"
+    assert report["bbox_span_decision_summary"]["total"] == 1
+    assert report["bbox_span_decisions"][0]["likely_cause"] == "true_accidental_merge"
+    assert report["bbox_span_decisions"][0]["recommended_action"] == "adjust paragraph merge rule"
+    assert report["bbox_span_decision_summary"]["by_likely_cause"][0]["likely_cause"] == "true_accidental_merge"
 
 
 def test_review_override_moves_candidate_bucket() -> None:

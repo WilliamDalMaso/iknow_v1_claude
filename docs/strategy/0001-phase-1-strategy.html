@@ -100,6 +100,7 @@
     <li>Record warning categories, severity, risk clusters, affected pages, risky samples, source candidate ids, source lines, and bounding boxes.</li>
     <li>Recommend the highest-impact risk to fix first before changing extraction logic.</li>
     <li>When <code>bbox_span_risk</code> is dominant, diagnose source-line count, vertical span, page-height ratio, first/last line previews, likely interpretation, and likely corrective path before changing paragraph merging.</li>
+    <li>Classify bbox span diagnostics into likely cause and recommended action before changing merge behavior, so correction targets are evidence-led instead of guessed.</li>
     <li>Use <code>safe_for_downstream</code> as a gate signal before retrieval, embeddings, reasoning, or graph work.</li>
   </ol>
 

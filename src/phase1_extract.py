@@ -1115,6 +1115,69 @@ def bbox_span_corrective_path(interpretation: str) -> list[str]:
     return ["manual inspection"]
 
 
+def bbox_span_decision(diagnostic: dict[str, Any]) -> dict[str, Any]:
+    warnings = set(str(warning) for warning in diagnostic.get("all_warnings", []))
+    page_number = int(diagnostic.get("page_number") or 0)
+    line_count = int(diagnostic.get("source_line_count") or 0)
+    ratio = diagnostic.get("page_height_ratio")
+    ratio_value = float(ratio) if isinstance(ratio, (int, float)) else None
+    word_count = int(diagnostic.get("word_count") or 0)
+    text_length = int(diagnostic.get("text_length") or 0)
+    severity = str(diagnostic.get("warning_severity", "low"))
+
+    if page_number <= 20 or "front_matter_or_chapter_boundary_risk" in warnings:
+        likely_cause = "boundary_or_front_matter_artifact"
+        confidence = 0.72 if page_number <= 20 else 0.62
+        recommended_action = "inspect manually"
+    elif "possible_broken_paragraph_merge" in warnings and (line_count >= 8 or (ratio_value is not None and ratio_value >= 0.28)):
+        likely_cause = "true_accidental_merge"
+        confidence = 0.78
+        recommended_action = "adjust paragraph merge rule"
+    elif ratio_value is not None and ratio_value >= 0.40:
+        likely_cause = "true_accidental_merge"
+        confidence = 0.74
+        recommended_action = "adjust paragraph merge rule"
+    elif line_count >= 11 and text_length < 900:
+        likely_cause = "true_accidental_merge"
+        confidence = 0.68
+        recommended_action = "adjust paragraph merge rule"
+    elif word_count > 150 and ratio_value is not None and ratio_value < 0.35 and severity != "high":
+        likely_cause = "normal_long_paragraph"
+        confidence = 0.66
+        recommended_action = "no action"
+    elif ratio_value is not None and ratio_value < 0.28 and line_count <= 10:
+        likely_cause = "threshold_too_strict"
+        confidence = 0.64
+        recommended_action = "adjust review threshold"
+    else:
+        likely_cause = "needs_manual_inspection"
+        confidence = 0.55
+        recommended_action = "inspect manually"
+
+    if "possible_metadata_or_structure_leakage" in warnings:
+        likely_cause = "boundary_or_front_matter_artifact"
+        confidence = max(confidence, 0.70)
+        recommended_action = "add curated override"
+
+    return {
+        "canonical_paragraph_id": diagnostic.get("canonical_paragraph_id"),
+        "page_number": page_number,
+        "severity": severity,
+        "source_line_count": line_count,
+        "vertical_bbox_span": diagnostic.get("vertical_bbox_span"),
+        "page_height_ratio": diagnostic.get("page_height_ratio"),
+        "text_length": text_length,
+        "first_source_line_preview": diagnostic.get("first_source_line_preview"),
+        "last_source_line_preview": diagnostic.get("last_source_line_preview"),
+        "likely_cause": likely_cause,
+        "confidence": confidence,
+        "recommended_action": recommended_action,
+        "source_candidate_object_id": diagnostic.get("source_candidate_object_id"),
+        "audit_anchor": diagnostic.get("audit_anchor"),
+        "page_anchor": diagnostic.get("page_anchor"),
+    }
+
+
 def audit_anchor_for_object(object_id: Any) -> str:
     return "#card-" + re.sub(r"[^a-zA-Z0-9_-]+", "-", str(object_id))
 
@@ -1339,6 +1402,61 @@ def review_canonical_paragraphs(
         "by_source_line_count_range": grouped_bbox_span_rows("source_line_count_range"),
         "by_page_height_ratio_range": grouped_bbox_span_rows("page_height_ratio_range"),
     }
+    bbox_span_decisions = [bbox_span_decision(diagnostic) for diagnostic in bbox_span_diagnostics]
+
+    def grouped_decision_rows(key: str) -> list[dict[str, Any]]:
+        grouped: dict[Any, list[dict[str, Any]]] = {}
+        for decision in bbox_span_decisions:
+            grouped.setdefault(decision.get(key), []).append(decision)
+        return [
+            {
+                key: group_key,
+                "count": len(rows),
+                "sample_canonical_paragraph_ids": first_unique([row.get("canonical_paragraph_id") for row in rows], 6),
+                "affected_pages": first_unique([row.get("page_number") for row in rows], 12),
+            }
+            for group_key, rows in sorted(grouped.items(), key=lambda item: (-len(item[1]), str(item[0])))
+        ]
+
+    high_severity_by_page = []
+    high_by_page: dict[int, list[dict[str, Any]]] = {}
+    for decision in bbox_span_decisions:
+        if decision.get("severity") == "high":
+            high_by_page.setdefault(int(decision.get("page_number") or 0), []).append(decision)
+    for page_number, rows in sorted(high_by_page.items(), key=lambda item: (-len(item[1]), item[0])):
+        high_severity_by_page.append(
+            {
+                "page_number": page_number,
+                "count": len(rows),
+                "sample_canonical_paragraph_ids": first_unique([row.get("canonical_paragraph_id") for row in rows], 6),
+            }
+        )
+
+    page_inspection_scores: dict[int, dict[str, Any]] = {}
+    for decision in bbox_span_decisions:
+        page_number = int(decision.get("page_number") or 0)
+        row = page_inspection_scores.setdefault(page_number, {"page_number": page_number, "count": 0, "high_count": 0, "causes": Counter()})
+        row["count"] += 1
+        row["high_count"] += 1 if decision.get("severity") == "high" else 0
+        row["causes"].update([str(decision.get("likely_cause"))])
+    top_pages_needing_inspection = []
+    for row in sorted(page_inspection_scores.values(), key=lambda item: (-int(item["high_count"]), -int(item["count"]), int(item["page_number"])))[:12]:
+        top_pages_needing_inspection.append(
+            {
+                "page_number": row["page_number"],
+                "diagnostic_count": row["count"],
+                "high_severity_count": row["high_count"],
+                "likely_causes": dict(sorted(row["causes"].items())),
+            }
+        )
+
+    bbox_span_decision_summary = {
+        "total": len(bbox_span_decisions),
+        "by_likely_cause": grouped_decision_rows("likely_cause"),
+        "by_recommended_action": grouped_decision_rows("recommended_action"),
+        "high_severity_rows_by_page": high_severity_by_page,
+        "top_pages_needing_inspection": top_pages_needing_inspection,
+    }
     top_risk = cluster_drilldown[0] if cluster_drilldown else None
     warning_total = sum(warning_counts.values())
     safe_for_downstream = warning_total == 0
@@ -1377,6 +1495,8 @@ def review_canonical_paragraphs(
         "risky_paragraph_clusters": cluster_drilldown,
         "bbox_span_risk_summary": bbox_span_risk_summary,
         "bbox_span_risk_diagnostics": bbox_span_diagnostics,
+        "bbox_span_decision_summary": bbox_span_decision_summary,
+        "bbox_span_decisions": bbox_span_decisions,
         "recommendation_detail": recommendation,
         "sample_risky_canonical_paragraphs": risky_samples,
     }
@@ -1850,6 +1970,46 @@ def build_audit_html(
     bbox_span_by_page = bbox_span_group_items("by_page", "page_number")
     bbox_span_by_line_count = bbox_span_group_items("by_source_line_count_range", "source_line_count_range")
     bbox_span_by_ratio = bbox_span_group_items("by_page_height_ratio_range", "page_height_ratio_range")
+    bbox_span_decision_summary = canonical_review_report.get("bbox_span_decision_summary") or {}
+
+    def bbox_span_decision_group_items(group_name: str, label_key: str) -> str:
+        return "\n".join(
+            "<li>"
+            f"<code>{esc(row.get(label_key))}</code>: {esc(row.get('count'))} "
+            f"(samples: <code>{esc(', '.join(str(item) for item in row.get('sample_canonical_paragraph_ids', [])))}</code>; "
+            f"pages: <code>{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</code>)"
+            "</li>"
+            for row in (bbox_span_decision_summary.get(group_name) or [])
+        )
+
+    bbox_span_by_cause = bbox_span_decision_group_items("by_likely_cause", "likely_cause")
+    bbox_span_by_action = bbox_span_decision_group_items("by_recommended_action", "recommended_action")
+    bbox_span_top_pages = "\n".join(
+        "<li>"
+        f"Page <a href=\"#page-{esc(row.get('page_number'))}\">{esc(row.get('page_number'))}</a>: "
+        f"<code>{esc(row.get('diagnostic_count'))}</code> diagnostics, "
+        f"<code>{esc(row.get('high_severity_count'))}</code> high severity, "
+        f"causes <code>{esc(', '.join(f'{key}: {value}' for key, value in (row.get('likely_causes') or {}).items()))}</code>"
+        "</li>"
+        for row in (bbox_span_decision_summary.get("top_pages_needing_inspection") or [])
+    )
+    bbox_span_decision_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page_number'))}</a></td>"
+        f"<td>{esc(row.get('severity'))}</td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('vertical_bbox_span'), 1))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('page_height_ratio'), 3))}</td>"
+        f"<td>{esc(row.get('text_length'))}</td>"
+        f"<td><code>{esc(row.get('likely_cause'))}</code></td>"
+        f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
+        f"<td><code>{esc(row.get('recommended_action'))}</code></td>"
+        f"<td>{esc(row.get('first_source_line_preview', ''))}</td>"
+        f"<td>{esc(row.get('last_source_line_preview', ''))}</td>"
+        "</tr>"
+        for row in (canonical_review_report.get("bbox_span_decisions") or [])
+    )
     canonical_review_recommendation = canonical_review_report.get("recommendation_detail") or {}
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
@@ -2074,6 +2234,30 @@ def build_audit_html(
       </tr>
     </thead>
     <tbody>{bbox_span_diag_rows or '<tr><td colspan="12">No bbox span diagnostics.</td></tr>'}</tbody>
+  </table>
+  <h3>BBox Span Decision Summary</h3>
+  <p>
+    This analysis classifies each bbox span diagnostic row into a likely cause and recommended next action.
+    It is still analysis-only and does not alter canonical paragraphs.
+  </p>
+  <ul>
+    <li>Total bbox span decisions: <code>{esc(bbox_span_decision_summary.get('total', 0))}</code></li>
+  </ul>
+  <h4>Grouped Likely Causes</h4>
+  <ul>{bbox_span_by_cause or '<li>No likely-cause decisions.</li>'}</ul>
+  <h4>Grouped Recommended Actions</h4>
+  <ul>{bbox_span_by_action or '<li>No recommended-action decisions.</li>'}</ul>
+  <h4>Top Pages Needing Inspection</h4>
+  <ul>{bbox_span_top_pages or '<li>No top inspection pages.</li>'}</ul>
+  <table>
+    <thead>
+      <tr>
+        <th>Canonical ID</th><th>Page</th><th>Severity</th><th>Line Count</th>
+        <th>BBox Span</th><th>Page Ratio</th><th>Text Length</th><th>Likely Cause</th>
+        <th>Confidence</th><th>Recommended Action</th><th>First Source Line</th><th>Last Source Line</th>
+      </tr>
+    </thead>
+    <tbody>{bbox_span_decision_rows or '<tr><td colspan="12">No bbox span decisions.</td></tr>'}</tbody>
   </table>
   <h3>Recommendation</h3>
   <ul>
@@ -2500,9 +2684,42 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
         "bbox_span_diagnostics_trace_to_canonical",
         {row.get("canonical_paragraph_id") for row in bbox_span_diagnostics}.issubset(set(canonical_ids)),
     )
+    bbox_span_decisions = canonical_paragraph_review_report.get("bbox_span_decisions", [])
+    bbox_span_decision_summary = canonical_paragraph_review_report.get("bbox_span_decision_summary", {})
+    valid_bbox_causes = {
+        "true_accidental_merge",
+        "normal_long_paragraph",
+        "threshold_too_strict",
+        "boundary_or_front_matter_artifact",
+        "needs_manual_inspection",
+    }
+    valid_bbox_actions = {
+        "adjust paragraph merge rule",
+        "adjust review threshold",
+        "add curated override",
+        "inspect manually",
+        "no action",
+    }
+    add_check(
+        "bbox_span_decision_count_matches_diagnostics",
+        len(bbox_span_decisions) == len(bbox_span_diagnostics) == bbox_span_decision_summary.get("total"),
+    )
+    add_check(
+        "bbox_span_decisions_trace_to_canonical",
+        {row.get("canonical_paragraph_id") for row in bbox_span_decisions}.issubset(set(canonical_ids)),
+    )
+    add_check(
+        "bbox_span_decision_causes_valid",
+        all(row.get("likely_cause") in valid_bbox_causes for row in bbox_span_decisions),
+    )
+    add_check(
+        "bbox_span_decision_actions_valid",
+        all(row.get("recommended_action") in valid_bbox_actions for row in bbox_span_decisions),
+    )
     add_check("audit_has_canonical_paragraph_review", "Canonical Paragraph Review" in audit_html)
     add_check("audit_has_canonical_review_drilldown", "Canonical Warning Drilldown" in audit_html and "Risk Clusters" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
+    add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
     known_ids = set(layout_ids)
     override_object_ids = [row.get("object_id") for row in review_overrides]
     add_check("review_overrides_reference_known_objects", set(override_object_ids).issubset(known_ids))

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BBox Span Decision Summary</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>BBox Span Decision Summary</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The bbox span diagnostic view made the top canonical risk inspectable. This step adds a
+    deterministic decision summary so each diagnostic row has a likely cause and recommended next
+    action before the paragraph merger is changed.
+  </p>
+
+  <div class="rule">
+    This remains analysis only. No paragraph merge behavior, promotion rule, canonical output rule,
+    OCR, AI review, embeddings, retrieval, graph work, or structure promotion was added.
+  </div>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Added <code>bbox_span_decisions</code> to <code>canonical_paragraph_review_report.json</code>.</li>
+    <li>Added <code>bbox_span_decision_summary</code> with counts by likely cause, recommended action, high-severity pages, and top pages needing inspection.</li>
+    <li>Added a <code>BBox Span Decision Summary</code> section to <code>phase1_audit.html</code>.</li>
+    <li>Added validation checks for decision counts, valid causes, valid actions, canonical traceability, and audit visibility.</li>
+  </ol>
+
+  <h2>Douglass Result</h2>
+  <ol>
+    <li>Total bbox span decisions: <code>74</code>.</li>
+    <li>Likely true accidental merges: <code>49</code>.</li>
+    <li>Boundary or front-matter artifacts: <code>14</code>.</li>
+    <li>Needs manual inspection: <code>11</code>.</li>
+    <li>Recommended paragraph merge rule adjustment: <code>49</code>.</li>
+    <li>Recommended manual inspection: <code>23</code>.</li>
+    <li>Recommended curated override: <code>2</code>.</li>
+  </ol>
+
+  <h2>Top Inspection Pages</h2>
+  <p>
+    The first high-severity pages to inspect are pages <code>7</code>, <code>8</code>,
+    <code>20</code>, <code>21</code>, <code>22</code>, <code>26</code>,
+    <code>30</code>, and <code>41</code>. Pages <code>21</code>, <code>30</code>,
+    and <code>41</code> are especially relevant to merge-rule work because their sampled decisions
+    are classified as likely true accidental merges.
+  </p>
+
+  <h2>What This Means</h2>
+  <p>
+    The dominant risk now looks more like a real paragraph merge problem than simple threshold noise.
+    The next safe move is still not a broad rewrite. Inspect a small set of high-confidence likely
+    merge cases in the audit, then adjust the paragraph merger narrowly if visual evidence confirms
+    the diagnosis.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -m pytest tests</code> passed with <code>18</code> tests.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+    <li>Browser smoke check confirmed the local audit contains <code>BBox Span Decision Summary</code>, <code>Total bbox span decisions: 74</code>, and <code>true_accidental_merge</code>.</li>
+  </ol>
+</main>
+</body>
+</html>
