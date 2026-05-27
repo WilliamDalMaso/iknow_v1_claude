@@ -1864,7 +1864,7 @@ def build_paragraph_merge_failure_taxonomy_report(
 
 
 def gold_row_is_authoritative(row: dict[str, Any]) -> bool:
-    return str(row.get("review_status", "")).lower() == "authoritative"
+    return str(row.get("review_status") or row.get("status") or "").lower() == "authoritative"
 
 
 def expected_label_for_candidate(row: dict[str, Any]) -> str:

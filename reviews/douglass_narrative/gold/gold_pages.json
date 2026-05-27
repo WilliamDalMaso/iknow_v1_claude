@@ -1,28 +1,33 @@
 {
   "book_id": "douglass_narrative",
   "created_at": "2026-05-27",
-  "review_status": "seed_not_authoritative",
-  "purpose": "Tiny starter set for verifying paragraph boundaries and object labels before adopting future merge policies.",
+  "review_status": "partially_authoritative",
+  "purpose": "Small reviewed set for verifying paragraph boundaries and object labels before adopting future merge policies.",
   "pages": [
     {
       "page": 21,
-      "reason": "High-severity likely merge rows cp_000035 and cp_000036; representative body prose paragraph-boundary risk."
+      "reason": "Reviewed body prose and cross-page continuation from page 20 into page 21; representative paragraph-boundary risk.",
+      "review_status": "authoritative_rows_present"
     },
     {
       "page": 22,
-      "reason": "High-severity likely merge row cp_000039 plus adjacent manual-inspection row cp_000038."
+      "reason": "Reviewed body prose and continuation from page 21 into page 22; representative paragraph-boundary risk.",
+      "review_status": "authoritative_rows_present"
     },
     {
       "page": 26,
-      "reason": "High-severity likely merge row cp_000043 and manual-inspection row cp_000044."
+      "reason": "Reviewed body prose and continuation from page 25 into page 26 and page 26 into page 27.",
+      "review_status": "authoritative_rows_present"
     },
     {
       "page": 30,
-      "reason": "Includes large-vertical-whitespace taxonomy sample and paragraph-break sample."
+      "reason": "Reviewed body prose and continuation from page 29 into page 30.",
+      "review_status": "authoritative_rows_present"
     },
     {
       "page": 36,
-      "reason": "Includes chapter boundary plus large-vertical-whitespace taxonomy sample."
+      "reason": "Reviewed chapter boundary, body prose, and continuation from page 36 into page 37.",
+      "review_status": "authoritative_rows_present"
     }
   ],
   "adoption_rule": "No paragraph merge policy may become active merely because heuristic warnings improve. It must improve against authoritative gold rows and not worsen audit safety metrics."

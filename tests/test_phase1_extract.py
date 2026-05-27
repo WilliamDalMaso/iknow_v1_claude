@@ -439,7 +439,7 @@ def test_gold_review_evaluation_scores_authoritative_rows(tmp_path, monkeypatch)
                 "page": 1,
                 "expected_type": "main_paragraph",
                 "source_line_ids": ["book:p0001:line001", "book:p0001:line002"],
-                "review_status": "authoritative",
+                "status": "authoritative",
             }
         ],
     )
@@ -450,7 +450,7 @@ def test_gold_review_evaluation_scores_authoritative_rows(tmp_path, monkeypatch)
                 "object_id": "book:p0001:obj001",
                 "page": 1,
                 "expected_label": "main_paragraph",
-                "review_status": "authoritative",
+                "status": "authoritative",
             }
         ],
     )

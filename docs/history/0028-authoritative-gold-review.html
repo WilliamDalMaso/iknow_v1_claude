@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authoritative Gold Review</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Authoritative Gold Review</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The gold framework existed, but it had no authoritative rows. This step uses visual audit review
+    of the selected Douglass pages to create the first real answer key for paragraph-boundary and
+    object-label evaluation.
+  </p>
+
+  <div class="rule">
+    No extraction behavior changed. The active paragraph merge policy remains
+    <code>v1_consecutive_lines</code>. No OCR, AI review, embeddings, retrieval, graph work,
+    user-facing answers, or structure promotion was added.
+  </div>
+
+  <h2>Pages Reviewed</h2>
+  <ol>
+    <li><code>21</code>: body paragraphs and continuation from page <code>20</code>.</li>
+    <li><code>22</code>: body paragraphs and continuation from page <code>21</code>.</li>
+    <li><code>26</code>: body paragraphs and continuations from page <code>25</code> and into page <code>27</code>.</li>
+    <li><code>30</code>: body paragraphs and continuation from page <code>29</code>.</li>
+    <li><code>36</code>: chapter heading, body paragraphs, and continuation into page <code>37</code>.</li>
+  </ol>
+
+  <h2>Gold Rows Created</h2>
+  <ol>
+    <li>Authoritative paragraph-boundary rows: <code>11</code>.</li>
+    <li>Authoritative object-label rows: <code>17</code>.</li>
+    <li>Seed rows remaining: <code>0</code>.</li>
+    <li>Each row includes reviewer, date, status, review status, notes or reason, and evidence reference.</li>
+  </ol>
+
+  <h2>Evaluation Result</h2>
+  <ol>
+    <li>Matched paragraphs: <code>5</code>.</li>
+    <li>Over-split paragraphs: <code>6</code>.</li>
+    <li>Missing paragraphs: <code>0</code>.</li>
+    <li>Over-merged paragraphs: <code>0</code>.</li>
+    <li>Paragraph precision: <code>0.455</code>.</li>
+    <li>Paragraph recall: <code>0.455</code>.</li>
+    <li>Matched object labels: <code>17</code>.</li>
+    <li>Wrong object labels: <code>0</code>.</li>
+    <li>Object label accuracy: <code>1.000</code>.</li>
+    <li>Sufficient to judge merge-policy adoption: <code>true</code>.</li>
+  </ol>
+
+  <h2>Diagnosis</h2>
+  <p>
+    The first gold set shows that the current candidate object labels are correct on this reviewed
+    slice, but logical paragraph boundaries are still weak when a paragraph crosses a page break.
+    This is different from the earlier heuristic diagnosis: the verified answer key now says the
+    dominant issue in this slice is over-splitting across page boundaries, not object-label leakage.
+  </p>
+
+  <h2>Next Step</h2>
+  <p>
+    Future paragraph merge experiments should target cross-page paragraph continuation and must be
+    evaluated against this gold set before adoption. A policy that only improves warning counts but
+    does not improve the gold paragraph score should remain experimental.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>phase1_audit.html</code> shows <code>11</code> authoritative paragraph rows and <code>6</code> over-split paragraphs.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>
