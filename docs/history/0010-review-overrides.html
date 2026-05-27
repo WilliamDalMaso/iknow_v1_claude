@@ -38,7 +38,8 @@
   "corrected_bucket": "structure_candidate",
   "reason": "This is a real preface heading, not page furniture.",
   "reviewer": "human",
-  "date": "2026-05-27"
+  "date": "2026-05-27",
+  "evidence_reference": "phase1_audit page 12 object obj_012_003"
 }</pre>
 
   <h2>Accepted Buckets</h2>
@@ -53,7 +54,7 @@
   <ol>
     <li>Each Phase 1 run now creates <code>review_overrides.jsonl</code> if it does not exist.</li>
     <li>Overrides are loaded before candidate streams are written.</li>
-    <li>Validation checks override object ids, bucket names, uniqueness, and reconstruction-map counts.</li>
+    <li>Validation checks override object ids, required fields, bucket names, uniqueness, original-bucket agreement, and reconstruction-map counts.</li>
     <li>The audit page shows applied override count and per-object override details.</li>
   </ol>
 

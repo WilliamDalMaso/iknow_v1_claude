@@ -100,7 +100,12 @@
       </tr>
       <tr>
         <td><code>review_overrides.jsonl</code></td>
-        <td>Persistent reviewer corrections for candidate bucket assignment, one JSON object per line.</td>
+        <td>
+          Persistent reviewer corrections for candidate bucket assignment, one JSON object per line.
+          Required fields: <code>object_id</code>, <code>original_bucket</code>,
+          <code>corrected_bucket</code>, <code>reason</code>, <code>reviewer</code>,
+          <code>date</code>, and <code>evidence_reference</code>.
+        </td>
         <td>Lets review decisions change candidate streams without changing detector rules or promoting content to canonical.</td>
       </tr>
       <tr>

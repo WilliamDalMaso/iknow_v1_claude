@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
+import json
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from src.phase1_extract import (
@@ -12,6 +14,8 @@ from src.phase1_extract import (
     clean_line,
     join_paragraph_lines,
     page_status,
+    validate_phase1_run,
+    write_jsonl,
 )
 
 
@@ -248,10 +252,12 @@ def test_review_override_moves_candidate_bucket() -> None:
         review_overrides=[
             {
                 "object_id": overridden_object_id,
+                "original_bucket": "page_artifact_candidate",
                 "corrected_bucket": "structure_candidate",
                 "reason": "test override",
                 "reviewer": "test",
                 "date": "2026-05-27",
+                "evidence_reference": "unit test repeated header sample",
             }
         ],
     )
@@ -263,4 +269,60 @@ def test_review_override_moves_candidate_bucket() -> None:
     assert structure[0]["object_id"] == overridden_object_id
     assert structure[0]["review_override"]["original_bucket"] == "page_artifact_candidate"
     assert structure[0]["review_override"]["corrected_bucket"] == "structure_candidate"
+    assert structure[0]["review_override"]["declared_original_bucket"] == "page_artifact_candidate"
+    assert structure[0]["review_override"]["evidence_reference"] == "unit test repeated header sample"
     assert reconstruction_map["review_override_count"] == 1
+
+
+def test_validation_rejects_malformed_review_override_row() -> None:
+    layout, clean, cleanup = build_segmented_objects(
+        "book",
+        1,
+        [
+            "This is a real paragraph line.",
+        ],
+    )
+    override = {
+        "object_id": layout[0]["object_id"],
+        "original_bucket": "main_paragraph_candidate",
+        "corrected_bucket": "structure_candidate",
+        "reason": "missing evidence reference should fail validation",
+        "reviewer": "test",
+        "date": "2026-05-27",
+    }
+    paragraphs, structure, artifacts, unknown, reconstruction_map = build_reconstruction_streams(
+        "book",
+        "phase1_v3",
+        layout,
+        clean,
+        [inventory_row(1)],
+        page_count=1,
+        review_overrides=[override],
+    )
+
+    with TemporaryDirectory() as tmp:
+        output_dir = Path(tmp)
+        (output_dir / "source_manifest.json").write_text(json.dumps({"page_count": 1}), encoding="utf-8")
+        write_jsonl(output_dir / "page_inventory.jsonl", [inventory_row(1)])
+        write_jsonl(output_dir / "raw_pages.jsonl", [{"page_number": 1, "raw_text": "This is a real paragraph line."}])
+        write_jsonl(output_dir / "layout_objects.jsonl", layout)
+        write_jsonl(output_dir / "clean_objects.jsonl", clean)
+        write_jsonl(output_dir / "main_paragraph_candidates.jsonl", paragraphs)
+        write_jsonl(output_dir / "structure_candidates.jsonl", structure)
+        write_jsonl(output_dir / "page_artifacts_candidates.jsonl", artifacts)
+        write_jsonl(output_dir / "unknown_objects.jsonl", unknown)
+        (output_dir / "reconstruction_map_candidate.json").write_text(json.dumps(reconstruction_map), encoding="utf-8")
+        (output_dir / "reading_order_candidate.json").write_text(
+            json.dumps({"object_ids": [row["object_id"] for row in layout]}),
+            encoding="utf-8",
+        )
+        write_jsonl(output_dir / "review_overrides.jsonl", [override])
+        write_jsonl(output_dir / "cleanup_log.jsonl", cleanup)
+        (output_dir / "validation_report.json").write_text("{}", encoding="utf-8")
+        (output_dir / "phase1_audit.html").write_text("<html></html>", encoding="utf-8")
+
+        report = validate_phase1_run(output_dir)
+
+    assert report["status"] == "fail"
+    failed = {row["name"] for row in report["checks"] if row["status"] == "fail"}
+    assert "review_override_required_fields_present" in failed

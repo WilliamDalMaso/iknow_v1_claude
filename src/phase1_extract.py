@@ -35,6 +35,21 @@ REQUIRED_ARTIFACTS = [
     "validation_report.json",
     "phase1_audit.html",
 ]
+VALID_OVERRIDE_BUCKETS = {
+    "main_paragraph_candidate",
+    "structure_candidate",
+    "page_artifact_candidate",
+    "unknown_needs_review",
+}
+REQUIRED_OVERRIDE_FIELDS = {
+    "object_id",
+    "original_bucket",
+    "corrected_bucket",
+    "reason",
+    "reviewer",
+    "date",
+    "evidence_reference",
+}
 
 
 def utc_now() -> str:
@@ -72,8 +87,8 @@ def ensure_review_overrides_template(path: Path) -> None:
         return
     path.write_text(
         "# Add one JSON object per line. Lines starting with # are ignored.\n"
-        "# Required: object_id, corrected_bucket, reason, reviewer.\n"
-        "# Optional: corrected_subtype, confidence, date.\n",
+        "# Required: object_id, original_bucket, corrected_bucket, reason, reviewer, date, evidence_reference.\n"
+        "# Optional: corrected_subtype, confidence.\n",
         encoding="utf-8",
     )
 
@@ -613,9 +628,11 @@ def build_reconstruction_streams(
             common["review_override"] = {
                 "original_bucket": original_stream_type,
                 "corrected_bucket": stream_type,
+                "declared_original_bucket": review_override.get("original_bucket", ""),
                 "reason": review_override.get("reason", ""),
                 "reviewer": review_override.get("reviewer", ""),
                 "date": review_override.get("date", ""),
+                "evidence_reference": review_override.get("evidence_reference", ""),
                 "line_number": review_override.get("_line_number"),
             }
             common["original_confidence"] = original_confidence
@@ -1284,10 +1301,19 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("reconstruction_map_counts_match_streams", reconstruction_map.get("counts") == expected_counts)
     known_ids = set(layout_ids)
     override_object_ids = [row.get("object_id") for row in review_overrides]
-    valid_buckets = {"main_paragraph_candidate", "structure_candidate", "page_artifact_candidate", "unknown_needs_review"}
     add_check("review_overrides_reference_known_objects", set(override_object_ids).issubset(known_ids))
     add_check("review_override_object_ids_unique", len(override_object_ids) == len(set(override_object_ids)))
-    add_check("review_override_buckets_valid", all(row.get("corrected_bucket") in valid_buckets for row in review_overrides))
+    add_check(
+        "review_override_required_fields_present",
+        all(REQUIRED_OVERRIDE_FIELDS.issubset(row) and all(str(row.get(field, "")).strip() for field in REQUIRED_OVERRIDE_FIELDS) for row in review_overrides),
+    )
+    add_check("review_override_original_buckets_valid", all(row.get("original_bucket") in VALID_OVERRIDE_BUCKETS for row in review_overrides))
+    add_check("review_override_buckets_valid", all(row.get("corrected_bucket") in VALID_OVERRIDE_BUCKETS for row in review_overrides))
+    stream_by_id = {row["object_id"]: row for row in stream_rows}
+    add_check(
+        "review_override_original_bucket_matches_detector",
+        all(stream_by_id.get(row.get("object_id"), {}).get("original_stream_type") == row.get("original_bucket") for row in review_overrides),
+    )
     add_check("reconstruction_map_records_review_overrides", reconstruction_map.get("review_override_count") == len(review_overrides))
 
     status = "pass" if all(check["status"] == "pass" for check in checks) else "fail"
