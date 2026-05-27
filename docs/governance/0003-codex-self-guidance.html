@@ -37,6 +37,13 @@
     <li>When uncertain, inspect the actual PDF evidence instead of guessing.</li>
   </ol>
 
+  <h2>Verification Bias</h2>
+  <ol>
+    <li>Use <code>requirements-dev.txt</code> as the test dependency contract.</li>
+    <li>Run <code>python3 -m pytest tests</code> before committing code or artifact-contract changes.</li>
+    <li>Use a direct test-function runner only as a temporary fallback when <code>pytest</code> is unavailable, and document the fallback.</li>
+  </ol>
+
   <h2>Evidence Stack Reminder</h2>
   <ol>
     <li>Start from raw PDF and layout evidence, not clean-looking prose.</li>

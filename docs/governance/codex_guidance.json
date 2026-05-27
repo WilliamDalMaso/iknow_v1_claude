@@ -73,11 +73,18 @@
       "Append an observability event at the start of meaningful work, before the first edit."
     ],
     "closure": [
-      "Run the smallest relevant verification command.",
+      "Run python3 -m pytest tests before committing code or artifact-contract changes.",
+      "If pytest is unavailable, use the direct test-function runner only as a temporary fallback and document the limitation.",
       "Update history, lessons, or strategy when the result changes project knowledge.",
       "Append an observability event summarizing the outcome.",
       "Stage, commit, and push meaningful durable changes."
     ]
+  },
+  "verification": {
+    "dependency_contract": "requirements-dev.txt",
+    "install_command": "python3 -m pip install -r requirements-dev.txt",
+    "standard_command": "python3 -m pytest tests",
+    "fallback_policy": "Direct test-function execution is allowed only as a temporary fallback when pytest is unavailable; document the fallback."
   },
   "formatting_rules": {
     "local_html_docs": "Use the standard light document style in docs/.",

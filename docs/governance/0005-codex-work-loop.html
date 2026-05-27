@@ -31,7 +31,7 @@
     <li>Read <code>docs/governance/0002-source-of-truth.html</code>.</li>
     <li>Read <code>docs/strategy/0001-phase-1-strategy.html</code>.</li>
     <li>Read <code>docs/strategy/0002-phase-1-artifact-contract.html</code>.</li>
-    <li>Read the latest relevant history entry, currently <code>docs/history/0017-override-snippet-authoring.html</code>.</li>
+    <li>Read the latest relevant history entry, currently <code>docs/history/0018-test-environment-contract.html</code>.</li>
     <li>Check <code>git status --short</code> before editing.</li>
     <li>Append an observability event at the start of meaningful work, before the first edit.</li>
   </ol>
@@ -47,7 +47,8 @@
 
   <h2>Closure Loop</h2>
   <ol>
-    <li>Run the smallest relevant verification command.</li>
+    <li>Run the standard verification command, <code>python3 -m pytest tests</code>, before committing code or artifact-contract changes.</li>
+    <li>If <code>pytest</code> is unavailable, use the direct test-function runner only as a temporary fallback and document that limitation.</li>
     <li>Update history when a method, result, failure, or decision matters.</li>
     <li>Update lessons when a reusable rule emerges.</li>
     <li>Update strategy when the plan or artifact contract changes.</li>
@@ -60,6 +61,13 @@
     Use one observability endpoint: <code>http://127.0.0.1:8765</code>. Do not open new ports for
     each build. If the dashboard is already running, reuse it. If code changes require a restart,
     stop the existing process and restart the same port.
+  </div>
+
+  <h2>Test Environment Rule</h2>
+  <div class="rule">
+    The repo-level test contract lives in <code>requirements-dev.txt</code>. Future Codex sessions
+    should install those dependencies when needed and verify with <code>python3 -m pytest tests</code>
+    instead of improvising a custom runner.
   </div>
 
   <h2>When Unsure</h2>

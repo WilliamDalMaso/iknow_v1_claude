@@ -67,6 +67,22 @@ Copy `.env.example` to `.env` and set `OPENAI_API_KEY` locally. `.env` is ignore
 
 Model names are intentionally not defaulted. When a model-assisted step is added, the selected model must be explicit and documented.
 
+## Verification
+
+Install the Phase 1 development/test dependencies:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+Run the standard verification command before committing code or artifact-contract changes:
+
+```bash
+python3 -m pytest tests
+```
+
+If `pytest` is unavailable in a constrained environment, a direct test-function runner may be used only as a temporary fallback. The standard command remains `python3 -m pytest tests`.
+
 ## Repository Shape
 
 - `docs/`: HTML project memory, decisions, lessons, strategy, and history.

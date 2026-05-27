@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Environment Contract</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Test Environment Contract</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The override authoring work exposed a verification crack: <code>pytest</code> was not installed,
+    so tests were run with a direct test-function runner. That was useful as a temporary fallback,
+    but it is not a stable contract for future Codex sessions.
+  </p>
+
+  <div class="rule">
+    The standard verification command is now <code>python3 -m pytest tests</code>. Development and
+    test dependencies are declared in <code>requirements-dev.txt</code>.
+  </div>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Added <code>requirements-dev.txt</code> with current Phase 1 runtime and test dependencies.</li>
+    <li>Documented the dependency install command in <code>README.md</code>.</li>
+    <li>Documented <code>python3 -m pytest tests</code> as the standard verification command.</li>
+    <li>Updated Codex work-loop and machine guidance so future work uses the same verification path.</li>
+  </ol>
+
+  <h2>Fallback Rule</h2>
+  <p>
+    Direct test-function execution remains acceptable only as a constrained fallback when
+    <code>pytest</code> cannot be installed or reached. That fallback must be reported instead of
+    silently replacing the standard command.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>The first dependency install attempt failed because package-index network access was blocked in the sandbox.</li>
+    <li>The approved install path succeeded with <code>python3 -m pip install -r requirements-dev.txt</code>.</li>
+    <li>The standard verification command passed: <code>python3 -m pytest tests</code>.</li>
+    <li>Pytest collected <code>15</code> tests and all <code>15</code> passed.</li>
+  </ol>
+
+  <h2>What Did Not Change</h2>
+  <ol>
+    <li>No extraction logic changed.</li>
+    <li>No OCR, AI review, embeddings, retrieval, graph work, or canonical promotion was added.</li>
+  </ol>
+</main>
+</body>
+</html>

@@ -1,0 +1,3 @@
+pdfplumber
+pypdfium2
+pytest
