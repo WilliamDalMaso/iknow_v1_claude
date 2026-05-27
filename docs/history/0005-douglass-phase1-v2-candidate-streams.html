@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Douglass Phase 1 v2 Candidate Streams</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 8px 10px; vertical-align: top; }
+    th { background: #ece9df; text-align: left; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Douglass Phase 1 v2 Candidate Streams</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Trial Purpose</h2>
+  <p>
+    This trial tested the candidate-first reconstruction idea on the Douglass PDF only. The goal was
+    not perfect extraction. The goal was to make every extracted object visible in exactly one bucket
+    so we can audit whether the separation is trustworthy page by page.
+  </p>
+
+  <div class="rule">
+    No Phase 1 output is canonical yet. The v2 run produces candidates for audit and later promotion.
+  </div>
+
+  <h2>Method</h2>
+  <ol>
+    <li>Preserve page-level raw text in <code>raw_pages.jsonl</code>.</li>
+    <li>Build deterministic layout objects from extracted text lines.</li>
+    <li>Merge likely body prose lines into paragraph-shaped objects using line order and indentation.</li>
+    <li>Classify each object into one candidate bucket: paragraph, structure, page artifact, or unknown.</li>
+    <li>Write a reconstruction map candidate linking streams back to source objects, lines, pages, and available bounding boxes.</li>
+    <li>Render <code>phase1_audit.html</code> with counts, validation status, flagged pages, and stream samples.</li>
+  </ol>
+
+  <h2>Artifacts Produced</h2>
+  <ol>
+    <li><code>main_paragraph_candidates.jsonl</code></li>
+    <li><code>structure_candidates.jsonl</code></li>
+    <li><code>page_artifacts_candidates.jsonl</code></li>
+    <li><code>unknown_objects.jsonl</code></li>
+    <li><code>reconstruction_map_candidate.json</code></li>
+    <li><code>reading_order_candidate.json</code></li>
+    <li><code>phase1_audit.html</code></li>
+  </ol>
+
+  <h2>Run Summary</h2>
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>Value</th><th>Interpretation</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Validation status</td><td><code>pass</code></td><td>The v2 artifact contract was satisfied.</td></tr>
+      <tr><td>PDF pages</td><td><code>126</code></td><td>Every page is represented in the page inventory and raw page evidence.</td></tr>
+      <tr><td>Layout objects</td><td><code>517</code></td><td>Same object scale as v1, now separated into candidate streams.</td></tr>
+      <tr><td>Main paragraph candidates</td><td><code>352</code></td><td>The body prose stream is isolated but not canonical.</td></tr>
+      <tr><td>Structure candidates</td><td><code>163</code></td><td>Headings and meaningful non-body objects remain available for reconstruction.</td></tr>
+      <tr><td>Page artifact candidates</td><td><code>1</code></td><td>Current artifact detection is still too weak for running headers and repeated titles.</td></tr>
+      <tr><td>Unknown objects</td><td><code>1</code></td><td>The CID-noise object remains visible instead of being dropped.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>What Went Right</h2>
+  <ol>
+    <li>The run no longer labels the provisional reading order as canonical.</li>
+    <li>Every candidate row keeps <code>source_object_ids</code> and <code>source_line_ids</code>.</li>
+    <li>Paragraph objects now carry a simple combined bounding box when line geometry is available.</li>
+    <li>The validator checks that candidate stream objects exactly match layout objects.</li>
+    <li>The audit page exposes candidate stream counts and samples.</li>
+  </ol>
+
+  <h2>What Went Wrong Or Is Still Weak</h2>
+  <div class="warn">
+    V2 proves the candidate-stream architecture, not extraction cleanliness.
+  </div>
+  <ol>
+    <li>Only one page artifact was detected, which means repeated headers and page furniture are probably under-classified.</li>
+    <li>Structure detection is still a simple deterministic heuristic. It does not yet distinguish chapter heading, title, running header, caption, or footnote.</li>
+    <li>The audit page has samples, but it does not yet show page-by-page original object evidence beside bucket assignments.</li>
+    <li>No OCR or page-image witness has been added yet.</li>
+    <li>No model has reviewed ambiguous candidates yet, which is intentional for this trial.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li><code>python3 src/phase1_extract.py data/books/douglass_narrative.pdf --book-id douglass_narrative --run-id phase1_v2</code> completed.</li>
+    <li><code>validation_report.json</code> returned <code>pass</code>.</li>
+    <li>Direct no-cache Python execution of the Phase 1 test functions passed <code>7</code> checks.</li>
+    <li><code>pytest</code> is not installed in the current local Python environment, so the test functions were executed directly.</li>
+  </ol>
+
+  <h2>Next Correct Move</h2>
+  <div class="rule">
+    Improve the audit view before making extraction smarter. The next audit should show the original
+    extracted objects beside their candidate bucket assignments for each page, making misclassification
+    obvious without reading JSONL files.
+  </div>
+</main>
+</body>
+</html>

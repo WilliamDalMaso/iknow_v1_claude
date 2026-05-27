@@ -23,7 +23,12 @@ REQUIRED_ARTIFACTS = [
     "raw_pages.jsonl",
     "layout_objects.jsonl",
     "clean_objects.jsonl",
-    "canonical_reading_order.json",
+    "main_paragraph_candidates.jsonl",
+    "structure_candidates.jsonl",
+    "page_artifacts_candidates.jsonl",
+    "unknown_objects.jsonl",
+    "reconstruction_map_candidate.json",
+    "reading_order_candidate.json",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -188,6 +193,14 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
         operations = list(dict.fromkeys(line_operations + paragraph_operations))
         source_line_ids = [item["line_id"] for item in paragraph_buffer]
         source_line_indexes = [item["line_index"] for item in paragraph_buffer]
+        xs = [float(item["x0"]) for item in paragraph_buffer if item.get("x0") is not None]
+        tops = [float(item["top"]) for item in paragraph_buffer if item.get("top") is not None]
+        bottoms = [float(item["bottom"]) for item in paragraph_buffer if item.get("bottom") is not None]
+        bbox = {
+            "x0": min(xs) if xs else None,
+            "top": min(tops) if tops else None,
+            "bottom": max(bottoms) if bottoms else None,
+        }
         layout_objects.append(
             {
                 "book_id": book_id,
@@ -199,6 +212,7 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
                 "classification_reasons": ["merged_consecutive_paragraph_lines"],
                 "source_line_ids": source_line_ids,
                 "source_line_indexes": source_line_indexes,
+                "bbox": bbox,
                 "raw_text": raw_text,
             }
         )
@@ -257,6 +271,11 @@ def build_segmented_objects(book_id: str, page_number: int, raw_lines: list[Any]
                 "x0": record.get("x0"),
                 "top": record.get("top"),
                 "bottom": record.get("bottom"),
+                "bbox": {
+                    "x0": record.get("x0"),
+                    "top": record.get("top"),
+                    "bottom": record.get("bottom"),
+                },
                 "raw_text": raw_line,
             }
         )
@@ -283,6 +302,158 @@ def page_status(text: str, image_count: int) -> str:
     if image_count:
         return "image_only"
     return "blank_or_unreadable"
+
+
+def confidence_for_paragraph(clean_text: str, classification_reasons: list[str]) -> tuple[float, list[str]]:
+    warnings: list[str] = []
+    word_count = len(clean_text.split())
+    confidence = 0.82
+    if word_count < 10:
+        confidence -= 0.25
+        warnings.append("short_paragraph_candidate")
+    if word_count > 220:
+        confidence -= 0.15
+        warnings.append("long_paragraph_candidate")
+    if CID_PATTERN.search(clean_text):
+        confidence -= 0.35
+        warnings.append("cid_noise_detected")
+    if "merged_consecutive_paragraph_lines" not in classification_reasons:
+        confidence -= 0.05
+    return max(0.0, round(confidence, 2)), warnings
+
+
+def classify_stream_object(layout: dict[str, Any], clean: dict[str, Any]) -> tuple[str, str, float, list[str]]:
+    object_type = layout.get("object_type")
+    clean_text = str(clean.get("clean_text", ""))
+    reasons = list(layout.get("classification_reasons", []))
+    if object_type == "paragraph":
+        confidence, warnings = confidence_for_paragraph(clean_text, reasons)
+        return "main_paragraph", "main_paragraph_candidate", confidence, warnings
+    if object_type == "heading_candidate":
+        confidence = float(layout.get("confidence", 0.55))
+        warnings = ["not_canonical_heading_yet"]
+        if CID_PATTERN.search(clean_text):
+            warnings.append("cid_noise_detected")
+            confidence = min(confidence, 0.4)
+        return "structure", "structure_candidate", round(confidence, 2), warnings
+    if object_type == "page_artifact":
+        return "page_artifact", "page_artifact_candidate", float(layout.get("confidence", 0.6)), reasons
+    return "unknown", "unknown_needs_review", float(layout.get("confidence", 0.3)), reasons or ["unclassified_object"]
+
+
+def build_reconstruction_streams(
+    book_id: str,
+    run_id: str,
+    layout_objects: list[dict[str, Any]],
+    clean_objects: list[dict[str, Any]],
+    page_count: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    clean_by_id = {row["object_id"]: row for row in clean_objects}
+    main_paragraph_candidates: list[dict[str, Any]] = []
+    structure_candidates: list[dict[str, Any]] = []
+    page_artifacts_candidates: list[dict[str, Any]] = []
+    unknown_objects: list[dict[str, Any]] = []
+    object_to_stream: dict[str, str] = {}
+    paragraphs_by_page: dict[str, list[str]] = {}
+    structure_by_page: dict[str, list[str]] = {}
+    artifacts_by_page: dict[str, list[str]] = {}
+    unknowns_by_page: dict[str, list[str]] = {}
+    paragraph_index = 1
+
+    for layout in layout_objects:
+        object_id = layout["object_id"]
+        clean = clean_by_id[object_id]
+        page_number = int(layout["page_number"])
+        stream, stream_type, confidence, warnings = classify_stream_object(layout, clean)
+        common = {
+            "book_id": book_id,
+            "run_id": run_id,
+            "object_id": object_id,
+            "page_number": page_number,
+            "source_object_ids": [object_id],
+            "source_line_ids": layout.get("source_line_ids", []),
+            "source_line_indexes": layout.get("source_line_indexes", []),
+            "bbox": layout.get("bbox"),
+            "raw_text": layout.get("raw_text", ""),
+            "clean_text": clean.get("clean_text", ""),
+            "confidence": confidence,
+            "warnings": warnings,
+        }
+        object_to_stream[object_id] = stream
+        page_key = str(page_number)
+        if stream == "main_paragraph":
+            paragraph_id = f"p_{paragraph_index:06d}"
+            paragraph_index += 1
+            main_paragraph_candidates.append(
+                {
+                    "paragraph_id": paragraph_id,
+                    "stream_type": stream_type,
+                    **common,
+                    "cleanup_operations": clean.get("cleanup_operations", []),
+                }
+            )
+            paragraphs_by_page.setdefault(page_key, []).append(paragraph_id)
+        elif stream == "structure":
+            structure_candidates.append(
+                {
+                    "stream_type": stream_type,
+                    "structure_type": layout.get("object_type"),
+                    **common,
+                    "evidence": {
+                        "classification_reasons": layout.get("classification_reasons", []),
+                        "x0": layout.get("x0"),
+                        "top": layout.get("top"),
+                        "bottom": layout.get("bottom"),
+                    },
+                }
+            )
+            structure_by_page.setdefault(page_key, []).append(object_id)
+        elif stream == "page_artifact":
+            page_artifacts_candidates.append(
+                {
+                    "stream_type": stream_type,
+                    "artifact_type": layout.get("object_type"),
+                    **common,
+                    "reason": ", ".join(layout.get("classification_reasons", [])) or "deterministic_page_artifact_candidate",
+                }
+            )
+            artifacts_by_page.setdefault(page_key, []).append(object_id)
+        else:
+            unknown_objects.append(
+                {
+                    "stream_type": stream_type,
+                    **common,
+                    "reason": ", ".join(warnings) or "requires_review_before_canonical_use",
+                    "needs_review": True,
+                }
+            )
+            unknowns_by_page.setdefault(page_key, []).append(object_id)
+
+    reconstruction_map = {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "method": "deterministic_candidate_reconstruction_v1",
+        "rule": "No Phase 1 output is canonical until it has passed audit. AI may classify, link, order, and suggest repairs, but must not invent book content.",
+        "page_count": page_count,
+        "counts": {
+            "main_paragraph_candidates": len(main_paragraph_candidates),
+            "structure_candidates": len(structure_candidates),
+            "page_artifacts_candidates": len(page_artifacts_candidates),
+            "unknown_objects": len(unknown_objects),
+        },
+        "object_to_stream": object_to_stream,
+        "paragraphs_by_page": paragraphs_by_page,
+        "structure_by_page": structure_by_page,
+        "artifacts_by_page": artifacts_by_page,
+        "unknowns_by_page": unknowns_by_page,
+        "notes": [
+            "This map is a reconstruction aid, not proof of final book structure.",
+            "Main paragraphs are candidates until visual/audit checks confirm cleanliness.",
+            "Non-paragraph content is preserved separately instead of deleted.",
+        ],
+    }
+    return main_paragraph_candidates, structure_candidates, page_artifacts_candidates, unknown_objects, reconstruction_map
 
 
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
@@ -315,6 +486,8 @@ def build_audit_html(
     manifest: dict[str, Any],
     inventory: list[dict[str, Any]],
     object_counts: Counter[str],
+    stream_counts: dict[str, int],
+    stream_samples: dict[str, list[dict[str, Any]]],
     validation_report: dict[str, Any],
     output_dir: Path,
 ) -> str:
@@ -341,6 +514,7 @@ def build_audit_html(
     )
     status_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(status_counts.items()))
     object_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(object_counts.items()))
+    stream_items = "\n".join(f"<li><code>{esc(k)}</code>: {v}</li>" for k, v in sorted(stream_counts.items()))
     flagged_items = "\n".join(
         f"<li>Page {row['page_number']}: {esc(', '.join(row['review_flags']))}</li>"
         for row in flagged_pages[:40]
@@ -349,6 +523,14 @@ def build_audit_html(
         f"<li><code>{esc(check['name'])}</code>: {esc(check['status'])} {esc(check.get('detail', ''))}</li>"
         for check in validation_report.get("checks", [])
     )
+    sample_sections = []
+    for stream_name, rows in stream_samples.items():
+        items = "\n".join(
+            f"<li><strong>Page {esc(row.get('page_number'))}</strong>: {esc(row.get('clean_text', ''))}</li>"
+            for row in rows[:8]
+        )
+        sample_sections.append(f"<h3>{esc(stream_name)}</h3><ul>{items or '<li>No rows.</li>'}</ul>")
+    sample_stream_html = "\n".join(sample_sections)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -374,8 +556,8 @@ def build_audit_html(
   <p><strong>Source:</strong> <code>{esc(source_pdf)}</code></p>
 
   <div class="rule">
-    This is a deterministic extraction audit. It is designed to reveal extraction risks before
-    retrieval, reasoning, or graph construction begins.
+    This is a deterministic two-stream extraction audit. Main paragraph candidates are separated
+    from structure, page artifacts, and unknown objects without deleting the surrounding evidence.
   </div>
 
   <h2>Manifest</h2>
@@ -392,12 +574,18 @@ def build_audit_html(
   <h2>Object Type Counts</h2>
   <ul>{object_items}</ul>
 
+  <h2>Reconstruction Stream Counts</h2>
+  <ul>{stream_items}</ul>
+
   <h2>Validation</h2>
   <p><strong>Status:</strong> <code>{esc(validation_report.get('status', 'unknown'))}</code></p>
   <ul>{validation_items}</ul>
 
   <h2>Flagged Pages</h2>
   <ul>{flagged_items or '<li>No flagged pages.</li>'}</ul>
+
+  <h2>Stream Samples</h2>
+  {sample_stream_html}
 
   <h2>First 12 Pages</h2>
   <table>
@@ -427,7 +615,12 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     layout_objects = read_jsonl(output_dir / "layout_objects.jsonl")
     clean_objects = read_jsonl(output_dir / "clean_objects.jsonl")
     cleanup_log = read_jsonl(output_dir / "cleanup_log.jsonl")
-    canonical = read_json(output_dir / "canonical_reading_order.json")
+    main_paragraphs = read_jsonl(output_dir / "main_paragraph_candidates.jsonl")
+    structure = read_jsonl(output_dir / "structure_candidates.jsonl")
+    page_artifacts = read_jsonl(output_dir / "page_artifacts_candidates.jsonl")
+    unknown = read_jsonl(output_dir / "unknown_objects.jsonl")
+    reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
+    reading_order = read_json(output_dir / "reading_order_candidate.json")
 
     page_count = int(manifest.get("page_count", 0))
     add_check("page_inventory_matches_manifest", len(inventory) == page_count, f"{len(inventory)} inventory rows / {page_count} manifest pages")
@@ -438,15 +631,32 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
 
     layout_ids = [row.get("object_id") for row in layout_objects]
     clean_ids = [row.get("object_id") for row in clean_objects]
-    canonical_ids = canonical.get("object_ids", [])
+    reading_order_ids = reading_order.get("object_ids", [])
     add_check("object_ids_unique", len(layout_ids) == len(set(layout_ids)))
     add_check("clean_objects_match_layout", set(clean_ids) == set(layout_ids))
-    add_check("canonical_ids_match_layout", canonical_ids == layout_ids)
-    add_check("object_count_matches_canonical", canonical.get("object_count") == len(layout_objects))
+    add_check("reading_order_candidate_ids_match_layout", reading_order_ids == layout_ids)
+    add_check("object_count_matches_reading_order_candidate", reading_order.get("object_count") == len(layout_objects))
     add_check("objects_have_source_lines", all(row.get("source_line_ids") for row in layout_objects))
     add_check("cleanup_log_references_known_objects", {row.get("object_id") for row in cleanup_log}.issubset(set(layout_ids)))
     add_check("raw_text_preserved", all("raw_text" in row for row in raw_pages))
-    add_check("review_flags_present", "review_flags" in canonical)
+    add_check("review_flags_present", "review_flags" in reading_order)
+    stream_object_ids = (
+        {row.get("object_id") for row in main_paragraphs}
+        | {row.get("object_id") for row in structure}
+        | {row.get("object_id") for row in page_artifacts}
+        | {row.get("object_id") for row in unknown}
+    )
+    expected_counts = {
+        "main_paragraph_candidates": len(main_paragraphs),
+        "structure_candidates": len(structure),
+        "page_artifacts_candidates": len(page_artifacts),
+        "unknown_objects": len(unknown),
+    }
+    stream_rows = main_paragraphs + structure + page_artifacts + unknown
+    add_check("stream_objects_match_layout", stream_object_ids == set(layout_ids))
+    add_check("paragraph_stream_has_paragraph_ids", all(row.get("paragraph_id") for row in main_paragraphs))
+    add_check("stream_rows_are_evidence_bound", all(row.get("source_object_ids") and row.get("source_line_ids") for row in stream_rows))
+    add_check("reconstruction_map_counts_match_streams", reconstruction_map.get("counts") == expected_counts)
 
     status = "pass" if all(check["status"] == "pass" for check in checks) else "fail"
     return {
@@ -459,12 +669,16 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             "raw_page_rows": len(raw_pages),
             "layout_object_rows": len(layout_objects),
             "clean_object_rows": len(clean_objects),
+            "main_paragraph_rows": len(main_paragraphs),
+            "structure_rows": len(structure),
+            "page_artifact_rows": len(page_artifacts),
+            "unknown_rows": len(unknown),
             "cleanup_log_rows": len(cleanup_log),
         },
     }
 
 
-def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v1") -> Path:
+def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v2") -> Path:
     pdf_path = pdf_path.expanduser().resolve()
     if not pdf_path.exists():
         raise FileNotFoundError(pdf_path)
@@ -531,30 +745,55 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v1") -> Path:
             "raw_pages": "raw_pages.jsonl",
             "layout_objects": "layout_objects.jsonl",
             "clean_objects": "clean_objects.jsonl",
-            "canonical_reading_order": "canonical_reading_order.json",
+            "reading_order_candidate": "reading_order_candidate.json",
             "cleanup_log": "cleanup_log.jsonl",
             "validation_report": "validation_report.json",
             "phase1_audit": "phase1_audit.html",
         },
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
-    canonical = {
+    main_paragraphs, structure, page_artifacts, unknown, reconstruction_map = build_reconstruction_streams(
+        book_id, run_id, layout_objects, clean_objects, page_count
+    )
+    stream_counts = {
+        "main_paragraph_candidates": len(main_paragraphs),
+        "structure_candidates": len(structure),
+        "page_artifacts_candidates": len(page_artifacts),
+        "unknown_objects": len(unknown),
+    }
+    reading_order_candidate = {
         "book_id": book_id,
         "run_id": run_id,
         "created_at": utc_now(),
         "object_count": len(layout_objects),
         "object_type_counts": dict(sorted(object_counts.items())),
+        "candidate_stream_counts": stream_counts,
         "page_count": page_count,
         "object_ids": [row["object_id"] for row in layout_objects],
+        "main_paragraph_candidate_ids": [row["paragraph_id"] for row in main_paragraphs],
         "review_flags": sorted({flag for page in inventory for flag in page["review_flags"]}),
     }
+    manifest["outputs"].update(
+        {
+            "main_paragraph_candidates": "main_paragraph_candidates.jsonl",
+            "structure_candidates": "structure_candidates.jsonl",
+            "page_artifacts_candidates": "page_artifacts_candidates.jsonl",
+            "unknown_objects": "unknown_objects.jsonl",
+            "reconstruction_map_candidate": "reconstruction_map_candidate.json",
+        }
+    )
 
     write_json(output_dir / "source_manifest.json", manifest)
     write_jsonl(output_dir / "page_inventory.jsonl", inventory)
     write_jsonl(output_dir / "raw_pages.jsonl", raw_pages)
     write_jsonl(output_dir / "layout_objects.jsonl", layout_objects)
     write_jsonl(output_dir / "clean_objects.jsonl", clean_objects)
-    write_json(output_dir / "canonical_reading_order.json", canonical)
+    write_jsonl(output_dir / "main_paragraph_candidates.jsonl", main_paragraphs)
+    write_jsonl(output_dir / "structure_candidates.jsonl", structure)
+    write_jsonl(output_dir / "page_artifacts_candidates.jsonl", page_artifacts)
+    write_jsonl(output_dir / "unknown_objects.jsonl", unknown)
+    write_json(output_dir / "reconstruction_map_candidate.json", reconstruction_map)
+    write_json(output_dir / "reading_order_candidate.json", reading_order_candidate)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
         "created_at": utc_now(),
@@ -563,14 +802,20 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v1") -> Path:
         "summary": {"detail": "Validation report is generated after the first audit render."},
     }
     write_json(output_dir / "validation_report.json", pending_validation)
+    stream_samples = {
+        "main_paragraph_candidates": main_paragraphs[:8],
+        "structure_candidates": structure[:8],
+        "page_artifacts_candidates": page_artifacts[:8],
+        "unknown_objects": unknown[:8],
+    }
     (output_dir / "phase1_audit.html").write_text(
-        build_audit_html(book_id, pdf_path, manifest, inventory, object_counts, pending_validation, output_dir),
+        build_audit_html(book_id, pdf_path, manifest, inventory, object_counts, stream_counts, stream_samples, pending_validation, output_dir),
         encoding="utf-8",
     )
     validation_report = validate_phase1_run(output_dir)
     write_json(output_dir / "validation_report.json", validation_report)
     (output_dir / "phase1_audit.html").write_text(
-        build_audit_html(book_id, pdf_path, manifest, inventory, object_counts, validation_report, output_dir),
+        build_audit_html(book_id, pdf_path, manifest, inventory, object_counts, stream_counts, stream_samples, validation_report, output_dir),
         encoding="utf-8",
     )
     return output_dir
@@ -580,7 +825,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run deterministic Phase 1 PDF extraction.")
     parser.add_argument("pdf_path", help="Path to the source PDF.")
     parser.add_argument("--book-id", required=True, help="Stable book id for output paths.")
-    parser.add_argument("--run-id", default="phase1_v1", help="Run id for output paths.")
+    parser.add_argument("--run-id", default="phase1_v2", help="Run id for output paths.")
     return parser.parse_args()
 
 

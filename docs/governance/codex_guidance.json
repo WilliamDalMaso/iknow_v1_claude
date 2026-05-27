@@ -18,8 +18,32 @@
     "Do not widen to many books before one book passes Phase 1 gates.",
     "Do not spend expensive model calls without recording why the model was chosen.",
     "Do not use Markdown as the durable project documentation format, except README.md as a GitHub-facing adapter.",
+    "Do not call Phase 1 outputs canonical until they pass audit, comparison, and review.",
     "Stage, commit, and push meaningful checkpoints when the repo state should be preserved."
   ],
+  "phase1_candidate_first_rule": {
+    "rule": "No Phase 1 output should be called canonical until it has passed an audit step.",
+    "candidate_outputs": [
+      "main_paragraph_candidates.jsonl",
+      "structure_candidates.jsonl",
+      "page_artifacts_candidates.jsonl",
+      "unknown_objects.jsonl",
+      "reconstruction_map_candidate.json",
+      "reading_order_candidate.json"
+    ],
+    "allowed_model_roles": [
+      "classify",
+      "link",
+      "order",
+      "explain",
+      "suggest repairs from preserved evidence"
+    ],
+    "forbidden_model_roles": [
+      "invent canonical book content",
+      "rewrite book content silently",
+      "fill missing content without evidence"
+    ]
+  },
   "codex_work_loop": {
     "start": [
       "Read docs/governance/0002-source-of-truth.html.",

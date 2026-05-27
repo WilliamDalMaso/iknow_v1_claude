@@ -52,6 +52,19 @@
     <li>Stage, commit, and push meaningful checkpoints when the repo state should be preserved.</li>
   </ol>
 
+  <h2>Candidate-First Rule</h2>
+  <div class="rule">
+    No Phase 1 output should be called canonical until it has passed an audit step. The first
+    extraction and classification pass produces candidates. Canonical book content may only be
+    produced after audit, comparison, and review.
+  </div>
+  <p>
+    Acceptable audit evidence can include deterministic validation, page-image inspection, OCR
+    comparison, model-assisted review, or human approval. Models may classify, link, order, and
+    suggest repairs from preserved evidence. They may not invent, rewrite, or fill missing book
+    content.
+  </p>
+
   <h2>Documentation Truth</h2>
   <p>
     Durable project memory lives in <code>docs/</code> as HTML. Machine-readable guidance lives in

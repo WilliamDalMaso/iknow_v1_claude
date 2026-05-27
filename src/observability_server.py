@@ -100,7 +100,9 @@ def phase1_run_summaries() -> list[dict]:
             continue
         manifest = read_json(run_dir / "source_manifest.json")
         inventory = read_jsonl(run_dir / "page_inventory.jsonl")
-        canonical = read_json(run_dir / "canonical_reading_order.json")
+        reading_order = read_json(run_dir / "reading_order_candidate.json")
+        if not reading_order:
+            reading_order = read_json(run_dir / "canonical_reading_order.json")
         status_counts: dict[str, int] = {}
         flag_counts: dict[str, int] = {}
         for row in inventory:
@@ -114,10 +116,11 @@ def phase1_run_summaries() -> list[dict]:
                 "run_id": manifest.get("run_id") or run_dir.name,
                 "created_at": manifest.get("created_at", ""),
                 "page_count": manifest.get("page_count", len(inventory)),
-                "object_count": canonical.get("object_count", 0),
+                "object_count": reading_order.get("object_count", 0),
+                "candidate_stream_counts": reading_order.get("candidate_stream_counts", {}),
                 "status_counts": status_counts,
                 "flag_counts": flag_counts,
-                "review_flags": canonical.get("review_flags", []),
+                "review_flags": reading_order.get("review_flags", []),
                 "audit_url": f"/runs/{run_dir.parent.name}/{run_dir.name}/phase1_audit.html",
                 "manifest_url": f"/runs/{run_dir.parent.name}/{run_dir.name}/source_manifest.json",
             }
@@ -238,6 +241,7 @@ def dashboard_html() -> bytes:
           <div class="run-stat"><span>Created</span><strong>${escapeHtml(run.created_at || "-")}</strong></div>
           <div class="run-stat"><span>Pages</span><strong>${escapeHtml(run.page_count)}</strong></div>
           <div class="run-stat"><span>Objects</span><strong>${escapeHtml(run.object_count)}</strong></div>
+          <div class="run-stat"><span>Candidate streams</span><strong>${countMap(run.candidate_stream_counts)}</strong></div>
           <div class="run-stat"><span>Review flags</span><strong>${escapeHtml((run.review_flags || []).length)}</strong></div>
           <div class="run-stat"><span>Page status</span><strong>${countMap(run.status_counts)}</strong></div>
           <div class="run-stat"><span>Flag counts</span><strong>${countMap(run.flag_counts)}</strong></div>

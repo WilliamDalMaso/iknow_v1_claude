@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from src.phase1_extract import CID_PATTERN, build_segmented_objects, classify_line, clean_line, join_paragraph_lines, page_status
+from src.phase1_extract import (
+    CID_PATTERN,
+    build_reconstruction_streams,
+    build_segmented_objects,
+    classify_line,
+    clean_line,
+    join_paragraph_lines,
+    page_status,
+)
 
 
 def test_clean_line_flags_cid_noise() -> None:
@@ -64,3 +72,36 @@ def test_build_segmented_objects_splits_indented_paragraphs() -> None:
     assert [row["object_type"] for row in layout] == ["paragraph", "paragraph"]
     assert clean[0]["clean_text"] == "First paragraph starts here and continues here."
     assert clean[1]["clean_text"] == "Second paragraph starts here and continues here."
+    assert layout[0]["bbox"]["x0"] == 43.2
+    assert layout[0]["bbox"]["top"] == 10
+    assert layout[0]["bbox"]["bottom"] == 34
+
+
+def test_build_reconstruction_streams_buckets_every_object_once() -> None:
+    layout, clean, _ = build_segmented_objects(
+        "book",
+        3,
+        [
+            "CHAPTER I",
+            "This is the first line",
+            "of a paragraph.",
+            "iv",
+        ],
+    )
+    paragraphs, structure, artifacts, unknown, reconstruction_map = build_reconstruction_streams(
+        "book", "phase1_v2", layout, clean, page_count=3
+    )
+    assert len(paragraphs) == 1
+    assert len(structure) == 1
+    assert len(artifacts) == 1
+    assert unknown == []
+    assert paragraphs[0]["stream_type"] == "main_paragraph_candidate"
+    assert paragraphs[0]["source_object_ids"] == [paragraphs[0]["object_id"]]
+    assert structure[0]["stream_type"] == "structure_candidate"
+    assert artifacts[0]["stream_type"] == "page_artifact_candidate"
+    assert reconstruction_map["counts"] == {
+        "main_paragraph_candidates": 1,
+        "structure_candidates": 1,
+        "page_artifacts_candidates": 1,
+        "unknown_objects": 0,
+    }

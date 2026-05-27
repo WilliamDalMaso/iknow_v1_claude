@@ -18,9 +18,11 @@ Phase 1 is the center of the project:
 2. Extract every page without silently losing content.
 3. Separate raw extraction from cleaned text.
 4. Identify document objects such as headings, paragraphs, tables, figures, captions, footnotes, lists, quotes, and unknown objects.
-5. Build a canonical reading order with page and object provenance.
+5. Build a candidate reading order with page and object provenance.
 6. Record cleanup decisions, omissions, uncertainty, and review needs.
 7. Audit cleanliness before retrieval or graph construction.
+
+Phase 1 outputs are candidate-first. Nothing is called canonical until it has passed audit, comparison, and review.
 
 ## Documentation Model
 
@@ -76,4 +78,3 @@ Runtime observability logs are ignored by git.
 - Do not widen to many books before one book passes Phase 1 gates.
 - Do not spend expensive model calls without recording why the model was chosen.
 - Keep durable local documentation in HTML; use Markdown only where GitHub needs it.
-

@@ -26,6 +26,10 @@
     Phase 1 produces an auditable document package. It does not produce embeddings, retrieval chunks,
     claims, entities, relations, graphs, or user-facing answers.
   </div>
+  <div class="rule">
+    Phase 1 v2 is candidate-first. It does not call extracted text canonical until an audit step has
+    promoted it.
+  </div>
 
   <h2>Run Location</h2>
   <p>
@@ -65,9 +69,34 @@
         <td>Makes cleanup inspectable.</td>
       </tr>
       <tr>
-        <td><code>canonical_reading_order.json</code></td>
-        <td>Ordered object ids plus summary counts and review flags.</td>
-        <td>Defines the first canonical reading sequence.</td>
+        <td><code>main_paragraph_candidates.jsonl</code></td>
+        <td>Body paragraph candidates with source object ids, source line ids, raw text, cleaned text, confidence, warnings, and bounding boxes when available.</td>
+        <td>Separates likely main prose from structure and artifacts without calling it canonical.</td>
+      </tr>
+      <tr>
+        <td><code>structure_candidates.jsonl</code></td>
+        <td>Meaningful non-body candidates such as titles, chapter headings, section markers, captions, or footnote-like objects.</td>
+        <td>Preserves book structure evidence for later mapping and audit.</td>
+      </tr>
+      <tr>
+        <td><code>page_artifacts_candidates.jsonl</code></td>
+        <td>Likely page numbers, repeated headers, running footers, and other page artifacts.</td>
+        <td>Prevents page artifacts from polluting paragraph retrieval while keeping them inspectable.</td>
+      </tr>
+      <tr>
+        <td><code>unknown_objects.jsonl</code></td>
+        <td>Objects that cannot be safely classified yet.</td>
+        <td>Prevents silent deletion and false confidence.</td>
+      </tr>
+      <tr>
+        <td><code>reconstruction_map_candidate.json</code></td>
+        <td>Candidate map linking source objects to streams, paragraphs to pages, and non-body objects to their pages.</td>
+        <td>Defines the provisional reconstruction without promoting it to canonical truth.</td>
+      </tr>
+      <tr>
+        <td><code>reading_order_candidate.json</code></td>
+        <td>Ordered object ids plus candidate stream counts and review flags.</td>
+        <td>Defines the provisional reading sequence for audit.</td>
       </tr>
       <tr>
         <td><code>cleanup_log.jsonl</code></td>
@@ -87,15 +116,17 @@
     </tbody>
   </table>
 
-  <h2>V1 Acceptance</h2>
+  <h2>V2 Acceptance</h2>
   <ol>
     <li>The page inventory row count equals the PDF page count.</li>
     <li>Image-only, blank, mixed, and text pages are explicitly labeled.</li>
     <li>Raw extracted text is preserved unchanged.</li>
     <li>Known extraction noise such as <code>(cid:...)</code> is flagged for review.</li>
     <li>Cleanup operations are logged per object.</li>
-    <li>Normal prose lines are merged into paragraph objects, with source line ids preserved.</li>
-    <li>Heading detections remain <code>heading_candidate</code> objects until audited.</li>
+    <li>Normal prose lines are merged into paragraph candidates, with source line ids preserved.</li>
+    <li>Heading detections remain <code>structure_candidate</code> rows until audited.</li>
+    <li>Every extracted object appears in exactly one candidate bucket unless duplicated only as a linked reference.</li>
+    <li>No output is named canonical before audit promotion.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
   </ol>

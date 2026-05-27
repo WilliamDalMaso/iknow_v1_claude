@@ -30,7 +30,8 @@
   <h2>Engineering Bias</h2>
   <ol>
     <li>Deterministic extraction and audits first; models second.</li>
-    <li>Separate raw, cleaned, canonical, retrieval, and graph artifacts.</li>
+    <li>Separate raw, cleaned, candidate, future canonical, retrieval, and graph artifacts.</li>
+    <li>Do not call Phase 1 output canonical until it has passed audit, comparison, and review.</li>
     <li>Preserve provenance for every derived object.</li>
     <li>Write tests for artifact contracts as soon as a contract exists.</li>
     <li>When uncertain, inspect the actual PDF evidence instead of guessing.</li>

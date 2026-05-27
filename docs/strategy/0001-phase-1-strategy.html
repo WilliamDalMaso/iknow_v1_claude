@@ -44,7 +44,8 @@
     <li><strong>Raw layer:</strong> raw text and layout output from extraction tools.</li>
     <li><strong>Object layer:</strong> page-level content objects with type, order, provenance, confidence, and coordinates when available.</li>
     <li><strong>Clean layer:</strong> normalized readable text by object, with reversible cleanup logs.</li>
-    <li><strong>Canonical layer:</strong> book structure, reading order, sections, page mappings, and content inventory.</li>
+    <li><strong>Candidate reconstruction layer:</strong> provisional book structure, reading order, sections, page mappings, and content inventory.</li>
+    <li><strong>Canonical layer:</strong> promoted book structure and text after audit, comparison, and review.</li>
     <li><strong>Audit layer:</strong> coverage reports, suspicious gaps, sampled visual checks, and human review notes.</li>
   </ol>
 
@@ -55,6 +56,21 @@
     high ambiguity, high value, or review of a specific failure. Cheap models can be used for low-risk labels
     only after deterministic evidence is gathered.
   </p>
+
+  <h2>Candidate Lifecycle</h2>
+  <p>
+    Phase 1 v2 uses a candidate-first lifecycle: raw objects become classified candidate streams,
+    candidate streams become a reconstruction map candidate, and only audited candidates can later
+    become canonical outputs. This prevents clean-looking extraction from being treated as truth too early.
+  </p>
+  <ol>
+    <li><code>raw_pages.jsonl</code> and <code>layout_objects.jsonl</code> preserve source evidence.</li>
+    <li><code>main_paragraph_candidates.jsonl</code> holds body paragraph candidates.</li>
+    <li><code>structure_candidates.jsonl</code> holds headings, titles, section markers, and other meaningful non-body candidates.</li>
+    <li><code>page_artifacts_candidates.jsonl</code> holds likely page numbers, running headers, and non-content noise.</li>
+    <li><code>unknown_objects.jsonl</code> holds anything uncertain instead of deleting it.</li>
+    <li><code>reconstruction_map_candidate.json</code> links the candidates back to pages and source objects.</li>
+  </ol>
 
   <h2>First Book Strategy</h2>
   <p>

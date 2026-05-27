@@ -31,7 +31,7 @@
     <li>Read <code>docs/governance/0002-source-of-truth.html</code>.</li>
     <li>Read <code>docs/strategy/0001-phase-1-strategy.html</code>.</li>
     <li>Read <code>docs/strategy/0002-phase-1-artifact-contract.html</code>.</li>
-    <li>Read the latest relevant history entry, currently <code>docs/history/0002-douglass-phase1-v0-start.html</code>.</li>
+    <li>Read the latest relevant history entry, currently <code>docs/history/0005-douglass-phase1-v2-candidate-streams.html</code>.</li>
     <li>Check <code>git status --short</code> before editing.</li>
     <li>Append an observability event when beginning meaningful work.</li>
   </ol>
@@ -39,7 +39,7 @@
   <h2>During Work</h2>
   <ol>
     <li>Protect Phase 1 cleanliness above all downstream ambitions.</li>
-    <li>Keep raw extraction, cleaned text, canonical objects, and audit artifacts separate.</li>
+    <li>Keep raw extraction, cleaned text, candidate objects, future canonical objects, and audit artifacts separate.</li>
     <li>Do not introduce retrieval, embeddings, claims, or graph work until the current Phase 1 gate allows it.</li>
     <li>Use deterministic methods first. Models can review bounded flagged cases later, but must not become the extractor of record.</li>
     <li>Keep generated run artifacts under <code>data/runs/</code> and out of git unless curated into docs.</li>
