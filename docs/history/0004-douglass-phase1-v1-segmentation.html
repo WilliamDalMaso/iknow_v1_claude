@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Douglass Phase 1 v1 Segmentation</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 8px 10px; vertical-align: top; }
+    th { background: #ece9df; text-align: left; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Douglass Phase 1 v1 Segmentation</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li><code>src/phase1_extract.py</code> now defaults to <code>phase1_v1</code>.</li>
+    <li>Line-level prose is merged into paragraph objects while preserving source line ids.</li>
+    <li>Detected headings are written as <code>heading_candidate</code>, not trusted canonical headings.</li>
+    <li>Paragraph splitting uses deterministic line geometry when available, especially first-line indentation.</li>
+    <li>Each run emits <code>validation_report.json</code> and the audit page shows validation status.</li>
+  </ol>
+
+  <h2>Method Detail</h2>
+  <p>
+    The v1 segmenter uses <code>pdfplumber.extract_text_lines()</code> when available. In the Douglass
+    PDF, continuation lines often begin around <code>x0=43.3</code>, while new paragraphs often begin
+    around <code>x0=64.9</code>. V1 uses that indentation gap to split paragraph candidates.
+  </p>
+
+  <h2>V1 Run Summary</h2>
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>v0</th><th>v1</th><th>Interpretation</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Validation status</td><td>not available</td><td><code>pass</code></td><td>The artifact contract now has a machine check.</td></tr>
+      <tr><td>Layout objects</td><td><code>3902</code></td><td><code>517</code></td><td>Line objects were consolidated into larger document objects.</td></tr>
+      <tr><td>Paragraph objects</td><td><code>0</code> true paragraphs</td><td><code>352</code></td><td>V1 now has paragraph candidates.</td></tr>
+      <tr><td>Heading candidates</td><td><code>163</code></td><td><code>163</code></td><td>Still provisional and not accepted structure.</td></tr>
+      <tr><td>Unknown objects</td><td><code>1</code></td><td><code>1</code></td><td>The page 1 CID-noise object remains visible.</td></tr>
+      <tr><td>Paragraphs over 300 words</td><td><code>95</code></td><td><code>35</code></td><td>Improved, but still not clean enough to trust downstream.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>What Went Right</h2>
+  <ol>
+    <li>V1 preserves raw page text and source line ids while creating higher-level paragraph objects.</li>
+    <li>The validator caught a real ordering bug: it originally checked for the audit page before the audit page was written.</li>
+    <li>The validator now checks that <code>validation_report.json</code> itself exists.</li>
+    <li>The paragraph count and large-block count both moved in the right direction.</li>
+  </ol>
+
+  <h2>What Is Still Bad Or Risky</h2>
+  <div class="warn">
+    V1 is better than v0, but it is not final clean extraction.
+  </div>
+  <ol>
+    <li><code>35</code> paragraph candidates are still over <code>300</code> words.</li>
+    <li>Some long objects may be true long paragraphs, but some may still be page-spanning over-merges.</li>
+    <li>Running headers such as roman numeral plus section title are not yet cleanly separated from structure.</li>
+    <li>Image-only page 2 is still only flagged, not visually/OCR inspected.</li>
+    <li>No model has reviewed flagged cases yet, which is correct for now but will become useful later.</li>
+  </ol>
+
+  <h2>Next Correct Move</h2>
+  <div class="rule">
+    Add Phase 1 quality diagnostics for suspicious paragraph objects, especially overlong paragraph
+    candidates, running headers, and image-only pages. Do not move to retrieval yet.
+  </div>
+</main>
+</body>
+</html>

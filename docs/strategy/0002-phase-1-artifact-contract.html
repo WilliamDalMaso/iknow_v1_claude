@@ -29,7 +29,7 @@
 
   <h2>Run Location</h2>
   <p>
-    Generated Phase 1 runs live under <code>data/runs/&lt;book_id&gt;/phase1_v0/</code>. Runtime run
+    Generated Phase 1 runs live under <code>data/runs/&lt;book_id&gt;/phase1_v*/</code>. Runtime run
     artifacts are ignored by git unless a curated finding is promoted into <code>docs/</code>.
   </p>
 
@@ -56,7 +56,7 @@
       </tr>
       <tr>
         <td><code>layout_objects.jsonl</code></td>
-        <td>Initial deterministic page objects, usually line-level in v0, with type guesses and confidence.</td>
+        <td>Initial deterministic page objects with type guesses, confidence, raw text, and source line ids.</td>
         <td>Begins object-level organization before retrieval.</td>
       </tr>
       <tr>
@@ -75,6 +75,11 @@
         <td>Prevents untracked text mutation.</td>
       </tr>
       <tr>
+        <td><code>validation_report.json</code></td>
+        <td>Checks required artifacts, page coverage, object ids, raw preservation, and cleanup references.</td>
+        <td>Prevents silent artifact-contract drift.</td>
+      </tr>
+      <tr>
         <td><code>phase1_audit.html</code></td>
         <td>Human-readable local audit page summarizing status, risks, and page samples.</td>
         <td>Primary v0 review surface.</td>
@@ -82,20 +87,24 @@
     </tbody>
   </table>
 
-  <h2>V0 Acceptance</h2>
+  <h2>V1 Acceptance</h2>
   <ol>
     <li>The page inventory row count equals the PDF page count.</li>
     <li>Image-only, blank, mixed, and text pages are explicitly labeled.</li>
     <li>Raw extracted text is preserved unchanged.</li>
     <li>Known extraction noise such as <code>(cid:...)</code> is flagged for review.</li>
     <li>Cleanup operations are logged per object.</li>
+    <li>Normal prose lines are merged into paragraph objects, with source line ids preserved.</li>
+    <li>Heading detections remain <code>heading_candidate</code> objects until audited.</li>
+    <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
   </ol>
 
   <h2>Known Limits</h2>
   <p>
-    Phase 1 v0 is line-object based. It is allowed to be imperfect, but not opaque. Its job is to
-    reveal extraction risks and establish the artifact spine before we improve object segmentation.
+    Phase 1 v1 has paragraph segmentation, but it is still heuristic. It is allowed to be imperfect,
+    but not opaque. Its job is to reveal extraction risks and establish the artifact spine before
+    structure, OCR, table, figure, and footnote handling deepen.
   </p>
 
   <h2>Model Assistance Policy</h2>

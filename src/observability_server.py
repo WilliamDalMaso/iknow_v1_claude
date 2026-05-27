@@ -95,7 +95,7 @@ def phase1_run_summaries() -> list[dict]:
     summaries: list[dict] = []
     if not RUNS_DIR.exists():
         return summaries
-    for run_dir in sorted(RUNS_DIR.glob("*/phase1_v0")):
+    for run_dir in sorted(RUNS_DIR.glob("*/phase1_v*")):
         if not run_dir.is_dir():
             continue
         manifest = read_json(run_dir / "source_manifest.json")
