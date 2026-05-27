@@ -22,6 +22,7 @@
     "Do not use Markdown as the durable project documentation format, except README.md as a GitHub-facing adapter.",
     "Do not call Phase 1 outputs canonical until they pass audit, comparison, and review.",
     "Do not hide review corrections inside detector logic; store durable corrections as tracked review override artifacts under reviews/.",
+    "Do not adopt paragraph merge policy changes from heuristic warning improvement alone; require gold-set improvement and preserved audit safety metrics.",
     "Stage, commit, and push meaningful checkpoints when the repo state should be preserved."
   ],
   "phase1_candidate_first_rule": {
@@ -45,12 +46,13 @@
       "canonical_paragraph_review_report.json",
       "paragraph_merge_experiment_report.json",
       "paragraph_merge_failure_taxonomy_report.json",
+      "gold_evaluation_report.json",
       "validation_report.json"
     ],
     "canonical_promotion_rule": {
       "meaning": "Canonical means evidence-bound, audited enough under current rules, and safe for downstream use; it does not mean flawless.",
       "first_gate": "Promote main_paragraph_candidates only.",
-      "review_gate": "Review canonical_paragraphs.jsonl with canonical_paragraph_review_report.json before downstream use, including warning drilldowns, risk clusters, bbox span diagnostics and decision summaries when span risk dominates, merge experiment reports before adopting merge policy changes, merge failure taxonomy after failed merge experiments, and top corrective recommendation. Do not adopt paragraph-break policy experiments unless they reduce likely true accidental merges and paragraph-break taxonomy counts without unacceptable over-splitting.",
+      "review_gate": "Review canonical_paragraphs.jsonl with canonical_paragraph_review_report.json before downstream use, including warning drilldowns, risk clusters, bbox span diagnostics and decision summaries when span risk dominates, merge experiment reports before adopting merge policy changes, merge failure taxonomy after failed merge experiments, gold evaluation reports before any merge-policy adoption, and top corrective recommendation. Do not adopt paragraph-break policy experiments unless they improve against authoritative gold review rows, preserve audit safety metrics, and avoid unacceptable over-splitting.",
       "forbidden_in_first_gate": [
         "structure promotion",
         "page artifact promotion",
@@ -61,6 +63,18 @@
         "retrieval",
         "graph work"
       ]
+    },
+    "gold_review_rule": {
+      "tracked_dir": "reviews/<book_id>/gold/",
+      "review_files": [
+        "gold_pages.json",
+        "gold_paragraph_boundaries.jsonl",
+        "gold_object_labels.jsonl",
+        "gold_review_instructions.html"
+      ],
+      "generated_report": "gold_evaluation_report.json",
+      "adoption_rule": "No paragraph merge policy may become active merely because heuristic warning counts improve. It must improve against authoritative gold review rows and must not worsen audit safety metrics.",
+      "seed_policy": "Seed/example rows help establish workflow but are excluded from scoring until marked authoritative after visual review."
     },
     "evidence_stack": [
       "raw PDF evidence",
@@ -97,6 +111,7 @@
       "Run python3 -m pytest tests before committing code or artifact-contract changes.",
       "If pytest is unavailable, use the direct test-function runner only as a temporary fallback and document the limitation.",
       "Update history, lessons, or strategy when the result changes project knowledge.",
+      "Before adopting paragraph merge policy changes, verify gold_evaluation_report.json shows authoritative gold-set improvement and no audit safety regression.",
       "Append an observability event summarizing the outcome.",
       "Stage, commit, and push meaningful durable changes."
     ]

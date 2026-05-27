@@ -49,6 +49,7 @@
     <li>Do not widen to many books before one book passes Phase 1 gates.</li>
     <li>Do not spend expensive model calls without recording why the model was chosen.</li>
     <li>Do not use Markdown as the durable project documentation format.</li>
+    <li>Do not adopt a paragraph merge policy merely because heuristic warning counts improve.</li>
     <li>Stage, commit, and push meaningful checkpoints when the repo state should be preserved.</li>
   </ol>
 
@@ -75,6 +76,19 @@
     The first promotion gate is paragraph-only. Structure, page artifacts, unknown objects, OCR,
     model review, retrieval, and knowledge graph work remain outside this gate until explicitly
     designed and audited.
+  </p>
+
+  <h2>Gold Review Rule</h2>
+  <div class="rule">
+    Paragraph merge policy changes need a verified answer key. A merge policy cannot become active
+    merely because heuristic warnings improve; it must improve against the authoritative gold review
+    set and must not worsen audit safety metrics such as over-splitting, missing lines, structure
+    leakage, artifact leakage, or downstream safety.
+  </div>
+  <p>
+    Gold review files live under <code>reviews/&lt;book_id&gt;/gold/</code>. Seed or example rows are
+    useful for shaping the workflow, but they are not scoring truth until explicitly marked
+    authoritative after visual review.
   </p>
 
   <h2>Phase 1 Evidence Stack</h2>

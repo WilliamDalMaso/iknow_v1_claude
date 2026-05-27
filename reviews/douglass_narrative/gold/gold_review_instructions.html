@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Douglass Gold Review Instructions</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 920px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Douglass Gold Review Instructions</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <div class="rule">
+    Gold rows are the answer key. Do not mark a row <code>authoritative</code> unless the rendered page,
+    overlay boxes, object card, source lines, and candidate bucket all support the decision.
+  </div>
+
+  <h2>Review Surface</h2>
+  <ol>
+    <li>Open <code>data/runs/douglass_narrative/phase1_v3/phase1_audit.html</code>.</li>
+    <li>Use the page image, bounding-box overlays, object cards, source line ids, and candidate buckets together.</li>
+    <li>Inspect the sampled pages listed in <code>gold_pages.json</code>.</li>
+    <li>Prefer the visual PDF page over clean-looking extracted text when deciding boundaries.</li>
+  </ol>
+
+  <h2>Paragraph Boundary Rows</h2>
+  <p>
+    Add rows to <code>gold_paragraph_boundaries.jsonl</code> only when the source lines are known to
+    form one correct paragraph. Use <code>review_status: "authoritative"</code> only after review.
+    Use <code>review_status: "uncertain"</code> if the visual evidence is ambiguous.
+  </p>
+
+  <h2>Object Label Rows</h2>
+  <p>
+    Add rows to <code>gold_object_labels.jsonl</code> for selected objects using one of:
+    <code>main_paragraph</code>, <code>structure</code>, <code>metadata</code>,
+    <code>page_artifact</code>, or <code>unknown</code>. If unsure, use <code>unknown</code> and
+    explain why in <code>reason</code>.
+  </p>
+
+  <h2>Rules</h2>
+  <ol>
+    <li>Do not guess missing text.</li>
+    <li>Do not mark seed examples authoritative without visual inspection.</li>
+    <li>Record uncertainty explicitly instead of forcing a label.</li>
+    <li>No merge policy can become active unless it improves against authoritative gold rows and does not worsen audit safety metrics.</li>
+  </ol>
+</main>
+</body>
+</html>

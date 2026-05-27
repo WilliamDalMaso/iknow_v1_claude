@@ -5,6 +5,7 @@ import json
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
+import src.phase1_extract as phase1_extract
 from src.phase1_extract import (
     CID_PATTERN,
     build_audit_html,
@@ -14,6 +15,7 @@ from src.phase1_extract import (
     build_paragraph_merge_failure_taxonomy_report,
     classify_line,
     clean_line,
+    evaluate_gold_reviews,
     join_paragraph_lines,
     page_status,
     review_canonical_paragraphs,
@@ -401,6 +403,78 @@ def test_merge_failure_taxonomy_samples_likely_true_merges() -> None:
     assert report["summary"]["count_by_category"]["merged_across_paragraph_break"] == 1
 
 
+def test_gold_review_evaluation_excludes_seed_rows() -> None:
+    paragraphs = [
+        {
+            "object_id": "book:p0001:obj001",
+            "paragraph_id": "p_000001",
+            "page_number": 1,
+            "source_line_ids": ["book:p0001:line001", "book:p0001:line002"],
+            "stream_type": "main_paragraph_candidate",
+            "clean_text": "A reviewed paragraph.",
+        }
+    ]
+
+    report = evaluate_gold_reviews("missing_book_for_unit_test", "phase1_v3", paragraphs, [], [], [])
+
+    assert report["counts"]["gold_pages_reviewed"] == 0
+    assert report["counts"]["gold_paragraph_rows"] == 0
+    assert report["sufficient_to_judge_merge_policy_adoption"] is False
+    assert report["scores"]["paragraph_precision"] is None
+
+
+def test_gold_review_evaluation_scores_authoritative_rows(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(phase1_extract, "REVIEWS_DIR", tmp_path / "reviews")
+    gold_dir = tmp_path / "reviews" / "book" / "gold"
+    gold_dir.mkdir(parents=True)
+    (gold_dir / "gold_pages.json").write_text(
+        json.dumps({"pages": [{"page": 1, "reason": "unit test reviewed page"}]}),
+        encoding="utf-8",
+    )
+    write_jsonl(
+        gold_dir / "gold_paragraph_boundaries.jsonl",
+        [
+            {
+                "gold_id": "gold_p1",
+                "page": 1,
+                "expected_type": "main_paragraph",
+                "source_line_ids": ["book:p0001:line001", "book:p0001:line002"],
+                "review_status": "authoritative",
+            }
+        ],
+    )
+    write_jsonl(
+        gold_dir / "gold_object_labels.jsonl",
+        [
+            {
+                "object_id": "book:p0001:obj001",
+                "page": 1,
+                "expected_label": "main_paragraph",
+                "review_status": "authoritative",
+            }
+        ],
+    )
+    paragraphs = [
+        {
+            "object_id": "book:p0001:obj001",
+            "paragraph_id": "p_000001",
+            "page_number": 1,
+            "source_line_ids": ["book:p0001:line001", "book:p0001:line002"],
+            "stream_type": "main_paragraph_candidate",
+            "clean_text": "A reviewed paragraph.",
+        }
+    ]
+
+    report = evaluate_gold_reviews("book", "phase1_v3", paragraphs, [], [], [])
+
+    assert report["counts"]["matched_paragraphs"] == 1
+    assert report["counts"]["matched_object_labels"] == 1
+    assert report["scores"]["paragraph_recall"] == 1
+    assert report["scores"]["object_label_accuracy"] == 1
+    assert report["scoring_authoritative"] is True
+    assert report["sufficient_to_judge_merge_policy_adoption"] is False
+
+
 def test_review_override_moves_candidate_bucket() -> None:
     layout = []
     clean = []
@@ -558,6 +632,21 @@ def test_validation_rejects_malformed_review_override_row() -> None:
                         "sampled_rows": 0,
                         "count_by_category": {},
                         "count_by_recommended_action": {},
+                    },
+                    "samples": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (output_dir / "gold_evaluation_report.json").write_text(
+            json.dumps(
+                {
+                    "counts": {
+                        "gold_pages_reviewed": 0,
+                        "gold_paragraph_rows": 0,
+                        "gold_object_label_rows": 0,
+                        "authoritative_paragraph_rows": 0,
+                        "placeholder_paragraph_rows_excluded": 0,
                     },
                     "samples": [],
                 }

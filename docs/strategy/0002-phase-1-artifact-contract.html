@@ -119,6 +119,26 @@
         <td>Lets review decisions change candidate streams without changing detector rules or promoting content to canonical.</td>
       </tr>
       <tr>
+        <td><code>reviews/&lt;book_id&gt;/gold/gold_pages.json</code></td>
+        <td>Tracked list of gold-review pages or cases, with selection reason and review status.</td>
+        <td>Defines the small answer-key surface used to evaluate future paragraph-boundary and object-label improvements.</td>
+      </tr>
+      <tr>
+        <td><code>reviews/&lt;book_id&gt;/gold/gold_paragraph_boundaries.jsonl</code></td>
+        <td>Tracked expected paragraph groupings for selected reviewed pages or cases, with source line ids, text boundary previews, reviewer, date, notes, and review status.</td>
+        <td>Provides verified paragraph-boundary truth for merge-policy evaluation; seed rows are excluded from scoring until authoritative.</td>
+      </tr>
+      <tr>
+        <td><code>reviews/&lt;book_id&gt;/gold/gold_object_labels.jsonl</code></td>
+        <td>Tracked expected labels for selected objects, using labels such as main paragraph, structure, metadata, page artifact, or unknown.</td>
+        <td>Provides verified object-classification truth for evaluating candidate bucket assignments.</td>
+      </tr>
+      <tr>
+        <td><code>reviews/&lt;book_id&gt;/gold/gold_review_instructions.html</code></td>
+        <td>Local HTML guide for authoring gold rows from the audit page, overlays, object cards, source lines, and visual page witness.</td>
+        <td>Prevents gold rows from becoming guesses or hidden rewrites.</td>
+      </tr>
+      <tr>
         <td><code>canonical_paragraphs.jsonl</code></td>
         <td>Paragraph candidates promoted by the current evidence gate, with canonical paragraph id, source candidate id, raw text, clean text, source ids, bbox, promotion status, reasons, warnings, and applied override when present.</td>
         <td>Creates the first downstream-safe paragraph layer without promoting structure, artifacts, unknowns, OCR, AI review, retrieval, or graph work.</td>
@@ -149,6 +169,11 @@
         <td>Identifies the specific merge failure pattern before another merge-rule correction is attempted.</td>
       </tr>
       <tr>
+        <td><code>gold_evaluation_report.json</code></td>
+        <td>Generated comparison of current extraction output against tracked gold pages, paragraph-boundary rows, and object-label rows, with matched, missing, over-merged, over-split, wrong-label, excluded-seed, score, and sufficiency counts.</td>
+        <td>Prevents paragraph merge policies from being adopted only because heuristic warning counts changed.</td>
+      </tr>
+      <tr>
         <td><code>cleanup_log.jsonl</code></td>
         <td>Append-only log of each cleanup operation applied to extracted text.</td>
         <td>Prevents untracked text mutation.</td>
@@ -160,8 +185,8 @@
       </tr>
       <tr>
         <td><code>phase1_audit.html</code></td>
-        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, merge failure taxonomy, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, and copy-ready review override templates.</td>
-        <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy, and for safely drafting manual curated overrides.</td>
+        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, merge failure taxonomy, gold review evaluation, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, and copy-ready review override templates.</td>
+        <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy, for safely drafting manual curated overrides, and for seeing whether gold scoring is authoritative enough for policy adoption.</td>
       </tr>
     </tbody>
   </table>
@@ -190,6 +215,8 @@
     <li><code>canonical_paragraph_review_report.json</code> row counts match <code>canonical_paragraphs.jsonl</code>.</li>
     <li>The audit page shows canonical paragraph review counts, warning categories, risk clusters, corrective-action recommendations, samples, and <code>safe_for_downstream</code>.</li>
     <li>The audit page lets a reviewer compare raw extracted objects against their candidate bucket assignments.</li>
+    <li><code>gold_evaluation_report.json</code> reports gold row counts, excludes non-authoritative seed rows from scoring, and states whether the gold set is sufficient to judge merge-policy adoption.</li>
+    <li>No paragraph merge policy can become active from heuristic warning improvement alone.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
   </ol>

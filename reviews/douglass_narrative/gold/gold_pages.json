@@ -1,0 +1,29 @@
+{
+  "book_id": "douglass_narrative",
+  "created_at": "2026-05-27",
+  "review_status": "seed_not_authoritative",
+  "purpose": "Tiny starter set for verifying paragraph boundaries and object labels before adopting future merge policies.",
+  "pages": [
+    {
+      "page": 21,
+      "reason": "High-severity likely merge rows cp_000035 and cp_000036; representative body prose paragraph-boundary risk."
+    },
+    {
+      "page": 22,
+      "reason": "High-severity likely merge row cp_000039 plus adjacent manual-inspection row cp_000038."
+    },
+    {
+      "page": 26,
+      "reason": "High-severity likely merge row cp_000043 and manual-inspection row cp_000044."
+    },
+    {
+      "page": 30,
+      "reason": "Includes large-vertical-whitespace taxonomy sample and paragraph-break sample."
+    },
+    {
+      "page": 36,
+      "reason": "Includes chapter boundary plus large-vertical-whitespace taxonomy sample."
+    }
+  ],
+  "adoption_rule": "No paragraph merge policy may become active merely because heuristic warnings improve. It must improve against authoritative gold rows and not worsen audit safety metrics."
+}

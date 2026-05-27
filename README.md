@@ -24,6 +24,9 @@ Phase 1 is the center of the project:
 
 Phase 1 outputs are candidate-first. Nothing is called canonical until it has passed audit, comparison, and review.
 
+Paragraph merge policy changes also require a tracked gold review set. Heuristic warning counts can
+show symptoms, but they are not enough to adopt a new extraction policy.
+
 ## Documentation Model
 
 Local durable documentation is HTML-first.
@@ -99,4 +102,5 @@ If `pytest` is unavailable in a constrained environment, a direct test-function 
 - Do not treat LLM output as ground truth without provenance and review.
 - Do not widen to many books before one book passes Phase 1 gates.
 - Do not spend expensive model calls without recording why the model was chosen.
+- Do not adopt paragraph merge policy changes from heuristic warning improvement alone.
 - Keep durable local documentation in HTML; use Markdown only where GitHub needs it.

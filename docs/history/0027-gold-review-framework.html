@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gold Review Framework</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Gold Review Framework</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    Two paragraph merge experiments showed the same structural problem: heuristic warning counts are
+    useful symptoms, but they are not a verified answer key. This step pauses merge-policy changes
+    and adds a small gold review framework for Douglass so future extraction changes can be judged
+    against reviewed truth.
+  </p>
+
+  <div class="rule">
+    No extraction behavior changed. The active paragraph merge policy remains
+    <code>v1_consecutive_lines</code>. No OCR, AI review, embeddings, retrieval, graph work,
+    user-facing answers, or structure promotion was added.
+  </div>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Added tracked gold review files under <code>reviews/douglass_narrative/gold/</code>.</li>
+    <li>Added <code>gold_evaluation_report.json</code> to generated Phase 1 runs.</li>
+    <li>Added a <code>Gold Review</code> section to <code>phase1_audit.html</code>.</li>
+    <li>Added validation checks for the gold evaluation report.</li>
+    <li>Updated source-of-truth, Codex guidance, work loop, strategy, artifact contract, and lessons.</li>
+  </ol>
+
+  <h2>Tracked Gold Files</h2>
+  <ol>
+    <li><code>gold_pages.json</code> defines the initial seed pages: <code>21</code>, <code>22</code>, <code>26</code>, <code>30</code>, and <code>36</code>.</li>
+    <li><code>gold_paragraph_boundaries.jsonl</code> contains three seed paragraph-boundary examples.</li>
+    <li><code>gold_object_labels.jsonl</code> contains three seed object-label examples.</li>
+    <li><code>gold_review_instructions.html</code> explains how to inspect the audit and author gold rows without guessing.</li>
+  </ol>
+
+  <h2>Douglass Result</h2>
+  <ol>
+    <li>Gold pages reviewed: <code>5</code>.</li>
+    <li>Gold paragraph rows: <code>3</code>.</li>
+    <li>Gold object label rows: <code>3</code>.</li>
+    <li>Authoritative paragraph rows: <code>0</code>.</li>
+    <li>Authoritative object label rows: <code>0</code>.</li>
+    <li>Seed paragraph rows excluded from scoring: <code>3</code>.</li>
+    <li>Seed object-label rows excluded from scoring: <code>3</code>.</li>
+    <li>Scoring authoritative: <code>false</code>.</li>
+    <li>Sufficient to judge merge-policy adoption: <code>false</code>.</li>
+  </ol>
+
+  <h2>Why Seed Rows Are Not Enough</h2>
+  <p>
+    The seed rows prove the workflow and artifact shape, but they are deliberately excluded from
+    scoring. A row becomes policy truth only after visual inspection in the audit confirms the page
+    image, bounding boxes, source lines, and candidate bucket. This prevents the gold set from
+    becoming another layer of unreviewed assumptions.
+  </p>
+
+  <h2>New Rule</h2>
+  <div class="rule">
+    No paragraph merge policy may become active merely because heuristic warning counts improve.
+    It must improve against authoritative gold review rows and must not worsen audit safety metrics.
+  </div>
+
+  <h2>Next Step</h2>
+  <p>
+    Use the audit to convert a small number of seed or new rows into authoritative gold rows. Only
+    after that should another paragraph merge experiment be evaluated for adoption.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>phase1_audit.html</code> shows the gold evaluation summary.</li>
+    <li><code>python3 -B -m pytest tests</code> passed with <code>22</code> tests.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>

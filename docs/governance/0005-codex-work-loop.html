@@ -31,7 +31,7 @@
     <li>Read <code>docs/governance/0002-source-of-truth.html</code>.</li>
     <li>Read <code>docs/strategy/0001-phase-1-strategy.html</code>.</li>
     <li>Read <code>docs/strategy/0002-phase-1-artifact-contract.html</code>.</li>
-    <li>Read the latest relevant history entry, currently <code>docs/history/0026-paragraph-break-guarded-experiment.html</code>.</li>
+    <li>Read the latest relevant history entry, currently <code>docs/history/0027-gold-review-framework.html</code>.</li>
     <li>Check <code>git status --short</code> before editing.</li>
     <li>Append an observability event at the start of meaningful work, before the first edit.</li>
   </ol>
@@ -42,6 +42,7 @@
     <li>Keep raw extraction, cleaned text, candidate objects, future canonical objects, and audit artifacts separate.</li>
     <li>Do not introduce retrieval, embeddings, claims, or graph work until the current Phase 1 gate allows it.</li>
     <li>Use deterministic methods first. Models can review bounded flagged cases later, but must not become the extractor of record.</li>
+    <li>Do not adopt paragraph merge policy changes unless they improve against authoritative gold review rows and preserve audit safety metrics.</li>
     <li>Keep generated run artifacts under <code>data/runs/</code> and out of git unless curated into docs.</li>
   </ol>
 
@@ -68,6 +69,13 @@
     The repo-level test contract lives in <code>requirements-dev.txt</code>. Future Codex sessions
     should install those dependencies when needed and verify with <code>python3 -m pytest tests</code>
     instead of improvising a custom runner.
+  </div>
+
+  <h2>Gold Review Rule</h2>
+  <div class="rule">
+    Warning counts are symptoms, not truth. When paragraph merge experiments loop or disagree,
+    compare policies against tracked gold review rows under <code>reviews/&lt;book_id&gt;/gold/</code>.
+    Seed rows may guide the workflow, but only authoritative rows should score policy adoption.
   </div>
 
   <h2>When Unsure</h2>

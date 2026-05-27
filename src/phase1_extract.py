@@ -41,6 +41,7 @@ REQUIRED_ARTIFACTS = [
     "canonical_paragraph_review_report.json",
     "paragraph_merge_experiment_report.json",
     "paragraph_merge_failure_taxonomy_report.json",
+    "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
     "phase1_audit.html",
@@ -111,6 +112,10 @@ def read_review_overrides(path: Path) -> list[dict[str, Any]]:
 
 def curated_review_overrides_path(book_id: str) -> Path:
     return REVIEWS_DIR / book_id / "review_overrides.jsonl"
+
+
+def gold_review_dir(book_id: str) -> Path:
+    return REVIEWS_DIR / book_id / "gold"
 
 
 def prepare_applied_review_overrides(review_overrides: list[dict[str, Any]], source_path: Path) -> list[dict[str, Any]]:
@@ -1858,6 +1863,175 @@ def build_paragraph_merge_failure_taxonomy_report(
     }
 
 
+def gold_row_is_authoritative(row: dict[str, Any]) -> bool:
+    return str(row.get("review_status", "")).lower() == "authoritative"
+
+
+def expected_label_for_candidate(row: dict[str, Any]) -> str:
+    stream_type = str(row.get("stream_type", ""))
+    if stream_type == "main_paragraph_candidate":
+        return "main_paragraph"
+    if stream_type == "structure_candidate":
+        return "structure"
+    if stream_type == "page_artifact_candidate":
+        return "page_artifact"
+    if stream_type == "unknown_needs_review":
+        return "unknown"
+    return "unknown"
+
+
+def evaluate_gold_reviews(
+    book_id: str,
+    run_id: str,
+    main_paragraphs: list[dict[str, Any]],
+    structure: list[dict[str, Any]],
+    page_artifacts: list[dict[str, Any]],
+    unknown: list[dict[str, Any]],
+) -> dict[str, Any]:
+    gold_dir = gold_review_dir(book_id)
+    gold_pages_path = gold_dir / "gold_pages.json"
+    gold_boundaries_path = gold_dir / "gold_paragraph_boundaries.jsonl"
+    gold_labels_path = gold_dir / "gold_object_labels.jsonl"
+    gold_pages = read_json(gold_pages_path) if gold_pages_path.exists() else {"pages": []}
+    boundary_rows = read_jsonl(gold_boundaries_path) if gold_boundaries_path.exists() else []
+    label_rows = read_jsonl(gold_labels_path) if gold_labels_path.exists() else []
+
+    candidate_rows = main_paragraphs + structure + page_artifacts + unknown
+    candidate_by_object_id = {row.get("object_id"): row for row in candidate_rows}
+    paragraph_line_sets = [
+        {
+            "object_id": row.get("object_id"),
+            "paragraph_id": row.get("paragraph_id"),
+            "page_number": row.get("page_number"),
+            "source_line_ids": set(row.get("source_line_ids", [])),
+            "clean_text": row.get("clean_text", ""),
+        }
+        for row in main_paragraphs
+    ]
+
+    authoritative_boundaries = [row for row in boundary_rows if gold_row_is_authoritative(row)]
+    authoritative_labels = [row for row in label_rows if gold_row_is_authoritative(row)]
+    placeholder_boundaries = [row for row in boundary_rows if not gold_row_is_authoritative(row)]
+    placeholder_labels = [row for row in label_rows if not gold_row_is_authoritative(row)]
+
+    matched_paragraphs = []
+    missing_paragraphs = []
+    over_merged_paragraphs = []
+    over_split_paragraphs = []
+    for gold in authoritative_boundaries:
+        expected_lines = set(gold.get("source_line_ids", []))
+        if not expected_lines:
+            missing_paragraphs.append({**gold, "reason": "gold_row_has_no_source_line_ids"})
+            continue
+        exact = [row for row in paragraph_line_sets if row["source_line_ids"] == expected_lines]
+        if exact:
+            matched_paragraphs.append({"gold_id": gold.get("gold_id"), "matched_object_id": exact[0].get("object_id")})
+            continue
+        containing = [row for row in paragraph_line_sets if expected_lines and expected_lines.issubset(row["source_line_ids"])]
+        if containing:
+            over_merged_paragraphs.append(
+                {
+                    "gold_id": gold.get("gold_id"),
+                    "matched_object_id": containing[0].get("object_id"),
+                    "extra_source_line_ids": sorted(containing[0]["source_line_ids"] - expected_lines),
+                }
+            )
+            continue
+        overlapping = [row for row in paragraph_line_sets if expected_lines.intersection(row["source_line_ids"])]
+        if len(overlapping) > 1:
+            over_split_paragraphs.append(
+                {
+                    "gold_id": gold.get("gold_id"),
+                    "matched_object_ids": [row.get("object_id") for row in overlapping],
+                }
+            )
+            continue
+        missing_paragraphs.append({"gold_id": gold.get("gold_id"), "reason": "no_matching_paragraph_candidate"})
+
+    matched_labels = []
+    wrong_object_labels = []
+    missing_object_labels = []
+    for gold in authoritative_labels:
+        object_id = gold.get("object_id")
+        candidate = candidate_by_object_id.get(object_id)
+        if not candidate:
+            missing_object_labels.append({"object_id": object_id, "expected_label": gold.get("expected_label")})
+            continue
+        actual_label = expected_label_for_candidate(candidate)
+        if actual_label == gold.get("expected_label"):
+            matched_labels.append({"object_id": object_id, "label": actual_label})
+        else:
+            wrong_object_labels.append(
+                {
+                    "object_id": object_id,
+                    "expected_label": gold.get("expected_label"),
+                    "actual_label": actual_label,
+                }
+            )
+
+    authoritative_paragraph_count = len(authoritative_boundaries)
+    authoritative_label_count = len(authoritative_labels)
+    paragraph_precision = None
+    paragraph_recall = None
+    label_accuracy = None
+    if authoritative_paragraph_count:
+        paragraph_recall = len(matched_paragraphs) / authoritative_paragraph_count
+        paragraph_precision = len(matched_paragraphs) / max(1, len(matched_paragraphs) + len(over_merged_paragraphs) + len(over_split_paragraphs))
+    if authoritative_label_count:
+        label_accuracy = len(matched_labels) / authoritative_label_count
+
+    reviewed_pages = [row.get("page") for row in gold_pages.get("pages", [])]
+    sufficient = authoritative_paragraph_count >= 10 and len(set(row.get("page") for row in authoritative_boundaries)) >= 3
+    try:
+        gold_dir_display = str(gold_dir.relative_to(ROOT))
+    except ValueError:
+        gold_dir_display = str(gold_dir)
+
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "method": "deterministic_gold_review_evaluation_v1",
+        "gold_dir": gold_dir_display,
+        "analysis_only": True,
+        "scoring_authoritative": bool(authoritative_boundaries or authoritative_labels),
+        "sufficient_to_judge_merge_policy_adoption": sufficient,
+        "insufficiency_reasons": [] if sufficient else ["Need at least 10 authoritative paragraph boundary rows across at least 3 reviewed pages."],
+        "counts": {
+            "gold_pages_reviewed": len(reviewed_pages),
+            "gold_paragraph_rows": len(boundary_rows),
+            "gold_object_label_rows": len(label_rows),
+            "authoritative_paragraph_rows": authoritative_paragraph_count,
+            "authoritative_object_label_rows": authoritative_label_count,
+            "placeholder_paragraph_rows_excluded": len(placeholder_boundaries),
+            "placeholder_object_label_rows_excluded": len(placeholder_labels),
+            "matched_paragraphs": len(matched_paragraphs),
+            "missing_paragraphs": len(missing_paragraphs),
+            "over_merged_paragraphs": len(over_merged_paragraphs),
+            "over_split_paragraphs": len(over_split_paragraphs),
+            "matched_object_labels": len(matched_labels),
+            "wrong_object_labels": len(wrong_object_labels),
+            "missing_object_labels": len(missing_object_labels),
+        },
+        "scores": {
+            "paragraph_precision": paragraph_precision,
+            "paragraph_recall": paragraph_recall,
+            "object_label_accuracy": label_accuracy,
+        },
+        "gold_pages": gold_pages.get("pages", []),
+        "matched_paragraphs": matched_paragraphs,
+        "missing_paragraphs": missing_paragraphs,
+        "over_merged_paragraphs": over_merged_paragraphs,
+        "over_split_paragraphs": over_split_paragraphs,
+        "wrong_object_labels": wrong_object_labels,
+        "missing_object_labels": missing_object_labels,
+        "excluded_placeholder_rows": {
+            "paragraph_gold_ids": [row.get("gold_id") for row in placeholder_boundaries],
+            "object_ids": [row.get("object_id") for row in placeholder_labels],
+        },
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -1912,6 +2086,7 @@ def build_audit_html(
     canonical_review_report = read_json(output_dir / "canonical_paragraph_review_report.json") if (output_dir / "canonical_paragraph_review_report.json").exists() else {}
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json") if (output_dir / "paragraph_merge_experiment_report.json").exists() else {}
     paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json") if (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists() else {}
+    gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
     candidate_by_object_id = {row["object_id"]: row for row in candidate_rows if row.get("object_id")}
@@ -2306,6 +2481,12 @@ def build_audit_html(
         "</tr>"
         for row in (paragraph_merge_failure_taxonomy_report.get("samples") or [])
     )
+    gold_counts = gold_evaluation_report.get("counts") or {}
+    gold_scores = gold_evaluation_report.get("scores") or {}
+    gold_page_items = "\n".join(
+        f"<li>Page <code>{esc(row.get('page'))}</code>: {esc(row.get('reason', ''))}</li>"
+        for row in (gold_evaluation_report.get("gold_pages") or [])
+    )
     canonical_review_counts = canonical_review_report.get("counts", {})
     canonical_review_warning_items = "\n".join(
         f"<li><code>{esc(key)}</code>: {value}</li>"
@@ -2651,6 +2832,33 @@ def build_audit_html(
     </thead>
     <tbody>{merge_taxonomy_rows or '<tr><td colspan="12">No merge taxonomy samples.</td></tr>'}</tbody>
   </table>
+
+  <h2>Gold Review</h2>
+  <div class="rule">
+    Gold review is the answer-key layer for future policy adoption. Placeholder rows are excluded
+    from scoring until a reviewer marks them authoritative.
+  </div>
+  <ul>
+    <li>Gold instructions: <code>reviews/{esc(book_id)}/gold/gold_review_instructions.html</code></li>
+    <li>Gold pages: <code>{esc(gold_counts.get('gold_pages_reviewed', 0))}</code></li>
+    <li>Gold paragraph rows: <code>{esc(gold_counts.get('gold_paragraph_rows', 0))}</code></li>
+    <li>Gold object label rows: <code>{esc(gold_counts.get('gold_object_label_rows', 0))}</code></li>
+    <li>Authoritative paragraph rows: <code>{esc(gold_counts.get('authoritative_paragraph_rows', 0))}</code></li>
+    <li>Authoritative object label rows: <code>{esc(gold_counts.get('authoritative_object_label_rows', 0))}</code></li>
+    <li>Placeholder paragraph rows excluded: <code>{esc(gold_counts.get('placeholder_paragraph_rows_excluded', 0))}</code></li>
+    <li>Matched paragraphs: <code>{esc(gold_counts.get('matched_paragraphs', 0))}</code></li>
+    <li>Missing paragraphs: <code>{esc(gold_counts.get('missing_paragraphs', 0))}</code></li>
+    <li>Over-merged paragraphs: <code>{esc(gold_counts.get('over_merged_paragraphs', 0))}</code></li>
+    <li>Over-split paragraphs: <code>{esc(gold_counts.get('over_split_paragraphs', 0))}</code></li>
+    <li>Wrong object labels: <code>{esc(gold_counts.get('wrong_object_labels', 0))}</code></li>
+    <li>Paragraph precision: <code>{esc(fmt_decimal(gold_scores.get('paragraph_precision'), 3))}</code></li>
+    <li>Paragraph recall: <code>{esc(fmt_decimal(gold_scores.get('paragraph_recall'), 3))}</code></li>
+    <li>Object label accuracy: <code>{esc(fmt_decimal(gold_scores.get('object_label_accuracy'), 3))}</code></li>
+    <li>Scoring authoritative: <code>{esc(gold_evaluation_report.get('scoring_authoritative', False))}</code></li>
+    <li>Sufficient to judge merge policy adoption: <code>{esc(gold_evaluation_report.get('sufficient_to_judge_merge_policy_adoption', False))}</code></li>
+  </ul>
+  <h3>Gold Pages</h3>
+  <ul>{gold_page_items or '<li>No gold pages defined.</li>'}</ul>
 
   <h2>Canonical Paragraph Review</h2>
   <div class="rule">
@@ -3002,6 +3210,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     canonical_paragraph_review_report = read_json(output_dir / "canonical_paragraph_review_report.json")
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json")
     paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json")
+    gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
     page_image_files = sorted((output_dir / PAGE_IMAGES_DIR_NAME).glob("page_*.jpg"))
@@ -3032,6 +3241,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("review_flags_present", "review_flags" in reading_order)
     add_check("paragraph_merge_experiment_report_exists", (output_dir / "paragraph_merge_experiment_report.json").exists())
     add_check("paragraph_merge_failure_taxonomy_report_exists", (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists())
+    add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
     taxonomy_samples = paragraph_merge_failure_taxonomy_report.get("samples", [])
@@ -3081,6 +3291,13 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check(
         "paragraph_merge_failure_taxonomy_samples_trace_to_canonical",
         {row.get("canonical_paragraph_id") for row in taxonomy_samples}.issubset({row.get("canonical_paragraph_id") for row in canonical_paragraphs}),
+    )
+    gold_counts = gold_evaluation_report.get("counts", {})
+    add_check("gold_evaluation_counts_present", all(key in gold_counts for key in ["gold_pages_reviewed", "gold_paragraph_rows", "gold_object_label_rows"]))
+    add_check(
+        "gold_evaluation_placeholder_rows_excluded_from_scoring",
+        gold_counts.get("placeholder_paragraph_rows_excluded", 0) + gold_counts.get("authoritative_paragraph_rows", 0)
+        == gold_counts.get("gold_paragraph_rows", 0),
     )
     add_check("page_image_count_matches_manifest", len(page_image_files) == page_count, f"{len(page_image_files)} images / {page_count} pages")
     add_check("page_images_nonempty", all(path.stat().st_size > 0 for path in page_image_files))
@@ -3245,6 +3462,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     )
     add_check("audit_has_canonical_paragraph_review", "Canonical Paragraph Review" in audit_html)
     add_check("audit_has_canonical_review_drilldown", "Canonical Warning Drilldown" in audit_html and "Risk Clusters" in audit_html)
+    add_check("audit_has_gold_review", "Gold Review" in audit_html)
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -3389,6 +3607,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "canonical_paragraph_review_report": "canonical_paragraph_review_report.json",
             "paragraph_merge_experiment_report": "paragraph_merge_experiment_report.json",
             "paragraph_merge_failure_taxonomy_report": "paragraph_merge_failure_taxonomy_report.json",
+            "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
     object_counts = Counter(row["object_type"] for row in layout_objects)
@@ -3431,6 +3650,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
+    )
+    gold_evaluation_report = evaluate_gold_reviews(
+        book_id, run_id, main_paragraphs, structure, page_artifacts, unknown
     )
     stream_counts = {
         "main_paragraph_candidates": len(main_paragraphs),
@@ -3482,6 +3704,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "canonical_paragraph_review_report.json", canonical_paragraph_review_report)
     write_json(output_dir / "paragraph_merge_experiment_report.json", paragraph_merge_experiment_report)
     write_json(output_dir / "paragraph_merge_failure_taxonomy_report.json", paragraph_merge_failure_taxonomy_report)
+    write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
         "created_at": utc_now(),
