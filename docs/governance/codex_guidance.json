@@ -20,6 +20,22 @@
     "Do not use Markdown as the durable project documentation format, except README.md as a GitHub-facing adapter.",
     "Stage, commit, and push meaningful checkpoints when the repo state should be preserved."
   ],
+  "codex_work_loop": {
+    "start": [
+      "Read docs/governance/0002-source-of-truth.html.",
+      "Read docs/governance/0005-codex-work-loop.html.",
+      "Read current Phase 1 strategy and artifact contract.",
+      "Read the latest relevant history entry.",
+      "Check git status before editing.",
+      "Append an observability event when beginning meaningful work."
+    ],
+    "closure": [
+      "Run the smallest relevant verification command.",
+      "Update history, lessons, or strategy when the result changes project knowledge.",
+      "Append an observability event summarizing the outcome.",
+      "Stage, commit, and push meaningful durable changes."
+    ]
+  },
   "formatting_rules": {
     "local_html_docs": "Use the standard light document style in docs/.",
     "local_docs_background": "#fbfbf8",
@@ -29,6 +45,12 @@
     "local_docs_inline_code_background": "#ece9df",
     "dark_mode_scope": "Reserve dark mode for runtime observability surfaces, not ordinary project documentation.",
     "github_readme_scope": "README.md is a GitHub-facing adapter, not the durable local source of truth."
+  },
+  "observability": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "url": "http://127.0.0.1:8765",
+    "port_rule": "Reuse the same observability port. Do not open new ports for each build."
   },
   "artifact_boundaries": {
     "source_code": "src/",

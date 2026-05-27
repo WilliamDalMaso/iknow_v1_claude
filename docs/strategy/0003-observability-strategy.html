@@ -32,6 +32,13 @@
     <li>Links to generated Phase 1 audit pages and source manifests through localhost.</li>
   </ol>
 
+  <h2>Port Discipline</h2>
+  <p>
+    Observability uses one fixed endpoint: <code>127.0.0.1:8765</code>. Future work should not open
+    a new port for each build. If the server is already running, reuse it. If the implementation
+    changes, restart the existing process on the same host and port.
+  </p>
+
   <h2>What Observability Should Track Next</h2>
   <ol>
     <li>Page coverage: total pages, text pages, image-only pages, blank/unreadable pages.</li>

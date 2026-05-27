@@ -21,6 +21,7 @@
   <h2>Before Starting Any Work</h2>
   <ol>
     <li>Read <code>docs/governance/0002-source-of-truth.html</code>.</li>
+    <li>Read <code>docs/governance/0005-codex-work-loop.html</code>.</li>
     <li>Check whether the requested work strengthens Phase 1 cleanliness or distracts from it.</li>
     <li>If making a meaningful change, append an observability event so William can see what changed.</li>
     <li>Prefer a small verified step over broad architecture.</li>
@@ -47,6 +48,13 @@
     <li><code>README.md</code> is allowed for GitHub reader experience.</li>
     <li>Do not move durable local documentation back to Markdown.</li>
     <li>When <code>README.md</code> and HTML docs disagree, update the HTML source of truth first.</li>
+  </ol>
+
+  <h2>Observability Discipline</h2>
+  <ol>
+    <li>Use <code>http://127.0.0.1:8765</code> as the single observability dashboard.</li>
+    <li>Do not start alternate observability ports unless William explicitly asks.</li>
+    <li>If the server needs a restart, stop the existing process and reuse port <code>8765</code>.</li>
   </ol>
 </main>
 </body>

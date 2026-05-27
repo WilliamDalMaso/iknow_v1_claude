@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Work Loop</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Codex Work Loop</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <div class="rule">
+    This is the self-reminder loop for future Codex work. Before building, Codex should re-orient
+    around the source of truth, Phase 1 priority, and current lessons. After building, Codex should
+    document what happened, what worked, what failed, and what should happen next.
+  </div>
+
+  <h2>Start Loop</h2>
+  <ol>
+    <li>Read <code>docs/governance/0002-source-of-truth.html</code>.</li>
+    <li>Read <code>docs/strategy/0001-phase-1-strategy.html</code>.</li>
+    <li>Read <code>docs/strategy/0002-phase-1-artifact-contract.html</code>.</li>
+    <li>Read the latest relevant history entry, currently <code>docs/history/0002-douglass-phase1-v0-start.html</code>.</li>
+    <li>Check <code>git status --short</code> before editing.</li>
+    <li>Append an observability event when beginning meaningful work.</li>
+  </ol>
+
+  <h2>During Work</h2>
+  <ol>
+    <li>Protect Phase 1 cleanliness above all downstream ambitions.</li>
+    <li>Keep raw extraction, cleaned text, canonical objects, and audit artifacts separate.</li>
+    <li>Do not introduce retrieval, embeddings, claims, or graph work until the current Phase 1 gate allows it.</li>
+    <li>Use deterministic methods first. Models can review bounded flagged cases later, but must not become the extractor of record.</li>
+    <li>Keep generated run artifacts under <code>data/runs/</code> and out of git unless curated into docs.</li>
+  </ol>
+
+  <h2>Closure Loop</h2>
+  <ol>
+    <li>Run the smallest relevant verification command.</li>
+    <li>Update history when a method, result, failure, or decision matters.</li>
+    <li>Update lessons when a reusable rule emerges.</li>
+    <li>Update strategy when the plan or artifact contract changes.</li>
+    <li>Append an observability event summarizing the outcome.</li>
+    <li>Stage, commit, and push meaningful durable changes.</li>
+  </ol>
+
+  <h2>Observability Port Rule</h2>
+  <div class="warn">
+    Use one observability endpoint: <code>http://127.0.0.1:8765</code>. Do not open new ports for
+    each build. If the dashboard is already running, reuse it. If code changes require a restart,
+    stop the existing process and restart the same port.
+  </div>
+
+  <h2>When Unsure</h2>
+  <p>
+    If a requested task pulls attention away from clean extraction, pause and explain the tradeoff.
+    The default next action should improve Phase 1 evidence, auditability, or object quality.
+  </p>
+</main>
+</body>
+</html>

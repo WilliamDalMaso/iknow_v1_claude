@@ -12,6 +12,12 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = ROOT / "data" / "runs"
 EVENT_LOG = ROOT / "data" / "runs" / "observability" / "events.jsonl"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8765
+
+
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
 
 
 def utc_now() -> str:
@@ -348,15 +354,15 @@ class ObservabilityHandler(BaseHTTPRequestHandler):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the local iknow v1 observability dashboard.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     ensure_event_log()
-    server = ThreadingHTTPServer((args.host, args.port), ObservabilityHandler)
+    server = ReusableThreadingHTTPServer((args.host, args.port), ObservabilityHandler)
     append_event("system", "Observability server started", {"host": args.host, "port": args.port})
     print(f"Serving iknow v1 observability at http://{args.host}:{args.port}")
     server.serve_forever()
