@@ -235,6 +235,12 @@ def test_build_audit_html_contains_page_object_inspection() -> None:
     assert "Detector bucket" in html
     assert "Override bucket" in html
     assert "Final candidate bucket" in html
+    assert "Copy-ready override JSONL" in html
+    assert "overrideTemplateFor" in html
+    assert "data-detector-bucket" in html
+    assert "corrected_bucket" in html
+    assert "evidence_reference" in html
+    assert "reviews/book/review_overrides.jsonl" in html
 
 
 def test_review_override_moves_candidate_bucket() -> None:

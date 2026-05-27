@@ -811,6 +811,7 @@ def build_audit_html(
     flagged_pages = [row for row in inventory if row["review_flags"]]
     sample_pages = inventory[:12]
     generated = utc_now()
+    generated_date = generated[:10]
 
     def esc(value: Any) -> str:
         return html.escape(str(value))
@@ -1027,13 +1028,14 @@ def build_audit_html(
             override_bucket = override.get("corrected_bucket") if override else "-"
             object_id = str(obj.get("object_id", ""))
             dom_id = safe_dom_id(object_id)
+            evidence_reference = f"phase1_audit.html#card-{dom_id}; page {page_number}; object {object_id}"
             style = overlay_style(obj.get("bbox"), page)
             if style:
                 overlay_boxes.append(
                     f"""<button type="button" class="{esc(overlay_class(label, bool(override)))}" style="{esc(style)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-overridden="{str(bool(override)).lower()}" aria-label="Highlight {esc(object_id)}" title="{esc(label)} · {esc(object_id)}"></button>"""
                 )
             object_cards.append(
-                f"""<article class="object-card" id="card-{esc(dom_id)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}" tabindex="0">
+                f"""<article class="object-card" id="card-{esc(dom_id)}" data-object-id="{esc(object_id)}" data-bucket="{esc(label)}" data-detector-bucket="{esc(detector_bucket)}" data-subtype="{esc(subtype)}" data-confidence="{esc(confidence)}" data-warnings="{esc(' '.join(warnings))}" data-zone="{esc(zone)}" data-page="{page_number}" data-evidence-reference="{esc(evidence_reference)}" tabindex="0">
                   <header>
                     <code>{esc(obj.get('object_id'))}</code>
                     <span class="{esc(bucket_class(label))}">{esc(label)}</span>
@@ -1103,6 +1105,15 @@ def build_audit_html(
                   <aside class="selected-object-detail" aria-live="polite">
                     <strong>Selected object</strong>
                     <span>Click a box or object card.</span>
+                    <div class="override-template-panel">
+                      <strong>Copy-ready override JSONL</strong>
+                      <p>
+                        Copy one reviewed line into
+                        <code>reviews/{esc(book_id)}/review_overrides.jsonl</code>, then rerun Phase 1.
+                        This audit does not auto-apply changes.
+                      </p>
+                      <pre class="override-template" data-book-id="{esc(book_id)}" data-template-date="{esc(generated_date)}">Select an object to generate an override template.</pre>
+                    </div>
                   </aside>
                 </figure>
                 <div class="page-object-list">
@@ -1191,6 +1202,9 @@ def build_audit_html(
     .zoom-toggle {{ margin-left: 8px; font: inherit; padding: 3px 8px; border: 1px solid #9c978b; background: #fffef9; cursor: pointer; }}
     .selected-object-detail {{ margin-top: 10px; padding: 10px; border: 1px solid #d8d6cc; background: #fffef9; font-size: 0.9rem; }}
     .selected-object-detail span {{ display: block; margin-top: 4px; overflow-wrap: anywhere; }}
+    .override-template-panel {{ margin-top: 12px; padding-top: 10px; border-top: 1px solid #d8d6cc; }}
+    .override-template-panel p {{ margin: 6px 0 8px; color: #56616b; }}
+    .override-template {{ margin: 0; padding: 10px; border: 1px solid #d8d6cc; background: #f7f4ea; white-space: pre-wrap; overflow-wrap: anywhere; }}
     .bbox-layer {{ position: absolute; inset: 1px; pointer-events: none; }}
     .bbox-overlay {{ position: absolute; box-sizing: border-box; border: 2px solid #111; background: rgba(255,255,255,0.08); padding: 0; pointer-events: auto; cursor: pointer; }}
     .bbox-overlay.hidden {{ display: none; }}
@@ -1389,6 +1403,22 @@ def build_audit_html(
       rawText ? `raw: ${{rawText.slice(0, 220)}}` : ""
     ].filter(Boolean).join("\\n");
   }}
+  function overrideTemplateFor(card) {{
+    if (!card) return "Select an object to generate an override template.";
+    const pageSection = card.closest(".page-audit");
+    const template = pageSection ? pageSection.querySelector(".override-template") : null;
+    const payload = {{
+      object_id: card.dataset.objectId || "",
+      page: Number(card.dataset.page || "0"),
+      original_bucket: card.dataset.detectorBucket || card.dataset.bucket || "",
+      corrected_bucket: "TODO_choose_one_of: main_paragraph_candidate | structure_candidate | page_artifact_candidate | unknown_needs_review",
+      reason: "TODO_explain_the_review_decision_from_visible_evidence",
+      reviewer: "human",
+      date: template?.dataset.templateDate || "{generated_date}",
+      evidence_reference: card.dataset.evidenceReference || `phase1_audit.html#${{card.id}}`
+    }};
+    return JSON.stringify(payload);
+  }}
   function setActiveObject(objectId, shouldScroll = false) {{
     for (const card of cards) card.classList.toggle("is-active", card.dataset.objectId === objectId);
     for (const box of overlays) box.classList.toggle("is-active", box.dataset.objectId === objectId);
@@ -1396,7 +1426,9 @@ def build_audit_html(
     const detail = selectedDetailFor(card);
     const pageSection = card ? card.closest(".page-audit") : null;
     const selectedDetail = pageSection ? pageSection.querySelector(".selected-object-detail span") : null;
+    const selectedTemplate = pageSection ? pageSection.querySelector(".override-template") : null;
     if (selectedDetail) selectedDetail.textContent = detail || "No object details available.";
+    if (selectedTemplate) selectedTemplate.textContent = overrideTemplateFor(card);
     if (shouldScroll) {{
       if (card) card.scrollIntoView({{ behavior: "smooth", block: "center" }});
     }}
@@ -1543,6 +1575,19 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("audit_renders_overlay_elements", overlay_count >= len(bbox_object_ids), f"{overlay_count} overlays / {len(bbox_object_ids)} bbox objects")
     add_check("audit_has_overlay_controls", all(token in audit_html for token in ["overlay-show-all", "overlay-hide-all", "overlay-overrides-only", "data-overlay-bucket"]))
     add_check("audit_has_selected_object_detail", "selected-object-detail" in audit_html)
+    add_check(
+        "audit_has_override_template_generator",
+        all(
+            token in audit_html
+            for token in [
+                "override-template",
+                "overrideTemplateFor",
+                "reviews/",
+                "corrected_bucket",
+                "evidence_reference",
+            ]
+        ),
+    )
     stream_object_ids = (
         {row.get("object_id") for row in main_paragraphs}
         | {row.get("object_id") for row in structure}

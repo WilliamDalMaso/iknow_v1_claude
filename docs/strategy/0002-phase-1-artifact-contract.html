@@ -130,8 +130,8 @@
       </tr>
       <tr>
         <td><code>phase1_audit.html</code></td>
-        <td>Human-readable local audit page summarizing status, risks, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, and overlay controls.</td>
-        <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy.</td>
+        <td>Human-readable local audit page summarizing status, risks, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, and copy-ready review override templates.</td>
+        <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy, and for safely drafting manual curated overrides.</td>
       </tr>
     </tbody>
   </table>
@@ -151,6 +151,7 @@
     <li>The audit page links each inspected page to its rendered page image.</li>
     <li>The audit page draws overlay boxes for objects with complete bounding boxes.</li>
     <li>The audit page can hide, show, filter, and focus overlay boxes without changing extraction outputs.</li>
+    <li>The audit page generates copy-ready override JSONL templates for selected objects without applying them.</li>
     <li>Repeated page furniture is detected from deterministic repetition, position, and page-number evidence.</li>
     <li>Artifact false-positive risks are visible before any canonical exclusion is allowed.</li>
     <li>Review overrides are validated, evidence-bound, and candidate-only.</li>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Override Snippet Authoring</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Override Snippet Authoring</h1>
+  <p><strong>Date:</strong> 2026-05-27</p>
+
+  <h2>Purpose</h2>
+  <p>
+    Durable curated overrides work, but manually writing JSONL rows is error-prone. This step added
+    copy-ready override templates to the Phase 1 audit so a reviewer can select an object, inspect
+    evidence, and draft a valid review row without browser write-back.
+  </p>
+
+  <div class="rule">
+    The audit still does not apply corrections. Review rows must be copied into
+    <code>reviews/&lt;book_id&gt;/review_overrides.jsonl</code>, rerun through Phase 1, and pass validation.
+  </div>
+
+  <h2>What Changed</h2>
+  <ol>
+    <li>Selected object details now include a copy-ready JSONL override template.</li>
+    <li>The template includes object id, page, detector bucket, corrected-bucket placeholder, reason placeholder, reviewer, date, and evidence reference.</li>
+    <li>The artifact contract now lists override templates as an audit authoring feature.</li>
+    <li>Validation now checks that the audit contains the override template generator.</li>
+  </ol>
+
+  <h2>What Did Not Change</h2>
+  <ol>
+    <li>No server-side write-back was added.</li>
+    <li>No review validation was weakened.</li>
+    <li>No extraction classification logic changed.</li>
+    <li>No OCR, AI review, embeddings, retrieval, graph work, or canonical promotion was added.</li>
+  </ol>
+
+  <h2>Remaining Weakness</h2>
+  <p>
+    A reviewer still has to choose the corrected bucket and explain the reason carefully. That is
+    intentional for now because review corrections should remain deliberate, evidence-bound, and
+    visible in git.
+  </p>
+</main>
+</body>
+</html>
