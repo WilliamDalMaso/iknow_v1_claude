@@ -44,7 +44,14 @@
       <td>Monolith raises regression risk and obscures review.</td>
       <td><code>src/phase1_extract.py</code>: 7,524 lines, 106 functions.</td>
       <td>Medium</td>
-      <td>Behavior-preserving decomposition behind a golden-artifact regression test. See refactor plan.</td>
+      <td><strong>Now guarded</strong> by <code>tests/test_phase1_regression.py</code> (golden-output fingerprint). Behavior-preserving decomposition can proceed. See refactor plan.</td>
+    </tr>
+    <tr>
+      <td>R8</td>
+      <td>Stale artifact in the original captured run.</td>
+      <td><code>data/runs/douglass_narrative/phase1_v3/review_overrides.jsonl</code> is not produced by a current run and differs from the curated <code>reviews/</code> source; the original's <code>phase1_audit.html</code> also differs slightly from current code. All JSON reports reproduce identically.</td>
+      <td>Low</td>
+      <td>Documented in the baseline notes. The Phase B normalized fingerprint is built from a clean current run, so the regression baseline is unaffected. Original run left untouched (git-ignored, not regenerated to preserve the Codex-produced snapshot).</td>
     </tr>
     <tr>
       <td>R4</td>
@@ -56,9 +63,9 @@
     <tr>
       <td>R5</td>
       <td>Observability is ephemeral and uncorrelated.</td>
-      <td>Event log git-ignored; no run/commit/book correlation; free-form <code>kind</code>.</td>
-      <td>Low&ndash;Med</td>
-      <td>Add structured fields + run stamps. See observability plan.</td>
+      <td>Was: flat event stream, no run/commit/book correlation, free-form <code>kind</code>.</td>
+      <td>Resolved</td>
+      <td>Claude-lane dashboard on port 8799 + structured schema <code>iknow.observe/2</code> (level/actor/book/run/phase/git_commit). Decision-linkage pending Phase B. See observability plan.</td>
     </tr>
     <tr>
       <td>R6</td>

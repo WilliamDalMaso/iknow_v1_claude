@@ -29,19 +29,35 @@
 
   <h2>Contents</h2>
   <ul>
-    <li><code>artifact_manifest.json</code> &mdash; <code>sha256</code> + size for all 164 files of the captured <code>phase1_v3</code> run (38 artifacts + 126 page images).</li>
+    <li><code>artifact_manifest.json</code> &mdash; byte-level <code>sha256</code> + size for all 164 files of the original captured <code>phase1_v3</code> run (Phase A snapshot of the Codex-produced run).</li>
+    <li><code>normalized_manifest.json</code> &mdash; <strong>Phase B golden-output fingerprint</strong>: <code>sha256</code> of each artifact's <em>run-invariant</em> content (timestamps, <code>run_id</code>, and absolute paths neutralized; volatile JSON keys stripped). This is what a re-run reproduces, and what <code>tests/test_phase1_regression.py</code> checks.</li>
     <li><code>reports/</code> &mdash; tracked snapshot of the small decision-bearing report JSONs that back the governance numbers, including <code>post_adoption_canonical_safety_report.json</code> (<code>warning_count: 129</code>, <code>safe_for_downstream: false</code>), <code>validation_report.json</code>, <code>canonical_promotion_report.json</code>, <code>gold_evaluation_report.json</code>, and the two policy adoption decisions.</li>
   </ul>
 
+  <h2>Determinism findings (Phase B)</h2>
+  <p>Two independent re-runs of the current code reproduce each other exactly, and reproduce this normalized baseline (<code>MATCH</code>). The pipeline is deterministic given the same PDF. Two facts about the <em>original</em> captured run:</p>
+  <ul>
+    <li><strong>All JSON reports reproduce identically</strong> &mdash; the governance numbers are fully reproducible from current code.</li>
+    <li>The original run dir contains a stale <code>review_overrides.jsonl</code> that a current run does not produce (it differs from the curated <code>reviews/</code> source), and its <code>phase1_audit.html</code> rendering differs slightly from current code. These are noted in the consistency risk report and do not affect canonical numbers.</li>
+  </ul>
+
   <h2>How To Verify A Re-run</h2>
-  <p>After regenerating the run locally, compare it against the committed manifest:</p>
+  <p>Byte-identity of the original captured run (Phase A):</p>
   <pre><code>python3 src/baseline_manifest.py verify \
   data/runs/douglass_narrative/phase1_v3 \
   docs/baselines/douglass_narrative/phase1_v3/artifact_manifest.json</code></pre>
+  <p>Run-invariant reproduction of a fresh run (Phase B, the one that matters for refactors):</p>
+  <pre><code>python3 src/phase1_extract.py data/books/douglass_narrative.pdf \
+  --book-id douglass_narrative --run-id phase1_v3_check
+python3 src/baseline_manifest.py verify-fingerprint \
+  data/runs/douglass_narrative/phase1_v3_check \
+  docs/baselines/douglass_narrative/phase1_v3/normalized_manifest.json</code></pre>
   <p>
-    <code>MATCH</code> means the run reproduces this baseline exactly. Any <code>MISSING</code>,
-    <code>UNEXPECTED</code>, or <code>CHANGED</code> line is a drift signal to investigate before
-    trusting downstream numbers. The tool only hashes bytes; it does not change extraction behavior.
+    <code>MATCH</code> means the run reproduces the baseline. Any <code>MISSING</code>,
+    <code>UNEXPECTED</code>, or <code>CHANGED</code> line is a drift signal. The same
+    <code>verify-fingerprint</code> path is exercised automatically by
+    <code>tests/test_phase1_regression.py</code>. The tool only hashes content; it does not change
+    extraction behavior.
   </p>
 
   <h2>Scope &amp; Limits</h2>

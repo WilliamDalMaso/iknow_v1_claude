@@ -57,3 +57,38 @@ def test_relative_posix_keys(tmp_path):
     entries = bm.compute_manifest(run)
     assert "page_images/page_0001.png" in entries
     assert all(not key.startswith("/") for key in entries)
+
+
+# --- normalized content fingerprint -----------------------------------------
+
+def test_canonical_content_strips_volatile_json_keys(tmp_path):
+    run = tmp_path / "run"
+    run.mkdir()
+    a = run / "report.json"
+    a.write_text('{"created_at": "2026-05-28T00:00:00Z", "run_id": "x", "value": 7}\n', encoding="utf-8")
+    first = bm.canonical_content(a, run)
+    a.write_text('{"created_at": "2026-05-29T11:22:33Z", "run_id": "y", "value": 7}\n', encoding="utf-8")
+    second = bm.canonical_content(a, run)
+    assert first == second  # volatile fields excluded
+
+
+def test_canonical_content_neutralizes_text_timestamps_and_paths(tmp_path):
+    run = tmp_path / "phase1_vX"
+    run.mkdir()
+    html = run / "phase1_audit.html"
+    html.write_text(f"built 2026-05-28T17:43:59Z at {run.resolve()} run phase1_vX", encoding="utf-8")
+    out = bm.canonical_content(html, run).decode("utf-8")
+    assert "<ts>" in out and "<run_dir>" in out and "<run_id>" in out
+    assert "2026-05-28T17:43:59Z" not in out
+
+
+def test_content_fingerprint_changed_detected(tmp_path):
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "clean_objects.jsonl").write_text('{"text": "a"}\n', encoding="utf-8")
+    manifest = tmp_path / "fp.json"
+    bm.write_content_fingerprint(run, manifest, label="t")
+    assert bm.manifest_matches(bm.verify_content_fingerprint(run, manifest))
+    (run / "clean_objects.jsonl").write_text('{"text": "b"}\n', encoding="utf-8")
+    result = bm.verify_content_fingerprint(run, manifest)
+    assert result["changed"] == ["clean_objects.jsonl"]

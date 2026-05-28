@@ -38,7 +38,7 @@
 
   <h2>2. Guard Rails (must hold before, during, after)</h2>
   <ul>
-    <li>Add a <strong>golden-output regression test</strong> first: hash every Douglass v3 artifact and assert stability. Without this, decomposition is unsafe (see R1 in the consistency report &mdash; artifacts are git-ignored, so the baseline must be captured deliberately).</li>
+    <li><strong>[DONE]</strong> The <strong>golden-output regression test</strong> exists: <code>tests/test_phase1_regression.py</code> re-runs Douglass and asserts it reproduces the committed normalized fingerprint (<code>docs/baselines/&hellip;/normalized_manifest.json</code>). Verified deterministic across two independent runs. It skips cleanly where the PDF is absent. Decomposition is now safe to begin.</li>
     <li>Pure relocation only &mdash; no logic edits in the same commit as a move.</li>
     <li>One concern per commit; tests green at every step.</li>
     <li>Preserve the public entry points and all artifact filenames/paths.</li>
@@ -60,7 +60,7 @@
 
   <h2>4. Sequence</h2>
   <ol>
-    <li>Capture & commit a golden-artifact hash manifest + regression test.</li>
+    <li><strong>[DONE]</strong> Capture & commit a golden fingerprint + regression test.</li>
     <li>Extract <code>io_utils</code> (lowest risk, no domain logic).</li>
     <li>Extract <code>audit_html</code> (large, self-contained rendering).</li>
     <li>Extract <code>gold</code> and <code>review</code> (read-only reporting; cannot change extraction).</li>
