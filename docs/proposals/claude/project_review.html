@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Project Review</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 10px; text-align: left; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Claude Lane — Project Review</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28 &middot; <strong>Lane:</strong> <code>iknow_v1_claude</code> (review/proposal fork of <code>iknow_v1</code>)</p>
+
+  <div class="rule">
+    This is a review-only document. It proposes; it does not change extraction behavior, promote
+    structure, or unblock downstream work. All recommendations respect the project's evidence-first,
+    candidate-first, gold-gated method.
+  </div>
+
+  <h2>1. What This Project Is</h2>
+  <p>
+    A one-book-first Phase 1 extraction engine that turns a PDF into clean, audited, evidence-bound
+    document objects. The active book is <code>douglass_narrative</code>. Downstream retrieval,
+    embeddings, reasoning, and graph work are intentionally <strong>blocked</strong> until Phase 1
+    canonical paragraph review is safe. The method is: candidate-first &rarr; gold-gated &rarr;
+    side-effect-reviewed &rarr; formally adopted.
+  </p>
+
+  <h2>2. Current State (as recorded in governance)</h2>
+  <table>
+    <tr><th>Signal</th><th>Value</th></tr>
+    <tr><td>Active paragraph policy</td><td><code>v3_chained_cross_page_continuation_guarded</code></td></tr>
+    <tr><td>Promoted canonical paragraphs</td><td>115</td></tr>
+    <tr><td>Review warnings</td><td>129</td></tr>
+    <tr><td>Risky paragraphs</td><td>72</td></tr>
+    <tr><td>bbox/span cases</td><td>39</td></tr>
+    <tr><td>Likely true grouping defects</td><td>23</td></tr>
+    <tr><td>Visual-review cases</td><td>7</td></tr>
+    <tr><td>Gold paragraph precision/recall</td><td>1.000</td></tr>
+    <tr><td><code>safe_for_downstream</code></td><td><strong>false</strong></td></tr>
+  </table>
+
+  <h2>3. Architecture</h2>
+  <ul>
+    <li><code>src/phase1_extract.py</code> &mdash; <strong>7,524 lines, 106 top-level functions</strong> in a single module. It owns IO helpers, layout segmentation, furniture detection, cross-page join logic, promotion, review reporting, gold evaluation, bbox/span diagnosis, and HTML audit rendering.</li>
+    <li><code>src/observability_server.py</code> (390 lines) &mdash; dependency-free localhost dashboard on port <code>8765</code>.</li>
+    <li><code>src/observe.py</code> (48 lines) &mdash; CLI event appender writing to <code>data/runs/observability/events.jsonl</code>.</li>
+    <li><code>src/config.py</code> (39 lines) &mdash; env/model config; model names intentionally not defaulted.</li>
+    <li><code>tests/test_phase1_extract.py</code> (48KB) &mdash; the bulk of the 27 passing tests.</li>
+    <li><code>reviews/&lt;book_id&gt;/</code> &mdash; tracked curated decisions (gold sets, overrides, join decisions).</li>
+    <li><code>data/runs/&lt;book_id&gt;/phase1_vN/</code> &mdash; generated artifacts; <strong>git-ignored</strong>.</li>
+  </ul>
+
+  <h2>4. Strengths</h2>
+  <ul>
+    <li>Genuinely evidence-first: every canonical object is gated behind audit, gold, and side-effect review. The discipline is real, not decorative.</li>
+    <li>Durable curated decisions (overrides, join decisions, gold) live under tracked <code>reviews/</code>, separate from detector logic &mdash; corrections are not hidden in code.</li>
+    <li>Strong governance: hard rules, a machine-readable guidance file, and a documented work loop.</li>
+    <li>Tests pass fast (27 in ~0.2s) and cover artifact contracts.</li>
+    <li>Honest status reporting: the project refuses to call itself <code>safe_for_downstream</code> while real grouping defects remain.</li>
+  </ul>
+
+  <h2>5. Top Risks</h2>
+  <div class="warn">
+    <strong>R1 &mdash; The canonical state is untracked.</strong> <code>.gitignore</code> excludes
+    <code>data/runs/*</code> and <code>data/books/*.pdf</code>. The entire Douglass v3 run that
+    governance describes (115 paragraphs, all reports) exists only on this machine. A fresh clone
+    cannot reproduce or verify the documented state. See the consistency risk report.
+  </div>
+  <ul>
+    <li><strong>R2 &mdash; Monolith.</strong> 7.5k lines / 106 functions in one file makes review, reuse, and second-book generalization hard and raises regression risk on any edit.</li>
+    <li><strong>R3 &mdash; Book-coupling.</strong> Gold sets, join decisions, and several documented numbers are specific to <code>douglass_narrative</code>. Second-book readiness is unproven.</li>
+    <li><strong>R4 &mdash; Doc/state drift.</strong> Hard-coded statistics in governance prose (counts, page numbers) can silently diverge from regenerated runs.</li>
+    <li><strong>R5 &mdash; Observability is local-only and ephemeral</strong> (single port, jsonl on disk, git-ignored), so the audit trail of <em>how</em> decisions were made is not durable.</li>
+  </ul>
+
+  <h2>6. What Should Stay Blocked</h2>
+  <p>
+    No change here &mdash; I endorse the existing blocks. While <code>safe_for_downstream</code> is
+    false, keep blocked: structure promotion, page-artifact promotion, unknown-object promotion, OCR,
+    AI/model review, embeddings, retrieval, and graph work. Also keep the second book blocked from
+    Phase 1 <em>adoption</em> until its own gold set exists (a dry-run extraction for diagnosis is a
+    separate, lower-risk question &mdash; see the second-book readiness plan).
+  </p>
+
+  <h2>7. Companion Documents</h2>
+  <ul>
+    <li><a href="refactor_plan.html">refactor_plan.html</a> &mdash; how to decompose the monolith safely.</li>
+    <li><a href="observability_upgrade_plan.html">observability_upgrade_plan.html</a></li>
+    <li><a href="second_book_readiness_plan.html">second_book_readiness_plan.html</a></li>
+    <li><a href="consistency_risk_report.html">consistency_risk_report.html</a> &mdash; drift and stale-artifact risks.</li>
+  </ul>
+</main>
+</body>
+</html>

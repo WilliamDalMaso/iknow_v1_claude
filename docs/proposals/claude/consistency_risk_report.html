@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Consistency & Drift Risk Report</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 10px; text-align: left; vertical-align: top; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Claude Lane — Consistency & Drift Risk Report</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Risk Register</h2>
+  <table>
+    <tr><th>ID</th><th>Risk</th><th>Evidence</th><th>Severity</th><th>Recommendation</th></tr>
+    <tr>
+      <td>R1</td>
+      <td>Canonical run state is untracked and unreproducible.</td>
+      <td><code>.gitignore</code> excludes <code>data/runs/*</code> and <code>data/books/*.pdf</code>. The Douglass v3 run (115 paragraphs + all reports) is local-only.</td>
+      <td>High</td>
+      <td>Decide a durable strategy: either curate a tracked snapshot of key v3 reports into <code>docs/</code>, or add a committed artifact-hash manifest so any clone can verify a re-run. Do not commit raw PDFs.</td>
+    </tr>
+    <tr>
+      <td>R2</td>
+      <td>Statistics hard-coded in governance prose can drift from regenerated runs.</td>
+      <td><code>claude_guidance.json</code> and self-guidance HTML embed counts (115/129/72/39/23/7) and page numbers (59&ndash;61, 109).</td>
+      <td>Medium</td>
+      <td>Treat run-derived numbers as generated, not authoritative prose. Point governance at the report artifact as source of truth; keep prose qualitative.</td>
+    </tr>
+    <tr>
+      <td>R3</td>
+      <td>Monolith raises regression risk and obscures review.</td>
+      <td><code>src/phase1_extract.py</code>: 7,524 lines, 106 functions.</td>
+      <td>Medium</td>
+      <td>Behavior-preserving decomposition behind a golden-artifact regression test. See refactor plan.</td>
+    </tr>
+    <tr>
+      <td>R4</td>
+      <td>Single-book coupling blocks generalization.</td>
+      <td>Gold sets, join decisions, and several numbers are Douglass-specific.</td>
+      <td>Medium</td>
+      <td>Isolate book-specific calibration from generic logic before book #2. See second-book plan.</td>
+    </tr>
+    <tr>
+      <td>R5</td>
+      <td>Observability is ephemeral and uncorrelated.</td>
+      <td>Event log git-ignored; no run/commit/book correlation; free-form <code>kind</code>.</td>
+      <td>Low&ndash;Med</td>
+      <td>Add structured fields + run stamps. See observability plan.</td>
+    </tr>
+    <tr>
+      <td>R6</td>
+      <td>Stale identity artifacts from the Codex origin.</td>
+      <td>Resolved in this pass: governance/README/index re-homed to Claude; codex-named files renamed; lineage notes retained.</td>
+      <td>Resolved</td>
+      <td>History under <code>docs/history/</code> intentionally left verbatim as an immutable audit log.</td>
+    </tr>
+    <tr>
+      <td>R7</td>
+      <td>Documentation-format rule tension.</td>
+      <td>Hard rule forbids Markdown for durable docs; these proposals are therefore HTML, not the <code>.md</code> filenames originally suggested.</td>
+      <td>Low</td>
+      <td>Confirm HTML is the preferred form for Claude-lane proposals (it preserves the project method).</td>
+    </tr>
+  </table>
+
+  <h2>Consistency Checks Performed</h2>
+  <ul>
+    <li><code>grep</code> for <code>codex</code> outside <code>docs/history/</code> &rarr; only intentional lineage notes remain.</li>
+    <li>No source code (<code>src/</code>, <code>tests/</code>) referenced the renamed governance files &rarr; renames are safe.</li>
+    <li><code>python3 -m json.tool docs/governance/claude_guidance.json</code> &rarr; valid.</li>
+    <li><code>python3 -m pytest tests</code> &rarr; 27 passed.</li>
+    <li><code>git diff --check</code> &rarr; clean (no whitespace errors).</li>
+  </ul>
+
+  <h2>Recommended Order of Operations</h2>
+  <ol>
+    <li>R1 first &mdash; without a reproducible/verifiable baseline, refactors and second-book work rest on sand.</li>
+    <li>R3 refactor (guarded by R1's golden manifest).</li>
+    <li>R5 observability fields.</li>
+    <li>R4 + second-book diagnostic dry run, only after Douglass clears its gates.</li>
+  </ol>
+</main>
+</body>
+</html>

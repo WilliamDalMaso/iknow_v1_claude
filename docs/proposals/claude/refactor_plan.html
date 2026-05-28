@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Refactor Plan</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Claude Lane — Refactor Plan</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28</p>
+
+  <div class="warn">
+    <strong>Proposal only.</strong> This plan must not be executed until explicitly requested. Any
+    refactor is behavior-preserving by definition: <code>python3 -m pytest tests</code> must stay
+    green and a re-run of Douglass v3 must produce byte-identical artifacts (or a documented,
+    reviewed diff). Refactoring is <em>not</em> an extraction-behavior change.
+  </div>
+
+  <h2>1. Problem</h2>
+  <p>
+    <code>src/phase1_extract.py</code> is 7,524 lines with 106 top-level functions spanning IO,
+    segmentation, furniture detection, cross-page joins, promotion, review reporting, gold
+    evaluation, bbox/span diagnosis, and HTML rendering. This concentration makes review costly,
+    raises regression risk per edit, and couples unrelated concerns.
+  </p>
+
+  <h2>2. Guard Rails (must hold before, during, after)</h2>
+  <ul>
+    <li>Add a <strong>golden-output regression test</strong> first: hash every Douglass v3 artifact and assert stability. Without this, decomposition is unsafe (see R1 in the consistency report &mdash; artifacts are git-ignored, so the baseline must be captured deliberately).</li>
+    <li>Pure relocation only &mdash; no logic edits in the same commit as a move.</li>
+    <li>One concern per commit; tests green at every step.</li>
+    <li>Preserve the public entry points and all artifact filenames/paths.</li>
+  </ul>
+
+  <h2>3. Proposed Module Seams</h2>
+  <p>Decompose into a <code>src/phase1/</code> package, preserving a thin <code>phase1_extract.py</code> facade that re-exports the existing names (so tests and any callers keep working):</p>
+  <ul>
+    <li><code>phase1/io_utils.py</code> &mdash; <code>write_json</code>, <code>read_jsonl</code>, <code>sha256_file</code>, path helpers, commented-jsonl readers.</li>
+    <li><code>phase1/layout.py</code> &mdash; line normalization, margins, paragraph segmentation, classification.</li>
+    <li><code>phase1/furniture.py</code> &mdash; running-furniture detection, page-number tokens, furniture profiles.</li>
+    <li><code>phase1/cross_page.py</code> &mdash; cross-page + chained continuation experiments and join logic.</li>
+    <li><code>phase1/promotion.py</code> &mdash; promotion blockers and canonical paragraph artifacts.</li>
+    <li><code>phase1/review.py</code> &mdash; canonical review, merge experiments, failure taxonomy, bbox/span diagnostics.</li>
+    <li><code>phase1/gold.py</code> &mdash; gold evaluation and authoritative-row logic.</li>
+    <li><code>phase1/audit_html.py</code> &mdash; <code>phase1_audit.html</code> and overlay rendering.</li>
+    <li><code>phase1/pipeline.py</code> &mdash; orchestration / run entry point.</li>
+  </ul>
+
+  <h2>4. Sequence</h2>
+  <ol>
+    <li>Capture & commit a golden-artifact hash manifest + regression test.</li>
+    <li>Extract <code>io_utils</code> (lowest risk, no domain logic).</li>
+    <li>Extract <code>audit_html</code> (large, self-contained rendering).</li>
+    <li>Extract <code>gold</code> and <code>review</code> (read-only reporting; cannot change extraction).</li>
+    <li>Extract <code>furniture</code>, then <code>layout</code>, then <code>cross_page</code>, then <code>promotion</code>.</li>
+    <li>Introduce <code>pipeline.py</code>; reduce <code>phase1_extract.py</code> to a facade.</li>
+    <li>Re-run Douglass v3; confirm artifact hashes match the manifest.</li>
+  </ol>
+
+  <h2>5. Test Suite Split (parallel, optional)</h2>
+  <p>
+    <code>tests/test_phase1_extract.py</code> (48KB) should mirror the module split into
+    <code>tests/phase1/test_layout.py</code>, <code>test_cross_page.py</code>, etc. Do this only after
+    the source split stabilizes, to avoid double churn.
+  </p>
+
+  <h2>6. Explicitly Out of Scope</h2>
+  <p>
+    No detector tuning, no policy changes, no new artifacts, no OCR/model/retrieval/graph work. This
+    plan only reshapes existing code. Behavior change requires its own gold-gated, side-effect-reviewed
+    proposal.
+  </p>
+</main>
+</body>
+</html>

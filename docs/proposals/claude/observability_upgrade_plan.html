@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Observability Upgrade Plan</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Claude Lane — Observability Upgrade Plan</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28</p>
+
+  <div class="rule">
+    Proposal only. Honors the standing port rule: one endpoint at
+    <code>http://127.0.0.1:8765</code>, no new ports per build.
+  </div>
+
+  <h2>1. Current State</h2>
+  <ul>
+    <li><code>observe.py</code> appends <code>{timestamp, kind, message, details}</code> events to <code>data/runs/observability/events.jsonl</code>.</li>
+    <li><code>observability_server.py</code> serves a dependency-free dashboard on port 8765.</li>
+    <li>The event log is git-ignored and machine-local &mdash; the record of <em>why/when</em> decisions were made is not durable or reproducible.</li>
+  </ul>
+
+  <h2>2. Gaps</h2>
+  <ul>
+    <li><strong>No run correlation.</strong> Events are a flat stream; they are not tied to a <code>book_id</code> + <code>phase1_vN</code> + git commit, so you cannot reconstruct "which run produced these numbers."</li>
+    <li><strong>No schema/versioning.</strong> Free-form <code>kind</code> means typos (<code>codex</code> vs <code>claude</code>) fragment the stream silently.</li>
+    <li><strong>No durable decision ledger.</strong> Adoption decisions live in run artifacts, not in observability; the two are not linked.</li>
+    <li><strong>No second-book dimension.</strong> Nothing namespaces events by book.</li>
+  </ul>
+
+  <h2>3. Proposed Upgrades (incremental, low-risk)</h2>
+  <ol>
+    <li><strong>Structured event fields:</strong> add optional <code>book_id</code>, <code>run_id</code>, <code>git_commit</code>, <code>actor</code> to the event schema. Keep backward compatibility (old events still parse).</li>
+    <li><strong>Run stamp helper:</strong> a small function that, at run start, records the git commit + book + version so every downstream event can reference it.</li>
+    <li><strong>Dashboard filters:</strong> filter by <code>book_id</code> and <code>actor</code>; group by run.</li>
+    <li><strong>Decision linkage:</strong> when an adoption decision artifact is written, emit a paired observability event carrying the artifact path and key metrics, so the dashboard becomes an index into the durable ledger.</li>
+    <li><strong>Event-schema test:</strong> a contract test asserting required fields, mirroring the artifact-contract testing style already used.</li>
+  </ol>
+
+  <h2>4. Sequencing vs. Refactor</h2>
+  <p>
+    Items 1, 2, and 5 are isolated additions to <code>observe.py</code> and can land independently of
+    the monolith refactor. Items 3 and 4 touch the server and the pipeline; defer item 4 until the
+    refactor exposes a clean <code>pipeline.py</code> seam to hook into.
+  </p>
+
+  <h2>5. Out of Scope</h2>
+  <p>No external telemetry services, no new ports, no network exposure beyond localhost, no model calls.</p>
+</main>
+</body>
+</html>

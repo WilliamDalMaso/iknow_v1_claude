@@ -1,6 +1,9 @@
 {
   "created_on": "2026-05-27",
-  "project": "iknow_v1",
+  "adopted_by_claude_on": "2026-05-28",
+  "project": "iknow_v1_claude",
+  "maintained_by": "Claude",
+  "lineage": "Independent Claude review/proposal lane forked from iknow_v1 (originally bootstrapped by Codex). The upstream record under docs/history/ is preserved verbatim as an immutable audit log and is not rewritten.",
   "north_star": "Turn one uploaded book into a clean, organized, evidence-backed learning engine with a knowledge graph.",
   "priority_order": [
     "Phase 1 clean extraction and organization",
@@ -123,10 +126,10 @@
       "fill missing content without evidence"
     ]
   },
-  "codex_work_loop": {
+  "claude_work_loop": {
     "start": [
       "Read docs/governance/0002-source-of-truth.html.",
-      "Read docs/governance/0005-codex-work-loop.html.",
+      "Read docs/governance/0005-claude-work-loop.html.",
       "Read current Phase 1 strategy and artifact contract.",
       "Read the latest relevant history entry.",
       "Check git status before editing.",

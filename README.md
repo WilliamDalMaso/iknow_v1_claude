@@ -1,4 +1,9 @@
-# iknow v1
+# iknow v1 — Claude lane
+
+`iknow_v1_claude` is the independent Claude review/proposal lane forked from `iknow_v1` (originally
+bootstrapped by Codex). It carries the same evidence-first method and Phase 1 discipline; governance
+and self-guidance are now maintained by Claude. The upstream record under `docs/history/` is
+preserved verbatim as an immutable audit log.
 
 `iknow_v1` is a fresh rebuild of a book-intelligence engine.
 
@@ -44,7 +49,7 @@ Start here locally:
 
 - [`docs/index.html`](docs/index.html)
 - [`docs/governance/0002-source-of-truth.html`](docs/governance/0002-source-of-truth.html)
-- [`docs/governance/0003-codex-self-guidance.html`](docs/governance/0003-codex-self-guidance.html)
+- [`docs/governance/0003-claude-self-guidance.html`](docs/governance/0003-claude-self-guidance.html)
 - [`docs/strategy/0001-phase-1-strategy.html`](docs/strategy/0001-phase-1-strategy.html)
 
 ## Local Observability
@@ -66,7 +71,7 @@ http://127.0.0.1:8765
 Append an event:
 
 ```bash
-python3 src/observe.py codex "Started Phase 1 extraction design" --details '{"phase":"phase_1"}'
+python3 src/observe.py claude "Started Phase 1 extraction design" --details '{"phase":"phase_1"}'
 ```
 
 Runtime observability logs are ignored by git.
