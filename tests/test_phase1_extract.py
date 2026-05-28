@@ -943,6 +943,24 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             ),
             encoding="utf-8",
         )
+        (output_dir / "chained_cross_page_continuation_experiment.json").write_text(
+            json.dumps(
+                {
+                    "active_policy": "v1_consecutive_lines",
+                    "experimental_policy": "v3_chained_cross_page_continuation",
+                    "does_not_change_active_policy": True,
+                    "target_defect": {"canonical_paragraph_id": "cp_000103"},
+                    "acceptance_rule": {
+                        "cp_000103_fixed": False,
+                        "gold_score_improved": False,
+                        "over_merges_not_increased": True,
+                        "object_label_accuracy_not_worsened": True,
+                        "adoption_recommendation": "do_not_adopt_refine_chained_continuation_conditions",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {

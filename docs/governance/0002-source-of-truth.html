@@ -114,8 +114,11 @@
     Letter paragraphs and <code>2</code> valid Chapter I body paragraphs caught by an overbroad
     early-page warning. The visual-review queue found <code>7</code> valid canonical paragraphs and
     <code>1</code> true paragraph grouping defect on page <code>109</code>. The next correction
-    is designed as an experiment-only chained cross-page continuation test for confirmed grouping
-    defects, not broad metadata blocking or immediate policy adoption.
+    was tested as <code>v3_chained_cross_page_continuation</code> in experiment-only mode. It fixed
+    <code>cp_000103</code>, improved paragraph precision and recall to <code>1.000</code>, and kept
+    object-label accuracy at <code>1.000</code>, but it proposed <code>9</code> chained joins, with
+    <code>8</code> outside authoritative gold coverage. It is not active; those side effects need a
+    review queue before any adoption decision.
   </p>
 
   <h2>Phase 1 Evidence Stack</h2>

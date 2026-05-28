@@ -61,6 +61,7 @@
     <li>Use <code>front_matter_metadata_review_report.json</code> before changing front-matter promotion behavior; it is a review-only report, not a demotion or promotion rule.</li>
     <li>Use <code>visual_review_cases_report.json</code> before changing grouping behavior; it confirms which visual warnings are valid paragraphs and which are real grouping defects.</li>
     <li>Use <code>narrow_grouping_correction_design.json</code> before implementing grouping behavior; the next step is experiment-only chained cross-page continuation, not direct adoption.</li>
+    <li>Use <code>chained_cross_page_continuation_experiment.json</code> before considering chained continuation adoption; it fixed <code>cp_000103</code> but leaves unscored joins that require side-effect review.</li>
     <li>Do not add OCR, model review, retrieval, or graph work just because the audit UI improved.</li>
   </ol>
 

@@ -51,6 +51,7 @@ REQUIRED_ARTIFACTS = [
     "front_matter_metadata_review_report.json",
     "visual_review_cases_report.json",
     "narrow_grouping_correction_design.json",
+    "chained_cross_page_continuation_experiment.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -65,12 +66,14 @@ VALID_OVERRIDE_BUCKETS = {
 BASELINE_PARAGRAPH_MERGE_POLICY = "v1_consecutive_lines"
 PARAGRAPH_BREAK_GUARDED_POLICY = "v2_paragraph_break_guarded"
 CROSS_PAGE_CONTINUATION_POLICY = "v2_cross_page_continuation"
+CHAINED_CROSS_PAGE_CONTINUATION_POLICY = "v3_chained_cross_page_continuation"
 ACTIVE_PARAGRAPH_MERGE_POLICY = CROSS_PAGE_CONTINUATION_POLICY
 EXPERIMENTAL_PARAGRAPH_MERGE_POLICY = CROSS_PAGE_CONTINUATION_POLICY
 VALID_PARAGRAPH_MERGE_POLICIES = {
     BASELINE_PARAGRAPH_MERGE_POLICY,
     PARAGRAPH_BREAK_GUARDED_POLICY,
     CROSS_PAGE_CONTINUATION_POLICY,
+    CHAINED_CROSS_PAGE_CONTINUATION_POLICY,
 }
 REQUIRED_OVERRIDE_FIELDS = {
     "object_id",
@@ -583,14 +586,36 @@ def combine_bbox_for_cross_page(first: dict[str, Any], second: dict[str, Any]) -
     second_bbox = second.get("bbox") or {}
     x0_values = [value for value in [first_bbox.get("x0"), second_bbox.get("x0")] if value is not None]
     x1_values = [value for value in [first_bbox.get("x1"), second_bbox.get("x1")] if value is not None]
+    page_numbers = []
+    for source in [first_bbox.get("page_numbers"), [first.get("page_number")], second_bbox.get("page_numbers"), [second.get("page_number")]]:
+        for page_number in source or []:
+            if page_number is not None and page_number not in page_numbers:
+                page_numbers.append(page_number)
     return {
         "x0": min(x0_values) if x0_values else None,
         "x1": max(x1_values) if x1_values else None,
         "top": first_bbox.get("top"),
         "bottom": second_bbox.get("bottom"),
         "cross_page": True,
-        "page_numbers": [first.get("page_number"), second.get("page_number")],
+        "page_numbers": page_numbers,
     }
+
+
+def page_numbers_for_candidate(row: dict[str, Any]) -> list[int]:
+    pages = []
+    bbox = row.get("bbox") or {}
+    for page_number in bbox.get("page_numbers") or []:
+        if isinstance(page_number, int) and page_number not in pages:
+            pages.append(page_number)
+    for line_id in row.get("source_line_ids", []):
+        match = re.search(r":p(\d{4}):line\d+", str(line_id))
+        if match:
+            page_number = int(match.group(1))
+            if page_number not in pages:
+                pages.append(page_number)
+    if not pages and row.get("page_number") is not None:
+        pages.append(int(row["page_number"]))
+    return sorted(pages)
 
 
 def apply_cross_page_continuation_experiment(
@@ -728,6 +753,164 @@ def apply_cross_page_continuation_experiment(
     return merged_layout, merged_clean, {
         "joined_cross_page_paragraphs": joined_examples,
         "rejected_cross_page_candidates": rejected_examples,
+        "joined_count": len(joined_examples),
+        "rejected_count": len(rejected_examples),
+    }
+
+
+def apply_chained_cross_page_continuation_experiment(
+    layout_objects: list[dict[str, Any]],
+    clean_objects: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    clean_by_id = {row["object_id"]: row for row in clean_objects}
+    by_page: dict[int, list[dict[str, Any]]] = {}
+    for row in layout_objects:
+        by_page.setdefault(int(row.get("page_number") or 0), []).append(row)
+    for rows in by_page.values():
+        rows.sort(key=lambda row: int(row.get("object_index") or 0))
+
+    skipped_ids: set[str] = set()
+    merged_by_left_id: dict[str, tuple[dict[str, Any], dict[str, Any], str, list[str]]] = {}
+    joined_examples = []
+    rejected_examples = []
+
+    left_candidates = [
+        row
+        for row in layout_objects
+        if row.get("object_type") == "paragraph"
+        and (row.get("bbox") or {}).get("cross_page")
+        and "cross_page_paragraph_continuation_join" in clean_by_id.get(row.get("object_id"), {}).get("cleanup_operations", [])
+    ]
+    left_candidates.sort(key=lambda row: (max(page_numbers_for_candidate(row) or [int(row.get("page_number") or 0)]), int(row.get("object_index") or 0)))
+
+    for first in left_candidates:
+        pages = page_numbers_for_candidate(first)
+        if not pages:
+            continue
+        next_page = max(pages) + 1
+        next_paragraphs = [row for row in by_page.get(next_page, []) if row.get("object_type") == "paragraph"]
+        if not next_paragraphs:
+            continue
+        second = next_paragraphs[0]
+        if first.get("object_id") in skipped_ids or second.get("object_id") in skipped_ids:
+            continue
+        first_clean = str(clean_by_id.get(first["object_id"], {}).get("clean_text", ""))
+        second_clean = str(clean_by_id.get(second["object_id"], {}).get("clean_text", ""))
+        blockers = intervening_structure_before_first_paragraph(by_page[next_page], second)
+        previous_incomplete = paragraph_text_looks_incomplete(first_clean)
+        next_continuation = paragraph_text_looks_like_continuation(second_clean)
+        no_structure = not blockers
+        reasons = ["left_candidate_already_cross_page_join"]
+        if previous_incomplete:
+            reasons.append("joined_left_text_still_incomplete")
+        if next_continuation:
+            reasons.append("next_page_first_paragraph_looks_like_continuation")
+        if no_structure:
+            reasons.append("no_intervening_structure_candidate")
+
+        pages_after_join = pages + [next_page]
+        if previous_incomplete and next_continuation and no_structure:
+            reason = ";".join(reasons)
+            merged_by_left_id[first["object_id"]] = (first, second, reason, pages_after_join)
+            skipped_ids.add(second["object_id"])
+            joined_examples.append(
+                {
+                    "first_object_id": first.get("object_id"),
+                    "second_object_id": second.get("object_id"),
+                    "pages": pages_after_join,
+                    "source_line_ids": list(first.get("source_line_ids", [])) + list(second.get("source_line_ids", [])),
+                    "source_line_count": len(first.get("source_line_ids", [])) + len(second.get("source_line_ids", [])),
+                    "join_reasons": reasons,
+                    "first_text_end": first_clean[-180:],
+                    "second_text_start": second_clean[:180],
+                    "joined_text_preview": f"{first_clean} {second_clean}"[:420],
+                }
+            )
+        else:
+            rejected_examples.append(
+                {
+                    "first_object_id": first.get("object_id"),
+                    "second_object_id": second.get("object_id"),
+                    "pages": pages_after_join,
+                    "reasons_present": reasons,
+                    "rejection_reasons": [
+                        reason
+                        for condition, reason in [
+                            (previous_incomplete, "joined_left_text_appears_complete"),
+                            (next_continuation, "next_page_first_paragraph_does_not_look_like_continuation"),
+                            (no_structure, "intervening_structure_candidate_present"),
+                        ]
+                        if not condition
+                    ],
+                    "intervening_structure_object_ids": [row.get("object_id") for row in blockers],
+                    "first_text_end": first_clean[-140:],
+                    "second_text_start": second_clean[:140],
+                }
+            )
+
+    merged_layout: list[dict[str, Any]] = []
+    merged_clean: list[dict[str, Any]] = []
+    for row in layout_objects:
+        object_id = row["object_id"]
+        if object_id in skipped_ids:
+            continue
+        if object_id in merged_by_left_id:
+            first, second, reason, pages_after_join = merged_by_left_id[object_id]
+            first_clean = clean_by_id[first["object_id"]]
+            second_clean = clean_by_id[second["object_id"]]
+            merged_id = f"{first['object_id']}__chain__{second['object_id'].split(':')[-1]}"
+            source_object_ids = list(
+                dict.fromkeys(
+                    [first["object_id"]]
+                    + (first.get("source_object_ids") or [first["object_id"]])
+                    + (second.get("source_object_ids") or [second["object_id"]])
+                )
+            )
+            source_line_ids = list(first.get("source_line_ids", [])) + list(second.get("source_line_ids", []))
+            source_line_indexes = list(first.get("source_line_indexes", [])) + list(second.get("source_line_indexes", []))
+            raw_text = f"{first.get('raw_text', '').rstrip()}\n{second.get('raw_text', '').lstrip()}"
+            clean_text = f"{first_clean.get('clean_text', '').rstrip()} {second_clean.get('clean_text', '').lstrip()}".strip()
+            operations = list(
+                dict.fromkeys(
+                    list(first_clean.get("cleanup_operations", []))
+                    + list(second_clean.get("cleanup_operations", []))
+                    + ["chained_cross_page_paragraph_continuation_join"]
+                )
+            )
+            bbox = combine_bbox_for_cross_page(first, second)
+            bbox["page_numbers"] = pages_after_join
+            merged_layout.append(
+                {
+                    **first,
+                    "object_id": merged_id,
+                    "source_object_ids": source_object_ids,
+                    "source_line_ids": source_line_ids,
+                    "source_line_indexes": source_line_indexes,
+                    "bbox": bbox,
+                    "raw_text": raw_text,
+                    "classification_reasons": list(
+                        dict.fromkeys(
+                            list(first.get("classification_reasons", []))
+                            + ["paragraph_merge_policy:v3_chained_cross_page_continuation", reason]
+                        )
+                    ),
+                }
+            )
+            merged_clean.append(
+                {
+                    **first_clean,
+                    "object_id": merged_id,
+                    "clean_text": clean_text,
+                    "cleanup_operations": operations,
+                }
+            )
+            continue
+        merged_layout.append(row)
+        merged_clean.append(clean_by_id[object_id])
+
+    return merged_layout, merged_clean, {
+        "joined_chained_cross_page_paragraphs": joined_examples,
+        "rejected_chained_cross_page_candidates": rejected_examples,
         "joined_count": len(joined_examples),
         "rejected_count": len(rejected_examples),
     }
@@ -3549,6 +3732,182 @@ def build_narrow_grouping_correction_design(
     }
 
 
+def build_chained_cross_page_continuation_experiment(
+    book_id: str,
+    run_id: str,
+    active_evaluation: dict[str, Any],
+    experimental_evaluation: dict[str, Any],
+    experiment_details: dict[str, Any],
+    narrow_design: dict[str, Any],
+) -> dict[str, Any]:
+    active_gold = active_evaluation.get("gold_evaluation_report", {})
+    experimental_gold = experimental_evaluation.get("gold_evaluation_report", {})
+    active_gold_counts = active_gold.get("counts", {})
+    experimental_gold_counts = experimental_gold.get("counts", {})
+    active_gold_scores = active_gold.get("scores", {})
+    experimental_gold_scores = experimental_gold.get("scores", {})
+    active_review = active_evaluation.get("review_report", {})
+    experimental_review = experimental_evaluation.get("review_report", {})
+    active_review_counts = active_review.get("counts", {})
+    experimental_review_counts = experimental_review.get("counts", {})
+    active_bbox = (active_review.get("bbox_span_risk_summary") or {}).get("total", 0)
+    experimental_bbox = (experimental_review.get("bbox_span_risk_summary") or {}).get("total", 0)
+    active_true_defects = count_likely_true_merges(active_review)
+    experimental_true_defects = count_likely_true_merges(experimental_review)
+    active_taxonomy = taxonomy_counts_for_review(active_evaluation["canonical_paragraphs"], active_review)
+    experimental_taxonomy = taxonomy_counts_for_review(experimental_evaluation["canonical_paragraphs"], experimental_review)
+    active_promotion_counts = active_evaluation["promotion_report"].get("counts", {})
+    experimental_promotion_counts = experimental_evaluation["promotion_report"].get("counts", {})
+    target_gold_id = "douglass_gold_p0107_0109_001"
+    target_over_split_before = any(row.get("gold_id") == target_gold_id for row in active_gold.get("over_split_paragraphs", []))
+    target_over_split_after = any(row.get("gold_id") == target_gold_id for row in experimental_gold.get("over_split_paragraphs", []))
+    target_matched_after = any(row.get("gold_id") == target_gold_id for row in experimental_gold.get("matched_paragraphs", []))
+    proposed_join_rows = experiment_details.get("joined_chained_cross_page_paragraphs", [])
+    gold_line_sets = authoritative_gold_line_sets(book_id)
+    joins_covered_by_gold = 0
+    for join in proposed_join_rows:
+        join_lines = set(join.get("source_line_ids", []))
+        if any(join_lines and join_lines == row.get("source_line_ids") for row in gold_line_sets):
+            joins_covered_by_gold += 1
+    unresolved_side_effects = max(0, len(proposed_join_rows) - joins_covered_by_gold)
+    precision_before = active_gold_scores.get("paragraph_precision")
+    precision_after = experimental_gold_scores.get("paragraph_precision")
+    recall_before = active_gold_scores.get("paragraph_recall")
+    recall_after = experimental_gold_scores.get("paragraph_recall")
+    object_accuracy_before = active_gold_scores.get("object_label_accuracy")
+    object_accuracy_after = experimental_gold_scores.get("object_label_accuracy")
+    gold_improved = (
+        isinstance(precision_before, (int, float))
+        and isinstance(precision_after, (int, float))
+        and isinstance(recall_before, (int, float))
+        and isinstance(recall_after, (int, float))
+        and precision_after >= precision_before
+        and recall_after >= recall_before
+        and (precision_after > precision_before or recall_after > recall_before)
+    )
+    over_splits_decreased = experimental_gold_counts.get("over_split_paragraphs", 0) < active_gold_counts.get("over_split_paragraphs", 0)
+    over_merges_not_increased = experimental_gold_counts.get("over_merged_paragraphs", 0) <= active_gold_counts.get("over_merged_paragraphs", 0)
+    object_label_accuracy_not_worsened = (
+        not isinstance(object_accuracy_before, (int, float))
+        or not isinstance(object_accuracy_after, (int, float))
+        or object_accuracy_after >= object_accuracy_before
+    )
+    warning_regression = experimental_review_counts.get("warning_count", 0) > active_review_counts.get("warning_count", 0) + 5
+    bbox_regression = experimental_bbox > active_bbox + 5
+    cp_000103_fixed = bool(target_over_split_before and not target_over_split_after and target_matched_after)
+    adoptable_by_metrics = (
+        cp_000103_fixed
+        and gold_improved
+        and over_splits_decreased
+        and over_merges_not_increased
+        and object_label_accuracy_not_worsened
+        and not warning_regression
+        and not bbox_regression
+    )
+    adoption_recommendation = (
+        "do_not_adopt_until_object_label_regression_is_explained"
+        if not object_label_accuracy_not_worsened
+        else
+        "create_chained_join_review_queue_before_adoption"
+        if adoptable_by_metrics and unresolved_side_effects
+        else "eligible_for_formal_adoption_checkpoint"
+        if adoptable_by_metrics
+        else "do_not_adopt_refine_chained_continuation_conditions"
+    )
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "experiment_only_chained_cross_page_continuation",
+        "active_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
+        "experimental_policy": CHAINED_CROSS_PAGE_CONTINUATION_POLICY,
+        "does_not_change_active_policy": True,
+        "does_not_change_canonical_promotion_rules": True,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "user-facing answers", "structure promotion", "broad promotion blocking"],
+        "source_design_artifact": "narrow_grouping_correction_design.json",
+        "target_defect": {
+            "canonical_paragraph_id": "cp_000103",
+            "page": 109,
+            "gold_id": target_gold_id,
+            "fixed_by_experiment": cp_000103_fixed,
+        },
+        "active_policy_metrics": {
+            "paragraph_candidates": len(active_evaluation["main_paragraphs"]),
+            "canonical_promoted": active_promotion_counts.get("promoted_paragraphs", 0),
+            "warning_count": active_review_counts.get("warning_count", 0),
+            "bbox_span_risk": active_bbox,
+            "likely_true_accidental_merges": active_true_defects,
+            "merged_across_paragraph_break": active_taxonomy.get("merged_across_paragraph_break", 0),
+            "safe_for_downstream": active_review.get("safe_for_downstream"),
+        },
+        "experimental_policy_metrics": {
+            "paragraph_candidates": len(experimental_evaluation["main_paragraphs"]),
+            "canonical_promoted": experimental_promotion_counts.get("promoted_paragraphs", 0),
+            "warning_count": experimental_review_counts.get("warning_count", 0),
+            "bbox_span_risk": experimental_bbox,
+            "likely_true_accidental_merges": experimental_true_defects,
+            "merged_across_paragraph_break": experimental_taxonomy.get("merged_across_paragraph_break", 0),
+            "safe_for_downstream": experimental_review.get("safe_for_downstream"),
+        },
+        "gold_scores": {
+            "active_paragraph_precision": precision_before,
+            "experimental_paragraph_precision": precision_after,
+            "active_paragraph_recall": recall_before,
+            "experimental_paragraph_recall": recall_after,
+            "active_object_label_accuracy": object_accuracy_before,
+            "experimental_object_label_accuracy": object_accuracy_after,
+        },
+        "gold_counts": {
+            "active_matched_paragraphs": active_gold_counts.get("matched_paragraphs", 0),
+            "experimental_matched_paragraphs": experimental_gold_counts.get("matched_paragraphs", 0),
+            "active_over_split_paragraphs": active_gold_counts.get("over_split_paragraphs", 0),
+            "experimental_over_split_paragraphs": experimental_gold_counts.get("over_split_paragraphs", 0),
+            "active_over_merged_paragraphs": active_gold_counts.get("over_merged_paragraphs", 0),
+            "experimental_over_merged_paragraphs": experimental_gold_counts.get("over_merged_paragraphs", 0),
+            "active_missing_paragraphs": active_gold_counts.get("missing_paragraphs", 0),
+            "experimental_missing_paragraphs": experimental_gold_counts.get("missing_paragraphs", 0),
+            "active_wrong_object_labels": active_gold_counts.get("wrong_object_labels", 0),
+            "experimental_wrong_object_labels": experimental_gold_counts.get("wrong_object_labels", 0),
+            "active_missing_object_labels": active_gold_counts.get("missing_object_labels", 0),
+            "experimental_missing_object_labels": experimental_gold_counts.get("missing_object_labels", 0),
+        },
+        "warning_deltas": {
+            "warning_count_delta": experimental_review_counts.get("warning_count", 0) - active_review_counts.get("warning_count", 0),
+            "bbox_span_risk_delta": experimental_bbox - active_bbox,
+            "likely_true_accidental_merge_delta": experimental_true_defects - active_true_defects,
+            "merged_across_paragraph_break_delta": experimental_taxonomy.get("merged_across_paragraph_break", 0) - active_taxonomy.get("merged_across_paragraph_break", 0),
+        },
+        "side_effects": {
+            "proposed_chained_joins": len(proposed_join_rows),
+            "rejected_chained_joins": experiment_details.get("rejected_count", 0),
+            "joins_covered_by_authoritative_gold": joins_covered_by_gold,
+            "joins_not_covered_by_gold": unresolved_side_effects,
+            "likely_side_effects": [
+                "canonical paragraph count may decrease where chained joins are accepted",
+                "unscored chained joins need review before any adoption",
+                "longer multi-page paragraphs can still carry bbox/span review warnings",
+            ],
+        },
+        "acceptance_rule": {
+            "cp_000103_fixed": cp_000103_fixed,
+            "gold_score_improved": gold_improved,
+            "over_splits_decreased": over_splits_decreased,
+            "over_merges_not_increased": over_merges_not_increased,
+            "object_label_accuracy_not_worsened": object_label_accuracy_not_worsened,
+            "audit_warning_regression": warning_regression,
+            "bbox_span_regression": bbox_regression,
+            "adoptable_by_metrics_only": adoptable_by_metrics,
+            "requires_side_effect_review_before_adoption": unresolved_side_effects > 0,
+            "adoption_recommendation": adoption_recommendation,
+        },
+        "proposed_chained_joins": proposed_join_rows[:80],
+        "rejected_chained_joins": (experiment_details.get("rejected_chained_cross_page_candidates") or [])[:80],
+        "experimental_wrong_object_labels": experimental_gold.get("wrong_object_labels", []),
+        "experimental_missing_object_labels": experimental_gold.get("missing_object_labels", []),
+        "design_summary": narrow_design.get("summary", {}),
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -3612,6 +3971,7 @@ def build_audit_html(
     front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json") if (output_dir / "front_matter_metadata_review_report.json").exists() else {}
     visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json") if (output_dir / "visual_review_cases_report.json").exists() else {}
     narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json") if (output_dir / "narrow_grouping_correction_design.json").exists() else {}
+    chained_cross_page_experiment = read_json(output_dir / "chained_cross_page_continuation_experiment.json") if (output_dir / "chained_cross_page_continuation_experiment.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -4346,6 +4706,36 @@ def build_audit_html(
         "</tr>"
         for row in (narrow_grouping_correction_design.get("designs") or [])
     )
+    chained_acceptance = chained_cross_page_experiment.get("acceptance_rule") or {}
+    chained_active_metrics = chained_cross_page_experiment.get("active_policy_metrics") or {}
+    chained_experimental_metrics = chained_cross_page_experiment.get("experimental_policy_metrics") or {}
+    chained_gold_scores = chained_cross_page_experiment.get("gold_scores") or {}
+    chained_gold_counts = chained_cross_page_experiment.get("gold_counts") or {}
+    chained_side_effects = chained_cross_page_experiment.get("side_effects") or {}
+    chained_join_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('first_object_id'))}</code></td>"
+        f"<td><code>{esc(row.get('second_object_id'))}</code></td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('pages', [])))}</td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(', '.join(row.get('join_reasons', [])))}</td>"
+        f"<td>{esc(row.get('first_text_end', ''))}</td>"
+        f"<td>{esc(row.get('second_text_start', ''))}</td>"
+        f"<td>{esc(row.get('joined_text_preview', ''))}</td>"
+        "</tr>"
+        for row in (chained_cross_page_experiment.get("proposed_chained_joins") or [])[:60]
+    )
+    chained_rejected_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('first_object_id'))}</code></td>"
+        f"<td><code>{esc(row.get('second_object_id'))}</code></td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('pages', [])))}</td>"
+        f"<td>{esc(', '.join(row.get('rejection_reasons', [])))}</td>"
+        f"<td>{esc(row.get('first_text_end', ''))}</td>"
+        f"<td>{esc(row.get('second_text_start', ''))}</td>"
+        "</tr>"
+        for row in (chained_cross_page_experiment.get("rejected_chained_joins") or [])[:60]
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -4951,6 +5341,57 @@ def build_audit_html(
     <tbody>{narrow_design_rows or '<tr><td colspan="10">No narrow grouping correction design rows.</td></tr>'}</tbody>
   </table>
 
+  <h2>Chained Cross-Page Continuation Experiment</h2>
+  <div class="rule">
+    This is experiment-only. Active policy remains
+    <code>{esc(chained_cross_page_experiment.get('active_policy', '-'))}</code>; experimental policy is
+    <code>{esc(chained_cross_page_experiment.get('experimental_policy', '-'))}</code>. No adoption,
+    canonical promotion rule change, OCR, model review, retrieval, or graph work happens here.
+  </div>
+  <ul>
+    <li>Target defect: <code>{esc((chained_cross_page_experiment.get('target_defect') or {}).get('canonical_paragraph_id', '-'))}</code></li>
+    <li>Target fixed by experiment: <code>{esc((chained_cross_page_experiment.get('target_defect') or {}).get('fixed_by_experiment', '-'))}</code></li>
+    <li>Active gold precision: <code>{esc(fmt_decimal(chained_gold_scores.get('active_paragraph_precision'), 3))}</code></li>
+    <li>Experimental gold precision: <code>{esc(fmt_decimal(chained_gold_scores.get('experimental_paragraph_precision'), 3))}</code></li>
+    <li>Active gold recall: <code>{esc(fmt_decimal(chained_gold_scores.get('active_paragraph_recall'), 3))}</code></li>
+    <li>Experimental gold recall: <code>{esc(fmt_decimal(chained_gold_scores.get('experimental_paragraph_recall'), 3))}</code></li>
+    <li>Active matched paragraphs: <code>{esc(chained_gold_counts.get('active_matched_paragraphs', '-'))}</code></li>
+    <li>Experimental matched paragraphs: <code>{esc(chained_gold_counts.get('experimental_matched_paragraphs', '-'))}</code></li>
+    <li>Active over-split paragraphs: <code>{esc(chained_gold_counts.get('active_over_split_paragraphs', '-'))}</code></li>
+    <li>Experimental over-split paragraphs: <code>{esc(chained_gold_counts.get('experimental_over_split_paragraphs', '-'))}</code></li>
+    <li>Active over-merged paragraphs: <code>{esc(chained_gold_counts.get('active_over_merged_paragraphs', '-'))}</code></li>
+    <li>Experimental over-merged paragraphs: <code>{esc(chained_gold_counts.get('experimental_over_merged_paragraphs', '-'))}</code></li>
+    <li>Active object-label accuracy: <code>{esc(fmt_decimal(chained_gold_scores.get('active_object_label_accuracy'), 3))}</code></li>
+    <li>Experimental object-label accuracy: <code>{esc(fmt_decimal(chained_gold_scores.get('experimental_object_label_accuracy'), 3))}</code></li>
+    <li>Active wrong object labels: <code>{esc(chained_gold_counts.get('active_wrong_object_labels', '-'))}</code></li>
+    <li>Experimental wrong object labels: <code>{esc(chained_gold_counts.get('experimental_wrong_object_labels', '-'))}</code></li>
+    <li>Active warning count: <code>{esc(chained_active_metrics.get('warning_count', '-'))}</code></li>
+    <li>Experimental warning count: <code>{esc(chained_experimental_metrics.get('warning_count', '-'))}</code></li>
+    <li>Active bbox/span risk: <code>{esc(chained_active_metrics.get('bbox_span_risk', '-'))}</code></li>
+    <li>Experimental bbox/span risk: <code>{esc(chained_experimental_metrics.get('bbox_span_risk', '-'))}</code></li>
+    <li>Proposed chained joins: <code>{esc(chained_side_effects.get('proposed_chained_joins', '-'))}</code></li>
+    <li>Rejected chained joins: <code>{esc(chained_side_effects.get('rejected_chained_joins', '-'))}</code></li>
+    <li>Joins not covered by gold: <code>{esc(chained_side_effects.get('joins_not_covered_by_gold', '-'))}</code></li>
+    <li>Adoptable by metrics only: <code>{esc(chained_acceptance.get('adoptable_by_metrics_only', '-'))}</code></li>
+    <li>Object-label accuracy not worsened: <code>{esc(chained_acceptance.get('object_label_accuracy_not_worsened', '-'))}</code></li>
+    <li>Requires side-effect review: <code>{esc(chained_acceptance.get('requires_side_effect_review_before_adoption', '-'))}</code></li>
+    <li>Recommendation: <code>{esc(chained_acceptance.get('adoption_recommendation', '-'))}</code></li>
+  </ul>
+  <h3>Proposed Chained Joins</h3>
+  <table>
+    <thead>
+      <tr><th>Left Object</th><th>Right Object</th><th>Pages</th><th>Lines</th><th>Reasons</th><th>Left End</th><th>Right Start</th><th>Joined Preview</th></tr>
+    </thead>
+    <tbody>{chained_join_rows or '<tr><td colspan="8">No proposed chained joins.</td></tr>'}</tbody>
+  </table>
+  <h3>Rejected Chained Candidates</h3>
+  <table>
+    <thead>
+      <tr><th>Left Object</th><th>Right Object</th><th>Pages</th><th>Rejection Reasons</th><th>Left End</th><th>Right Start</th></tr>
+    </thead>
+    <tbody>{chained_rejected_rows or '<tr><td colspan="6">No rejected chained candidates.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -5216,6 +5657,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json")
     visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json")
     narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json")
+    chained_cross_page_experiment = read_json(output_dir / "chained_cross_page_continuation_experiment.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -5256,6 +5698,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("front_matter_metadata_review_report_exists", (output_dir / "front_matter_metadata_review_report.json").exists())
     add_check("visual_review_cases_report_exists", (output_dir / "visual_review_cases_report.json").exists())
     add_check("narrow_grouping_correction_design_exists", (output_dir / "narrow_grouping_correction_design.json").exists())
+    add_check("chained_cross_page_continuation_experiment_exists", (output_dir / "chained_cross_page_continuation_experiment.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -5627,6 +6070,14 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("narrow_grouping_design_is_design_only", bool(narrow_grouping_correction_design.get("design_only")))
     add_check("narrow_grouping_design_count_matches_rows", narrow_design_summary.get("confirmed_defects") == len(narrow_design_rows))
     add_check("narrow_grouping_design_references_visual_defects", {row.get("canonical_paragraph_id") for row in narrow_design_rows}.issubset({row.get("canonical_paragraph_id") for row in visual_review_rows}))
+    chained_acceptance = chained_cross_page_experiment.get("acceptance_rule") or {}
+    chained_target = chained_cross_page_experiment.get("target_defect") or {}
+    add_check("audit_has_chained_cross_page_continuation_experiment", "Chained Cross-Page Continuation Experiment" in audit_html)
+    add_check("chained_experiment_keeps_active_policy", chained_cross_page_experiment.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check("chained_experiment_policy_recorded", chained_cross_page_experiment.get("experimental_policy") == CHAINED_CROSS_PAGE_CONTINUATION_POLICY)
+    add_check("chained_experiment_does_not_change_active_policy", bool(chained_cross_page_experiment.get("does_not_change_active_policy")))
+    add_check("chained_experiment_targets_confirmed_defect", chained_target.get("canonical_paragraph_id") == "cp_000103")
+    add_check("chained_experiment_acceptance_fields_present", all(key in chained_acceptance for key in ["cp_000103_fixed", "gold_score_improved", "over_merges_not_increased", "object_label_accuracy_not_worsened", "adoption_recommendation"]))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -5809,6 +6260,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "front_matter_metadata_review_report": "front_matter_metadata_review_report.json",
             "visual_review_cases_report": "visual_review_cases_report.json",
             "narrow_grouping_correction_design": "narrow_grouping_correction_design.json",
+            "chained_cross_page_continuation_experiment": "chained_cross_page_continuation_experiment.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -5920,6 +6372,28 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         active_evaluation["gold_evaluation_report"],
         ACTIVE_PARAGRAPH_MERGE_POLICY,
     )
+    chained_layout_objects, chained_clean_objects, chained_experiment_details = apply_chained_cross_page_continuation_experiment(
+        layout_objects,
+        clean_objects,
+    )
+    chained_evaluation = paragraph_policy_evaluation(
+        book_id,
+        run_id,
+        chained_layout_objects,
+        chained_clean_objects,
+        inventory,
+        page_count,
+        applied_review_overrides,
+        page_heights_by_page,
+    )
+    chained_cross_page_continuation_experiment = build_chained_cross_page_continuation_experiment(
+        book_id,
+        run_id,
+        active_evaluation,
+        chained_evaluation,
+        chained_experiment_details,
+        narrow_grouping_correction_design,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -5984,6 +6458,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "front_matter_metadata_review_report.json", front_matter_metadata_review_report)
     write_json(output_dir / "visual_review_cases_report.json", visual_review_cases_report)
     write_json(output_dir / "narrow_grouping_correction_design.json", narrow_grouping_correction_design)
+    write_json(output_dir / "chained_cross_page_continuation_experiment.json", chained_cross_page_continuation_experiment)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
