@@ -28,6 +28,46 @@
       "page": 36,
       "reason": "Reviewed chapter boundary, body prose, and continuation from page 36 into page 37.",
       "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 52,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 58,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 66,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 81,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 107,
+      "reason": "Reviewed start of long paragraph that continues through page 108 and into page 109.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 108,
+      "reason": "Reviewed middle of long paragraph that starts on page 107 and continues into page 109.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 109,
+      "reason": "Reviewed continuation of long paragraph that starts on page 107; this covers a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 122,
+      "reason": "Reviewed Appendix body paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
     }
   ],
   "adoption_rule": "No paragraph merge policy may become active merely because heuristic warnings improve. It must improve against authoritative gold rows and not worsen audit safety metrics."

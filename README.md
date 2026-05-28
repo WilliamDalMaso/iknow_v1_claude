@@ -30,10 +30,10 @@ show symptoms, but they are not enough to adopt a new extraction policy.
 Current Douglass Phase 1 status: `v2_cross_page_continuation` is the active paragraph merge policy
 after formal gold, side-effect review, blocker investigation, and validation gates. Downstream
 retrieval, embeddings, reasoning, and graph work remain blocked until canonical paragraph review is
-safe. The current post-adoption blocker is `bbox_span_risk`; the current diagnosis shows 23 likely
-true grouping defects, 9 front-matter or metadata artifacts, 6 gold-set gaps, and 2 visual-review
-cases. The current remediation order is gold expansion, front-matter/promotion review, visual
-review, then any narrow grouping correction.
+safe. The current post-adoption blocker is `bbox_span_risk`; gold coverage has been expanded for the
+former 6 gold-set gap cases, leaving 23 likely true grouping defects, 9 front-matter or metadata
+artifacts, and 8 visual-review cases. The current remediation order is front-matter/promotion
+review, visual review, then any narrow grouping correction.
 
 ## Documentation Model
 

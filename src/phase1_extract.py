@@ -3051,6 +3051,20 @@ def build_post_adoption_remediation_plan(
             }
         )
     safety_state = canonical_safety_report.get("current_state") or {}
+    queue_counts = {row["group"]: row["count"] for row in queues}
+    recommended_order = []
+    if queue_counts.get("gold_set_gaps", 0):
+        recommended_order.append(f"Expand authoritative gold rows for the {queue_counts['gold_set_gaps']} gold-set gaps.")
+    if queue_counts.get("front_matter_metadata_artifacts", 0):
+        recommended_order.append(
+            f"Review the {queue_counts['front_matter_metadata_artifacts']} front-matter/metadata artifacts as likely promotion/classification issues."
+        )
+    if queue_counts.get("needs_visual_review", 0):
+        recommended_order.append(f"Review the {queue_counts['needs_visual_review']} needs-visual-review cases.")
+    if queue_counts.get("likely_true_paragraph_grouping_defects", 0):
+        recommended_order.append(
+            f"Only then consider a narrow correction for the {queue_counts['likely_true_paragraph_grouping_defects']} likely true paragraph grouping defects."
+        )
     return {
         "book_id": book_id,
         "run_id": run_id,
@@ -3069,13 +3083,12 @@ def build_post_adoption_remediation_plan(
             "downstream_recommendation": safety_state.get("downstream_recommendation"),
         },
         "queues": queues,
-        "recommended_order": [
-            "Expand authoritative gold rows for the 6 gold-set gaps.",
-            "Review the 9 front-matter/metadata artifacts as likely promotion/classification issues.",
-            "Review the 2 needs-visual-review cases.",
-            "Only then consider a narrow correction for the 23 likely true paragraph grouping defects.",
-        ],
-        "next_action": "expand_gold_and_review_non_grouping_queues_before_new_merge_experiment",
+        "recommended_order": recommended_order,
+        "next_action": (
+            "expand_gold_rows_before_new_merge_experiment"
+            if queue_counts.get("gold_set_gaps", 0)
+            else "review_front_matter_and_visual_review_queues_before_new_merge_experiment"
+        ),
     }
 
 
