@@ -48,6 +48,7 @@
       "paragraph_merge_experiment_report.json",
       "paragraph_merge_failure_taxonomy_report.json",
       "cross_page_join_review_report.json",
+      "xpage_join_0032_investigation.json",
       "gold_evaluation_report.json",
       "validation_report.json"
     ],

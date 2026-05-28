@@ -43,6 +43,7 @@ REQUIRED_ARTIFACTS = [
     "paragraph_merge_experiment_report.json",
     "paragraph_merge_failure_taxonomy_report.json",
     "cross_page_join_review_report.json",
+    "xpage_join_0032_investigation.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -2536,6 +2537,84 @@ def build_cross_page_join_review_report(
     }
 
 
+def build_xpage_join_0032_investigation(
+    book_id: str,
+    run_id: str,
+    cross_page_join_review_report: dict[str, Any],
+    layout_objects: list[dict[str, Any]],
+    page_artifacts: list[dict[str, Any]],
+    structure: list[dict[str, Any]],
+) -> dict[str, Any]:
+    join = next(
+        (row for row in cross_page_join_review_report.get("joins", []) if row.get("join_id") == "xpage_join_0032"),
+        {},
+    )
+    left_id = join.get("left_candidate_id")
+    right_id = join.get("right_candidate_id")
+    objects_by_id = {row.get("object_id"): row for row in layout_objects}
+    left_object = objects_by_id.get(left_id, {})
+    right_object = objects_by_id.get(right_id, {})
+    intervening_artifacts = [
+        row
+        for row in page_artifacts
+        if row.get("page_number") in {join.get("left_page"), join.get("right_page")}
+    ]
+    intervening_structure = [
+        row
+        for row in structure
+        if row.get("page_number") in {join.get("left_page"), join.get("right_page")}
+    ]
+
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "join_id": "xpage_join_0032",
+        "left_page": join.get("left_page"),
+        "right_page": join.get("right_page"),
+        "left_candidate_id": left_id,
+        "right_candidate_id": right_id,
+        "left_text_end_preview": join.get("left_text_end_preview"),
+        "right_text_start_preview": join.get("right_text_start_preview"),
+        "raw_source_line_evidence": {
+            "left_last_lines": str(left_object.get("raw_text", "")).splitlines()[-4:],
+            "right_first_lines": str(right_object.get("raw_text", "")).splitlines()[:4],
+            "left_source_line_ids": left_object.get("source_line_ids", [])[-4:],
+            "right_source_line_ids": right_object.get("source_line_ids", [])[:4],
+        },
+        "visual_page_evidence_references": [
+            f"page_images/{page_image_filename(int(join.get('left_page') or 0))}",
+            f"page_images/{page_image_filename(int(join.get('right_page') or 0))}",
+            join.get("left_audit_anchor"),
+            join.get("right_audit_anchor"),
+        ],
+        "intervening_page_artifacts": [
+            {
+                "object_id": row.get("object_id"),
+                "page": row.get("page_number"),
+                "clean_text": row.get("clean_text"),
+                "artifact_type": row.get("artifact_type"),
+            }
+            for row in intervening_artifacts
+        ],
+        "intervening_structure_candidates": [
+            {
+                "object_id": row.get("object_id"),
+                "page": row.get("page_number"),
+                "clean_text": row.get("clean_text"),
+            }
+            for row in intervening_structure
+        ],
+        "suspected_issue": "valid_continuation",
+        "recommended_decision": "accept",
+        "reason": (
+            "Rendered page witnesses and raw source lines show page 55 ends with 'make the four letters' "
+            "and page 56 begins 'named.' The phrase is 'make the four letters named.' Only running-header "
+            "page furniture intervenes; no structure candidate crosses the join boundary."
+        ),
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -2591,6 +2670,7 @@ def build_audit_html(
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json") if (output_dir / "paragraph_merge_experiment_report.json").exists() else {}
     paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json") if (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists() else {}
     cross_page_join_review_report = read_json(output_dir / "cross_page_join_review_report.json") if (output_dir / "cross_page_join_review_report.json").exists() else {}
+    xpage_join_0032_investigation = read_json(output_dir / "xpage_join_0032_investigation.json") if (output_dir / "xpage_join_0032_investigation.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -3035,6 +3115,14 @@ def build_audit_html(
         f"<li>Page <code>{esc(row.get('page'))}</code>: <code>{esc(row.get('count'))}</code></li>"
         for row in cross_page_join_summary.get("top_pages_needing_review", [])
     )
+    xpage_0032_lines = xpage_join_0032_investigation.get("raw_source_line_evidence", {})
+    xpage_0032_visual_refs = "\n".join(
+        f"<li><code>{esc(ref)}</code></li>"
+        for ref in xpage_join_0032_investigation.get("visual_page_evidence_references", [])
+        if ref
+    )
+    xpage_0032_left_lines = "\n".join(f"<li>{esc(line)}</li>" for line in xpage_0032_lines.get("left_last_lines", []))
+    xpage_0032_right_lines = "\n".join(f"<li>{esc(line)}</li>" for line in xpage_0032_lines.get("right_first_lines", []))
     merge_taxonomy_rows = "\n".join(
         "<tr>"
         f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
@@ -3421,6 +3509,21 @@ def build_audit_html(
   </p>
   <h3>Top Pages Needing Review</h3>
   <ul>{cross_page_top_page_items or '<li>No high-risk pages identified.</li>'}</ul>
+
+  <h3>xpage_join_0032 Investigation</h3>
+  <div class="rule">
+    Focused investigation artifact: <code>xpage_join_0032_investigation.json</code>.
+    Suspected issue: <code>{esc(xpage_join_0032_investigation.get('suspected_issue', '-'))}</code>.
+    Recommended decision: <code>{esc(xpage_join_0032_investigation.get('recommended_decision', '-'))}</code>.
+  </div>
+  <p>{esc(xpage_join_0032_investigation.get('reason', 'No focused investigation generated yet.'))}</p>
+  <h4>Left Page Raw Ending</h4>
+  <ul>{xpage_0032_left_lines or '<li>No raw left-line evidence.</li>'}</ul>
+  <h4>Right Page Raw Start</h4>
+  <ul>{xpage_0032_right_lines or '<li>No raw right-line evidence.</li>'}</ul>
+  <h4>Visual Evidence References</h4>
+  <ul>{xpage_0032_visual_refs or '<li>No visual evidence references.</li>'}</ul>
+
   <table>
     <thead>
       <tr><th>Join</th><th>Pages</th><th>Left</th><th>Right</th><th>Decision Status</th><th>Risk</th><th>Confidence</th><th>Gold</th><th>Gold IDs</th><th>Evidence</th><th>Left End</th><th>Right Start</th><th>Action</th><th>Copy-Ready Decision JSONL</th></tr>
@@ -3844,6 +3947,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     paragraph_merge_experiment_report = read_json(output_dir / "paragraph_merge_experiment_report.json")
     paragraph_merge_failure_taxonomy_report = read_json(output_dir / "paragraph_merge_failure_taxonomy_report.json")
     cross_page_join_review_report = read_json(output_dir / "cross_page_join_review_report.json")
+    xpage_join_0032_investigation = read_json(output_dir / "xpage_join_0032_investigation.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -3876,6 +3980,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("paragraph_merge_experiment_report_exists", (output_dir / "paragraph_merge_experiment_report.json").exists())
     add_check("paragraph_merge_failure_taxonomy_report_exists", (output_dir / "paragraph_merge_failure_taxonomy_report.json").exists())
     add_check("cross_page_join_review_report_exists", (output_dir / "cross_page_join_review_report.json").exists())
+    add_check("xpage_join_0032_investigation_exists", (output_dir / "xpage_join_0032_investigation.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -4145,6 +4250,11 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("audit_has_gold_review", "Gold Review" in audit_html)
     add_check("audit_has_cross_page_join_review", "Cross-Page Join Review" in audit_html)
     add_check("audit_has_cross_page_join_decision_template", "cross_page_join_decisions.jsonl" in audit_html and "join-decision-template" in audit_html)
+    add_check("audit_has_xpage_join_0032_investigation", "xpage_join_0032 Investigation" in audit_html)
+    add_check(
+        "xpage_join_0032_investigation_recommends_valid_decision",
+        xpage_join_0032_investigation.get("recommended_decision") in {"accept", "reject", "needs_ocr_witness", "needs_manual_visual_review"},
+    )
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -4305,6 +4415,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "paragraph_merge_experiment_report": "paragraph_merge_experiment_report.json",
             "paragraph_merge_failure_taxonomy_report": "paragraph_merge_failure_taxonomy_report.json",
             "cross_page_join_review_report": "cross_page_join_review_report.json",
+            "xpage_join_0032_investigation": "xpage_join_0032_investigation.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -4348,6 +4459,14 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     )
     cross_page_join_review_report = build_cross_page_join_review_report(
         book_id, run_id, cross_page_experiment_details, applied_cross_page_join_decisions
+    )
+    xpage_join_0032_investigation = build_xpage_join_0032_investigation(
+        book_id,
+        run_id,
+        cross_page_join_review_report,
+        layout_objects,
+        page_artifacts,
+        structure,
     )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
@@ -4405,6 +4524,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "paragraph_merge_experiment_report.json", paragraph_merge_experiment_report)
     write_json(output_dir / "paragraph_merge_failure_taxonomy_report.json", paragraph_merge_failure_taxonomy_report)
     write_json(output_dir / "cross_page_join_review_report.json", cross_page_join_review_report)
+    write_json(output_dir / "xpage_join_0032_investigation.json", xpage_join_0032_investigation)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

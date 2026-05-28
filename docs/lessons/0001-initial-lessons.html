@@ -51,6 +51,7 @@
     <li>Join side-effect review needs its own durable decision file; otherwise the same proposed joins have to be re-reviewed after every regeneration.</li>
     <li>A join can be plausible yet still remain <code>needs_review</code> when the evidence suggests possible extraction loss around the page break.</li>
     <li>A merge policy should remain blocked when even one unresolved join points to possible source extraction loss, because downstream cleanliness depends on that boundary.</li>
+    <li>Focused visual-page evidence can resolve a suspected extraction-loss join, but policy adoption should still be a separate explicit checkpoint from blocker resolution.</li>
   </ol>
 
   <h2>Lessons Not Carried Forward</h2>

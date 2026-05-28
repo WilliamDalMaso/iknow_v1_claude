@@ -846,6 +846,17 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             encoding="utf-8",
         )
         write_jsonl(output_dir / "cross_page_join_decisions_applied.jsonl", [])
+        (output_dir / "xpage_join_0032_investigation.json").write_text(
+            json.dumps(
+                {
+                    "join_id": "xpage_join_0032",
+                    "suspected_issue": "valid_continuation",
+                    "recommended_decision": "accept",
+                    "reason": "unit test placeholder",
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {
