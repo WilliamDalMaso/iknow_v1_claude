@@ -119,8 +119,11 @@
     object-label accuracy at <code>1.000</code>, but it proposed <code>9</code> chained joins, with
     <code>8</code> outside authoritative gold coverage. A review queue now classifies those
     unscored joins as <code>5</code> likely valid continuations, <code>2</code> needs visual review,
-    and <code>1</code> structure-boundary risk. It is not active; those queued side effects must be
-    reviewed before any adoption decision.
+    and <code>1</code> structure-boundary risk. Curated review accepted <code>7</code> joins and
+    rejected <code>1</code> false join on pages <code>59-61</code>, where the proposed chain skipped
+    intervening poem/prose content on page <code>60</code>. <code>v3</code> is not active and should
+    not be adopted as-is; the next experiment must block chained joins when intervening body content
+    exists between the already joined candidate and the next-page candidate.
   </p>
 
   <h2>Phase 1 Evidence Stack</h2>

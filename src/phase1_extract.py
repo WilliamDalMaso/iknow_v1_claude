@@ -53,6 +53,7 @@ REQUIRED_ARTIFACTS = [
     "narrow_grouping_correction_design.json",
     "chained_cross_page_continuation_experiment.json",
     "chained_join_review_queue.json",
+    "chained_join_decisions_applied.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -86,6 +87,15 @@ REQUIRED_OVERRIDE_FIELDS = {
     "evidence_reference",
 }
 VALID_CROSS_PAGE_JOIN_DECISIONS = {"accept", "reject", "needs_review"}
+VALID_CHAINED_JOIN_DECISIONS = {"accept", "reject", "needs_review"}
+VALID_CHAINED_JOIN_DECISION_REASONS = {
+    "valid_chained_continuation",
+    "false_join",
+    "structure_boundary",
+    "page_furniture_interference",
+    "extraction_loss_suspected",
+    "insufficient_evidence",
+}
 REQUIRED_CROSS_PAGE_JOIN_DECISION_FIELDS = {
     "join_id",
     "left_page",
@@ -97,6 +107,16 @@ REQUIRED_CROSS_PAGE_JOIN_DECISION_FIELDS = {
     "reviewer",
     "date",
     "evidence_reference",
+}
+REQUIRED_CHAINED_JOIN_DECISION_FIELDS = {
+    "chained_join_id",
+    "decision",
+    "reason",
+    "reviewer",
+    "reviewed_at",
+    "affected_pages",
+    "evidence_reference",
+    "notes",
 }
 
 
@@ -160,6 +180,10 @@ def curated_cross_page_join_decisions_path(book_id: str) -> Path:
     return REVIEWS_DIR / book_id / "cross_page_join_decisions.jsonl"
 
 
+def curated_chained_join_decisions_path(book_id: str) -> Path:
+    return REVIEWS_DIR / book_id / "chained_join_decisions.jsonl"
+
+
 def gold_review_dir(book_id: str) -> Path:
     return REVIEWS_DIR / book_id / "gold"
 
@@ -175,6 +199,16 @@ def prepare_applied_review_overrides(review_overrides: list[dict[str, Any]], sou
 
 
 def prepare_applied_cross_page_join_decisions(decisions: list[dict[str, Any]], source_path: Path) -> list[dict[str, Any]]:
+    applied: list[dict[str, Any]] = []
+    for row in decisions:
+        applied_row = dict(row)
+        applied_row["review_source"] = "curated"
+        applied_row["review_source_path"] = str(source_path.relative_to(ROOT) if source_path.is_relative_to(ROOT) else source_path)
+        applied.append(applied_row)
+    return applied
+
+
+def prepare_applied_chained_join_decisions(decisions: list[dict[str, Any]], source_path: Path) -> list[dict[str, Any]]:
     applied: list[dict[str, Any]] = []
     for row in decisions:
         applied_row = dict(row)
@@ -4002,6 +4036,99 @@ def build_chained_join_review_queue(
     }
 
 
+def validate_chained_join_decisions(
+    decisions: list[dict[str, Any]],
+    queue_rows: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    errors: list[dict[str, Any]] = []
+    valid_by_id: dict[str, dict[str, Any]] = {}
+    seen_ids: set[str] = set()
+    for row in decisions:
+        chained_join_id = str(row.get("chained_join_id", ""))
+        line_number = row.get("_line_number")
+        missing_fields = [
+            field
+            for field in REQUIRED_CHAINED_JOIN_DECISION_FIELDS
+            if field not in row or not str(row.get(field, "")).strip()
+        ]
+        if missing_fields:
+            errors.append({"code": "missing_required_fields", "chained_join_id": chained_join_id, "line_number": line_number, "fields": missing_fields})
+        if chained_join_id in seen_ids:
+            errors.append({"code": "duplicate_chained_join_decision", "chained_join_id": chained_join_id, "line_number": line_number})
+        seen_ids.add(chained_join_id)
+        if row.get("decision") not in VALID_CHAINED_JOIN_DECISIONS:
+            errors.append({"code": "invalid_decision", "chained_join_id": chained_join_id, "line_number": line_number, "decision": row.get("decision")})
+        if row.get("reason") not in VALID_CHAINED_JOIN_DECISION_REASONS:
+            errors.append({"code": "invalid_reason", "chained_join_id": chained_join_id, "line_number": line_number, "reason": row.get("reason")})
+        proposed = queue_rows.get(chained_join_id)
+        if not proposed:
+            errors.append({"code": "missing_chained_join_id", "chained_join_id": chained_join_id, "line_number": line_number})
+            continue
+        if [int(page) for page in row.get("affected_pages", [])] != [int(page) for page in proposed.get("affected_pages", [])]:
+            errors.append({"code": "affected_pages_mismatch", "chained_join_id": chained_join_id, "line_number": line_number})
+        row_has_error = any(error.get("chained_join_id") == chained_join_id for error in errors)
+        if not row_has_error:
+            valid_by_id[chained_join_id] = row
+    return {
+        "status": "pass" if not errors else "fail",
+        "source_row_count": len(decisions),
+        "valid_decision_count": len(valid_by_id),
+        "error_count": len(errors),
+        "errors": errors,
+    }, valid_by_id
+
+
+def build_chained_join_decisions_applied(
+    book_id: str,
+    run_id: str,
+    chained_join_review_queue: dict[str, Any],
+    applied_decisions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    queue_rows = chained_join_review_queue.get("queue") or []
+    queue_by_id = {row.get("chained_join_id"): row for row in queue_rows}
+    validation, valid_by_id = validate_chained_join_decisions(applied_decisions, queue_by_id)
+    rows = []
+    for queue_row in queue_rows:
+        decision = valid_by_id.get(queue_row.get("chained_join_id"))
+        rows.append(
+            {
+                "chained_join_id": queue_row.get("chained_join_id"),
+                "affected_pages": queue_row.get("affected_pages"),
+                "source_candidate_ids": queue_row.get("source_candidate_ids"),
+                "likely_risk": queue_row.get("likely_risk"),
+                "decision": decision.get("decision") if decision else "unreviewed",
+                "reason": decision.get("reason") if decision else None,
+                "reviewer": decision.get("reviewer") if decision else None,
+                "reviewed_at": decision.get("reviewed_at") if decision else None,
+                "evidence_reference": decision.get("evidence_reference") if decision else None,
+                "notes": decision.get("notes") if decision else None,
+                "decision_status": "curated_" + decision.get("decision") if decision else "queued_for_review",
+            }
+        )
+    status_counts = Counter(row["decision"] for row in rows)
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "curated_chained_join_decisions_replay",
+        "decision_source": f"reviews/{book_id}/chained_join_decisions.jsonl",
+        "does_not_change_active_policy": True,
+        "does_not_adopt_v3": True,
+        "does_not_change_canonical_promotion_rules": True,
+        "validation": validation,
+        "summary": {
+            "queued_chained_joins": len(queue_rows),
+            "decision_rows": len(applied_decisions),
+            "accepted": status_counts.get("accept", 0),
+            "rejected": status_counts.get("reject", 0),
+            "needs_review": status_counts.get("needs_review", 0),
+            "unreviewed": status_counts.get("unreviewed", 0),
+            "adoption_remains_separate_checkpoint": True,
+        },
+        "decisions": rows,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -4067,6 +4194,7 @@ def build_audit_html(
     narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json") if (output_dir / "narrow_grouping_correction_design.json").exists() else {}
     chained_cross_page_experiment = read_json(output_dir / "chained_cross_page_continuation_experiment.json") if (output_dir / "chained_cross_page_continuation_experiment.json").exists() else {}
     chained_join_review_queue = read_json(output_dir / "chained_join_review_queue.json") if (output_dir / "chained_join_review_queue.json").exists() else {}
+    chained_join_decisions_applied = read_json(output_dir / "chained_join_decisions_applied.json") if (output_dir / "chained_join_decisions_applied.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -4853,6 +4981,22 @@ def build_audit_html(
         "</tr>"
         for row in (chained_join_review_queue.get("queue") or [])[:80]
     )
+    chained_decision_summary = chained_join_decisions_applied.get("summary") or {}
+    chained_decision_validation = chained_join_decisions_applied.get("validation") or {}
+    chained_decision_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('chained_join_id'))}</code></td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</td>"
+        f"<td>{esc(row.get('likely_risk'))}</td>"
+        f"<td>{esc(row.get('decision'))}</td>"
+        f"<td>{esc(row.get('reason'))}</td>"
+        f"<td>{esc(row.get('reviewer'))}</td>"
+        f"<td>{esc(row.get('reviewed_at'))}</td>"
+        f"<td>{esc(row.get('notes'))}</td>"
+        f"<td>{esc(row.get('evidence_reference'))}</td>"
+        "</tr>"
+        for row in (chained_join_decisions_applied.get("decisions") or [])[:80]
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -5529,6 +5673,29 @@ def build_audit_html(
     <tbody>{chained_queue_rows or '<tr><td colspan="12">No unscored chained joins queued.</td></tr>'}</tbody>
   </table>
 
+  <h2>Chained Join Decisions</h2>
+  <div class="rule">
+    These are curated replayed decisions from
+    <code>reviews/{esc(book_id)}/chained_join_decisions.jsonl</code>. They do not adopt
+    <code>v3</code>; adoption remains a separate checkpoint.
+  </div>
+  <ul>
+    <li>Decision validation: <code>{esc(chained_decision_validation.get('status', 'unknown'))}</code></li>
+    <li>Queued joins: <code>{esc(chained_decision_summary.get('queued_chained_joins', '-'))}</code></li>
+    <li>Decision rows: <code>{esc(chained_decision_summary.get('decision_rows', '-'))}</code></li>
+    <li>Accepted: <code>{esc(chained_decision_summary.get('accepted', '-'))}</code></li>
+    <li>Rejected: <code>{esc(chained_decision_summary.get('rejected', '-'))}</code></li>
+    <li>Needs review: <code>{esc(chained_decision_summary.get('needs_review', '-'))}</code></li>
+    <li>Unreviewed: <code>{esc(chained_decision_summary.get('unreviewed', '-'))}</code></li>
+    <li>Adoption remains separate checkpoint: <code>{esc(chained_decision_summary.get('adoption_remains_separate_checkpoint', '-'))}</code></li>
+  </ul>
+  <table>
+    <thead>
+      <tr><th>Queue ID</th><th>Pages</th><th>Risk</th><th>Decision</th><th>Reason</th><th>Reviewer</th><th>Reviewed</th><th>Notes</th><th>Evidence</th></tr>
+    </thead>
+    <tbody>{chained_decision_rows or '<tr><td colspan="9">No chained join decisions applied.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -5796,6 +5963,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json")
     chained_cross_page_experiment = read_json(output_dir / "chained_cross_page_continuation_experiment.json")
     chained_join_review_queue = read_json(output_dir / "chained_join_review_queue.json")
+    chained_join_decisions_applied = read_json(output_dir / "chained_join_decisions_applied.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -5838,6 +6006,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("narrow_grouping_correction_design_exists", (output_dir / "narrow_grouping_correction_design.json").exists())
     add_check("chained_cross_page_continuation_experiment_exists", (output_dir / "chained_cross_page_continuation_experiment.json").exists())
     add_check("chained_join_review_queue_exists", (output_dir / "chained_join_review_queue.json").exists())
+    add_check("chained_join_decisions_applied_exists", (output_dir / "chained_join_decisions_applied.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -6213,6 +6382,9 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     chained_target = chained_cross_page_experiment.get("target_defect") or {}
     chained_queue_rows = chained_join_review_queue.get("queue") or []
     chained_queue_summary = chained_join_review_queue.get("summary") or {}
+    chained_decision_validation = chained_join_decisions_applied.get("validation") or {}
+    chained_decision_summary = chained_join_decisions_applied.get("summary") or {}
+    chained_decision_rows = chained_join_decisions_applied.get("decisions") or []
     valid_chained_queue_risks = {
         "likely_valid_chained_continuation",
         "possible_overmerge",
@@ -6234,6 +6406,11 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     )
     add_check("chained_join_review_queue_risks_valid", all(row.get("likely_risk") in valid_chained_queue_risks for row in chained_queue_rows))
     add_check("chained_join_review_queue_fields_present", all(all(row.get(field) is not None for field in ["chained_join_id", "affected_pages", "source_candidate_ids", "likely_risk", "recommended_review_action"]) for row in chained_queue_rows))
+    add_check("audit_has_chained_join_decisions", "Chained Join Decisions" in audit_html)
+    add_check("chained_join_decision_validation_passes", chained_decision_validation.get("status") == "pass")
+    add_check("chained_join_decision_count_matches_queue", chained_decision_summary.get("queued_chained_joins") == len(chained_queue_rows) == len(chained_decision_rows))
+    add_check("chained_join_decisions_do_not_adopt_v3", bool(chained_join_decisions_applied.get("does_not_adopt_v3")) and bool(chained_decision_summary.get("adoption_remains_separate_checkpoint")))
+    add_check("chained_join_decision_values_valid", all(row.get("decision") in VALID_CHAINED_JOIN_DECISIONS | {"unreviewed"} for row in chained_decision_rows))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -6297,6 +6474,12 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     applied_cross_page_join_decisions = prepare_applied_cross_page_join_decisions(
         cross_page_join_decisions,
         cross_page_join_decisions_path,
+    )
+    chained_join_decisions_path = curated_chained_join_decisions_path(book_id)
+    chained_join_decisions = read_commented_jsonl(chained_join_decisions_path)
+    applied_chained_join_decisions = prepare_applied_chained_join_decisions(
+        chained_join_decisions,
+        chained_join_decisions_path,
     )
 
     inventory: list[dict[str, Any]] = []
@@ -6398,6 +6581,8 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "review_overrides_applied": "review_overrides_applied.jsonl",
             "cross_page_join_decisions_source": str(cross_page_join_decisions_path.relative_to(ROOT)),
             "cross_page_join_decisions_applied": "cross_page_join_decisions_applied.jsonl",
+            "chained_join_decisions_source": str(chained_join_decisions_path.relative_to(ROOT)),
+            "chained_join_decisions_applied": "chained_join_decisions_applied.json",
             "cleanup_log": "cleanup_log.jsonl",
             "validation_report": "validation_report.json",
             "phase1_audit": "phase1_audit.html",
@@ -6556,6 +6741,12 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         run_id,
         chained_cross_page_continuation_experiment,
     )
+    chained_join_decisions_applied = build_chained_join_decisions_applied(
+        book_id,
+        run_id,
+        chained_join_review_queue,
+        applied_chained_join_decisions,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -6605,6 +6796,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "reading_order_candidate.json", reading_order_candidate)
     write_jsonl(output_dir / "review_overrides_applied.jsonl", applied_review_overrides)
     write_jsonl(output_dir / "cross_page_join_decisions_applied.jsonl", applied_cross_page_join_decisions)
+    write_json(output_dir / "chained_join_decisions_applied.json", chained_join_decisions_applied)
     write_jsonl(output_dir / "canonical_paragraphs.jsonl", canonical_paragraphs)
     write_jsonl(output_dir / "promotion_blockers.jsonl", promotion_blockers)
     write_json(output_dir / "canonical_promotion_report.json", canonical_promotion_report)

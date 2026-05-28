@@ -972,6 +972,20 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             ),
             encoding="utf-8",
         )
+        (output_dir / "chained_join_decisions_applied.json").write_text(
+            json.dumps(
+                {
+                    "does_not_adopt_v3": True,
+                    "validation": {"status": "pass"},
+                    "summary": {
+                        "queued_chained_joins": 0,
+                        "adoption_remains_separate_checkpoint": True,
+                    },
+                    "decisions": [],
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {

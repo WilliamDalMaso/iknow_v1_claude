@@ -229,6 +229,16 @@
         <td>Prevents a gold-improving chained-continuation policy from becoming active before unscored side effects are inspected.</td>
       </tr>
       <tr>
+        <td><code>reviews/&lt;book_id&gt;/chained_join_decisions.jsonl</code></td>
+        <td>Tracked curated reviewer decisions for queued chained joins, including queue id, accept/reject/needs_review decision, reason, reviewer, review date, affected pages, evidence reference, and notes.</td>
+        <td>Preserves side-effect review decisions across regenerated runs and prevents v3 adoption from depending on ephemeral generated output.</td>
+      </tr>
+      <tr>
+        <td><code>chained_join_decisions_applied.json</code></td>
+        <td>Generated replay of curated chained-join decisions into a specific run, with validation status, accepted/rejected/needs-review counts, unreviewed count, and per-join decision rows.</td>
+        <td>Shows which queued v3 side effects have been reviewed while keeping adoption as a separate formal checkpoint.</td>
+      </tr>
+      <tr>
         <td><code>paragraph_merge_failure_taxonomy_report.json</code></td>
         <td>Deterministic sample of likely true accidental merge rows with provisional category, confidence, recommended next action, source-line previews, bbox metrics, page anchors, and summary counts.</td>
         <td>Identifies the specific merge failure pattern before another merge-rule correction is attempted.</td>
@@ -250,7 +260,7 @@
       </tr>
       <tr>
         <td><code>phase1_audit.html</code></td>
-        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, chained continuation experiments, chained side-effect review queues, cross-page join review, merge failure taxonomy, gold review evaluation, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, copy-ready review override templates, and copy-ready cross-page join decision templates.</td>
+        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, chained continuation experiments, chained side-effect review queues, chained join decisions, cross-page join review, merge failure taxonomy, gold review evaluation, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, copy-ready review override templates, and copy-ready cross-page join decision templates.</td>
         <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy, for safely drafting manual curated overrides, for seeing whether gold scoring is authoritative enough for policy adoption, and for reviewing proposed cross-page joins before adoption.</td>
       </tr>
     </tbody>
