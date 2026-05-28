@@ -137,6 +137,8 @@
     <li>The active canonical extraction policy remains <code>v1_consecutive_lines</code> until adoption is explicit.</li>
     <li>Experiment reports must compare gold precision, recall, over-splits, over-merges, warning counts, and joined examples.</li>
     <li>A cross-page policy can only be adopted after <code>cross_page_join_review_report.json</code> exposes every proposed join, gold coverage, risk category, and top pages needing review.</li>
+    <li>Reviewed join decisions must be stored in <code>reviews/&lt;book_id&gt;/cross_page_join_decisions.jsonl</code> and replayed into generated runs before adoption.</li>
+    <li>Unresolved boundary, structure, and manual-review joins keep the adoption gate closed.</li>
     <li>Strong gold improvement is not enough by itself when most joins are outside the current gold set.</li>
   </ol>
 

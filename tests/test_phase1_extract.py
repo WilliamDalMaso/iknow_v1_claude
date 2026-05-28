@@ -21,6 +21,7 @@ from src.phase1_extract import (
     join_paragraph_lines,
     page_status,
     review_canonical_paragraphs,
+    validate_cross_page_join_decisions,
     validate_phase1_run,
     write_jsonl,
 )
@@ -212,6 +213,104 @@ def test_cross_page_join_review_report_counts_all_joins() -> None:
     assert report["summary"]["joins_not_covered_by_gold"] == 1
     assert report["joins"][0]["join_id"] == "xpage_join_0001"
     assert report["joins"][0]["risk_category"] in {"likely_correct_continuation", "boundary_or_structure_risk", "needs_manual_review"}
+
+
+def test_cross_page_join_review_report_applies_curated_decision() -> None:
+    join_details = {
+        "joined_cross_page_paragraphs": [
+            {
+                "first_object_id": "book:p0021:obj001",
+                "second_object_id": "book:p0022:obj002",
+                "pages": [21, 22],
+                "source_line_ids": ["book:p0021:line001", "book:p0022:line002"],
+                "source_line_count": 2,
+                "join_reasons": [
+                    "previous_page_last_paragraph_incomplete",
+                    "next_page_first_paragraph_looks_like_continuation",
+                    "no_intervening_structure_candidate",
+                ],
+                "first_text_end": "continues with",
+                "second_text_start": "the next page",
+                "joined_text_preview": "continues with the next page",
+            }
+        ]
+    }
+    decisions = [
+        {
+            "join_id": "xpage_join_0001",
+            "left_page": 21,
+            "right_page": 22,
+            "left_candidate_id": "book:p0021:obj001",
+            "right_candidate_id": "book:p0022:obj002",
+            "decision": "accept",
+            "reason": "visual evidence confirms continuation",
+            "reviewer": "test",
+            "date": "2026-05-28",
+            "evidence_reference": "unit test",
+        }
+    ]
+
+    report = build_cross_page_join_review_report("missing_book_for_unit_test", "phase1_v3", join_details, decisions)
+
+    assert report["decision_validation"]["status"] == "pass"
+    assert report["summary"]["curated_accepted_joins"] == 1
+    assert report["summary"]["unresolved_join_count"] == 0
+    assert report["summary"]["unresolved_risk_low_enough_for_adoption"] is True
+    assert report["joins"][0]["decision_status"] == "curated_accepted"
+    assert report["joins"][0]["curated_join_decision"]["reason"] == "visual evidence confirms continuation"
+
+
+def test_cross_page_join_decision_validation_rejects_bad_rows() -> None:
+    proposed = {
+        "xpage_join_0001": {
+            "join_id": "xpage_join_0001",
+            "left_page": 21,
+            "right_page": 22,
+            "left_candidate_id": "left",
+            "right_candidate_id": "right",
+        }
+    }
+    decisions = [
+        {
+            "join_id": "xpage_join_0001",
+            "left_page": 21,
+            "right_page": 22,
+            "left_candidate_id": "left",
+            "right_candidate_id": "wrong",
+            "decision": "maybe",
+            "reason": "bad row",
+            "reviewer": "test",
+            "date": "2026-05-28",
+            "evidence_reference": "unit test",
+        },
+        {
+            "join_id": "missing",
+            "left_page": 1,
+            "right_page": 2,
+            "left_candidate_id": "left",
+            "right_candidate_id": "right",
+            "decision": "reject",
+            "reason": "missing join",
+            "reviewer": "test",
+            "date": "2026-05-28",
+            "evidence_reference": "unit test",
+        },
+        {
+            "join_id": "xpage_join_0001",
+            "decision": "accept",
+        },
+    ]
+
+    validation, valid = validate_cross_page_join_decisions(decisions, proposed)
+
+    assert validation["status"] == "fail"
+    assert valid == {}
+    error_codes = {row["code"] for row in validation["errors"]}
+    assert "invalid_decision" in error_codes
+    assert "candidate_mismatch" in error_codes
+    assert "missing_join_id" in error_codes
+    assert "duplicate_join_decision" in error_codes
+    assert "missing_required_fields" in error_codes
 
 
 def test_build_reconstruction_streams_buckets_every_object_once() -> None:
@@ -730,12 +829,23 @@ def test_validation_rejects_malformed_review_override_row() -> None:
         (output_dir / "cross_page_join_review_report.json").write_text(
             json.dumps(
                 {
-                    "summary": {"total_proposed_joins": 0},
+                    "summary": {
+                        "total_proposed_joins": 0,
+                        "unresolved_join_count": 0,
+                    },
+                    "decision_validation": {
+                        "status": "pass",
+                        "source_row_count": 0,
+                        "valid_decision_count": 0,
+                        "error_count": 0,
+                        "errors": [],
+                    },
                     "joins": [],
                 }
             ),
             encoding="utf-8",
         )
+        write_jsonl(output_dir / "cross_page_join_decisions_applied.jsonl", [])
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {

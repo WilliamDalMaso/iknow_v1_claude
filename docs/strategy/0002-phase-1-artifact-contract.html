@@ -119,6 +119,16 @@
         <td>Lets review decisions change candidate streams without changing detector rules or promoting content to canonical.</td>
       </tr>
       <tr>
+        <td><code>reviews/&lt;book_id&gt;/cross_page_join_decisions.jsonl</code></td>
+        <td>Tracked reviewer decisions for proposed cross-page joins, using <code>accept</code>, <code>reject</code>, or <code>needs_review</code> with reason, reviewer, date, and evidence reference.</td>
+        <td>Allows join side-effect review to survive regeneration and fresh clones before a continuation policy is adopted.</td>
+      </tr>
+      <tr>
+        <td><code>cross_page_join_decisions_applied.jsonl</code></td>
+        <td>Generated replay of curated cross-page join decisions used in a specific run, with source path metadata.</td>
+        <td>Shows exactly which durable join decisions were available when the join review report was generated.</td>
+      </tr>
+      <tr>
         <td><code>reviews/&lt;book_id&gt;/gold/gold_pages.json</code></td>
         <td>Tracked list of gold-review pages or cases, with selection reason and review status.</td>
         <td>Defines the small answer-key surface used to evaluate future paragraph-boundary and object-label improvements.</td>
@@ -165,7 +175,7 @@
       </tr>
       <tr>
         <td><code>cross_page_join_review_report.json</code></td>
-        <td>Focused review of every proposed cross-page continuation join, including candidate ids, page anchors, text previews, continuation evidence, acceptance and rejection signals, gold coverage, risk category, confidence, recommended action, and top pages needing review.</td>
+        <td>Focused review of every proposed cross-page continuation join, including candidate ids, page anchors, text previews, continuation evidence, acceptance and rejection signals, gold coverage, curated decision status, risk category, confidence, recommended action, unresolved counts, decision validation, and top pages needing review.</td>
         <td>Prevents a gold-improving cross-page experiment from becoming active before its unscored side effects are reviewed.</td>
       </tr>
       <tr>
@@ -185,12 +195,12 @@
       </tr>
       <tr>
         <td><code>validation_report.json</code></td>
-        <td>Checks required artifacts, page coverage, object ids, raw preservation, cleanup references, rendered page images, overlay data, and review override validity.</td>
+        <td>Checks required artifacts, page coverage, object ids, raw preservation, cleanup references, rendered page images, overlay data, review override validity, and cross-page join decision validity.</td>
         <td>Prevents silent artifact-contract drift.</td>
       </tr>
       <tr>
         <td><code>phase1_audit.html</code></td>
-        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, cross-page join review, merge failure taxonomy, gold review evaluation, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, and copy-ready review override templates.</td>
+        <td>Human-readable local audit page summarizing status, risks, canonical review drilldowns, paragraph merge experiments, cross-page join review, merge failure taxonomy, gold review evaluation, bbox span diagnostics, bbox span decision summaries, page samples, page-by-page object inspections, repeated artifact patterns, false-positive risks, review filters, page images, overlay boxes, overlay controls, selected object details, copy-ready review override templates, and copy-ready cross-page join decision templates.</td>
         <td>Primary review surface for deciding whether candidate streams and artifact exclusions are trustworthy, for safely drafting manual curated overrides, for seeing whether gold scoring is authoritative enough for policy adoption, and for reviewing proposed cross-page joins before adoption.</td>
       </tr>
     </tbody>
@@ -223,6 +233,7 @@
     <li><code>gold_evaluation_report.json</code> reports gold row counts, excludes non-authoritative seed rows from scoring, and states whether the gold set is sufficient to judge merge-policy adoption.</li>
     <li>No paragraph merge policy can become active from heuristic warning improvement alone.</li>
     <li><code>cross_page_join_review_report.json</code> exists when a cross-page continuation experiment proposes joins, and the audit page exposes those joins before adoption.</li>
+    <li>Cross-page join decisions are validated against proposed join ids, pages, candidate ids, required fields, duplicate decisions, and valid decision values.</li>
     <li>The validation report passes.</li>
     <li>The audit page exposes enough evidence to decide the next extraction improvement.</li>
   </ol>

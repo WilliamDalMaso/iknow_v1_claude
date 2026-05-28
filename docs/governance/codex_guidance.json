@@ -40,6 +40,7 @@
       "phase1_audit.html",
       "bounding_box_overlay_data",
       "review_overrides_applied.jsonl",
+      "cross_page_join_decisions_applied.jsonl",
       "canonical_paragraphs.jsonl",
       "promotion_blockers.jsonl",
       "canonical_promotion_report.json",
@@ -53,7 +54,7 @@
     "canonical_promotion_rule": {
       "meaning": "Canonical means evidence-bound, audited enough under current rules, and safe for downstream use; it does not mean flawless.",
       "first_gate": "Promote main_paragraph_candidates only.",
-      "review_gate": "Review canonical_paragraphs.jsonl with canonical_paragraph_review_report.json before downstream use, including warning drilldowns, risk clusters, bbox span diagnostics and decision summaries when span risk dominates, merge experiment reports before adopting merge policy changes, merge failure taxonomy after failed merge experiments, gold evaluation reports before any merge-policy adoption, cross-page join review reports before cross-page continuation adoption, and top corrective recommendation. Do not adopt paragraph-break or cross-page continuation policy experiments unless they improve against authoritative gold review rows, preserve audit safety metrics, avoid unacceptable over-splitting or over-merging, and have joined examples reviewed.",
+      "review_gate": "Review canonical_paragraphs.jsonl with canonical_paragraph_review_report.json before downstream use, including warning drilldowns, risk clusters, bbox span diagnostics and decision summaries when span risk dominates, merge experiment reports before adopting merge policy changes, merge failure taxonomy after failed merge experiments, gold evaluation reports before any merge-policy adoption, cross-page join review reports and curated join decisions before cross-page continuation adoption, and top corrective recommendation. Do not adopt paragraph-break or cross-page continuation policy experiments unless they improve against authoritative gold review rows, preserve audit safety metrics, avoid unacceptable over-splitting or over-merging, and have joined examples reviewed.",
       "forbidden_in_first_gate": [
         "structure promotion",
         "page artifact promotion",
@@ -76,6 +77,16 @@
       "generated_report": "gold_evaluation_report.json",
       "adoption_rule": "No paragraph merge policy may become active merely because heuristic warning counts improve. It must improve against authoritative gold review rows and must not worsen audit safety metrics.",
       "seed_policy": "Seed/example rows help establish workflow but are excluded from scoring until marked authoritative after visual review."
+    },
+    "cross_page_join_decision_rule": {
+      "tracked_file": "reviews/<book_id>/cross_page_join_decisions.jsonl",
+      "generated_replay": "cross_page_join_decisions_applied.jsonl",
+      "valid_decisions": [
+        "accept",
+        "reject",
+        "needs_review"
+      ],
+      "adoption_rule": "Cross-page continuation cannot become active while boundary, structure, manual-review, invalid, duplicate, or mismatched join decisions remain unresolved."
     },
     "evidence_stack": [
       "raw PDF evidence",

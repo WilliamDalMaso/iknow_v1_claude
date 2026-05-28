@@ -35,6 +35,7 @@ REQUIRED_ARTIFACTS = [
     "reading_order_candidate.json",
     PAGE_IMAGES_DIR_NAME,
     "review_overrides_applied.jsonl",
+    "cross_page_join_decisions_applied.jsonl",
     "canonical_paragraphs.jsonl",
     "promotion_blockers.jsonl",
     "canonical_promotion_report.json",
@@ -67,6 +68,19 @@ REQUIRED_OVERRIDE_FIELDS = {
     "object_id",
     "original_bucket",
     "corrected_bucket",
+    "reason",
+    "reviewer",
+    "date",
+    "evidence_reference",
+}
+VALID_CROSS_PAGE_JOIN_DECISIONS = {"accept", "reject", "needs_review"}
+REQUIRED_CROSS_PAGE_JOIN_DECISION_FIELDS = {
+    "join_id",
+    "left_page",
+    "right_page",
+    "left_candidate_id",
+    "right_candidate_id",
+    "decision",
     "reason",
     "reviewer",
     "date",
@@ -108,7 +122,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def read_review_overrides(path: Path) -> list[dict[str, Any]]:
+def read_commented_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     rows: list[dict[str, Any]] = []
@@ -122,8 +136,16 @@ def read_review_overrides(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def read_review_overrides(path: Path) -> list[dict[str, Any]]:
+    return read_commented_jsonl(path)
+
+
 def curated_review_overrides_path(book_id: str) -> Path:
     return REVIEWS_DIR / book_id / "review_overrides.jsonl"
+
+
+def curated_cross_page_join_decisions_path(book_id: str) -> Path:
+    return REVIEWS_DIR / book_id / "cross_page_join_decisions.jsonl"
 
 
 def gold_review_dir(book_id: str) -> Path:
@@ -133,6 +155,16 @@ def gold_review_dir(book_id: str) -> Path:
 def prepare_applied_review_overrides(review_overrides: list[dict[str, Any]], source_path: Path) -> list[dict[str, Any]]:
     applied: list[dict[str, Any]] = []
     for row in review_overrides:
+        applied_row = dict(row)
+        applied_row["review_source"] = "curated"
+        applied_row["review_source_path"] = str(source_path.relative_to(ROOT) if source_path.is_relative_to(ROOT) else source_path)
+        applied.append(applied_row)
+    return applied
+
+
+def prepare_applied_cross_page_join_decisions(decisions: list[dict[str, Any]], source_path: Path) -> list[dict[str, Any]]:
+    applied: list[dict[str, Any]] = []
+    for row in decisions:
         applied_row = dict(row)
         applied_row["review_source"] = "curated"
         applied_row["review_source_path"] = str(source_path.relative_to(ROOT) if source_path.is_relative_to(ROOT) else source_path)
@@ -2328,10 +2360,80 @@ def cross_page_join_risk(join: dict[str, Any], gold_ids: list[str]) -> tuple[str
     return "possible_false_join", 0.52, "inspect manually before adoption"
 
 
+def validate_cross_page_join_decisions(
+    decisions: list[dict[str, Any]],
+    proposed_joins: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    errors: list[dict[str, Any]] = []
+    valid_by_join_id: dict[str, dict[str, Any]] = {}
+    seen_join_ids: set[str] = set()
+    for row in decisions:
+        join_id = str(row.get("join_id", ""))
+        line_number = row.get("_line_number")
+        missing_fields = [
+            field
+            for field in REQUIRED_CROSS_PAGE_JOIN_DECISION_FIELDS
+            if field not in row or not str(row.get(field, "")).strip()
+        ]
+        if missing_fields:
+            errors.append(
+                {
+                    "code": "missing_required_fields",
+                    "join_id": join_id,
+                    "line_number": line_number,
+                    "fields": missing_fields,
+                }
+            )
+        if join_id in seen_join_ids:
+            errors.append({"code": "duplicate_join_decision", "join_id": join_id, "line_number": line_number})
+        seen_join_ids.add(join_id)
+        if row.get("decision") not in VALID_CROSS_PAGE_JOIN_DECISIONS:
+            errors.append({"code": "invalid_decision", "join_id": join_id, "line_number": line_number, "decision": row.get("decision")})
+        proposed = proposed_joins.get(join_id)
+        if not proposed:
+            errors.append({"code": "missing_join_id", "join_id": join_id, "line_number": line_number})
+            continue
+        mismatches = [
+            field
+            for field in ["left_page", "right_page", "left_candidate_id", "right_candidate_id"]
+            if str(row.get(field)) != str(proposed.get(field))
+        ]
+        if mismatches:
+            errors.append({"code": "candidate_mismatch", "join_id": join_id, "line_number": line_number, "fields": mismatches})
+        row_has_error = any(error.get("join_id") == join_id for error in errors)
+        if not row_has_error:
+            valid_by_join_id[join_id] = row
+    return {
+        "status": "pass" if not errors else "fail",
+        "source_row_count": len(decisions),
+        "valid_decision_count": len(valid_by_join_id),
+        "error_count": len(errors),
+        "errors": errors,
+    }, valid_by_join_id
+
+
+def cross_page_join_decision_status(row: dict[str, Any], curated_decision: dict[str, Any] | None) -> str:
+    if curated_decision:
+        decision = curated_decision.get("decision")
+        if decision == "accept":
+            return "curated_accepted"
+        if decision == "reject":
+            return "curated_rejected"
+        return "still_needs_manual_review"
+    if row.get("overlaps_authoritative_gold"):
+        return "gold_covered"
+    if row.get("risk_category") == "likely_correct_continuation":
+        return "auto_likely_correct"
+    if row.get("risk_category") == "boundary_or_structure_risk":
+        return "boundary_or_structure_risk"
+    return "still_needs_manual_review"
+
+
 def build_cross_page_join_review_report(
     book_id: str,
     run_id: str,
     experiment_details: dict[str, Any],
+    join_decisions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     gold_line_sets = authoritative_gold_line_sets(book_id)
     review_rows = []
@@ -2372,11 +2474,33 @@ def build_cross_page_join_review_report(
             }
         )
 
+    decision_validation, valid_decisions_by_join_id = validate_cross_page_join_decisions(
+        join_decisions or [],
+        {row["join_id"]: row for row in review_rows},
+    )
+    for row in review_rows:
+        curated_decision = valid_decisions_by_join_id.get(row["join_id"])
+        row["curated_join_decision"] = (
+            {
+                "decision": curated_decision.get("decision"),
+                "reason": curated_decision.get("reason"),
+                "reviewer": curated_decision.get("reviewer"),
+                "date": curated_decision.get("date"),
+                "evidence_reference": curated_decision.get("evidence_reference"),
+                "line_number": curated_decision.get("_line_number"),
+            }
+            if curated_decision
+            else None
+        )
+        row["decision_status"] = cross_page_join_decision_status(row, curated_decision)
+
     risk_counts = Counter(row["risk_category"] for row in review_rows)
+    status_counts = Counter(row["decision_status"] for row in review_rows)
     top_pages = Counter()
     for row in review_rows:
-        if row["risk_category"] != "likely_correct_continuation":
+        if row["decision_status"] in {"still_needs_manual_review", "boundary_or_structure_risk"}:
             top_pages.update([row["left_page"], row["right_page"]])
+    unresolved_count = status_counts.get("still_needs_manual_review", 0) + status_counts.get("boundary_or_structure_risk", 0)
     return {
         "book_id": book_id,
         "run_id": run_id,
@@ -2384,14 +2508,24 @@ def build_cross_page_join_review_report(
         "method": "deterministic_cross_page_join_review_v1",
         "analysis_only": True,
         "does_not_change_active_policy": True,
+        "decision_source": f"reviews/{book_id}/cross_page_join_decisions.jsonl",
+        "decision_validation": decision_validation,
         "summary": {
             "total_proposed_joins": len(review_rows),
             "likely_correct_joins": risk_counts.get("likely_correct_continuation", 0),
             "possible_false_joins": risk_counts.get("possible_false_join", 0),
             "boundary_or_structure_risk_joins": risk_counts.get("boundary_or_structure_risk", 0),
             "needs_manual_review": risk_counts.get("needs_manual_review", 0),
+            "auto_likely_correct_joins": status_counts.get("auto_likely_correct", 0),
+            "curated_accepted_joins": status_counts.get("curated_accepted", 0),
+            "curated_rejected_joins": status_counts.get("curated_rejected", 0),
+            "still_needs_manual_review_joins": status_counts.get("still_needs_manual_review", 0),
+            "decision_boundary_or_structure_risk_joins": status_counts.get("boundary_or_structure_risk", 0),
+            "gold_covered_joins": status_counts.get("gold_covered", 0),
             "joins_covered_by_authoritative_gold": sum(1 for row in review_rows if row["overlaps_authoritative_gold"]),
             "joins_not_covered_by_gold": sum(1 for row in review_rows if not row["overlaps_authoritative_gold"]),
+            "unresolved_join_count": unresolved_count,
+            "unresolved_risk_low_enough_for_adoption": unresolved_count == 0 and decision_validation["status"] == "pass",
             "top_pages_needing_review": [
                 {"page": page, "count": count}
                 for page, count in top_pages.most_common(10)
@@ -2859,12 +2993,32 @@ def build_audit_html(
         for key, value in sorted((merge_taxonomy_summary.get("count_by_recommended_action") or {}).items())
     )
     cross_page_join_summary = cross_page_join_review_report.get("summary") or {}
+    cross_page_decision_validation = cross_page_join_review_report.get("decision_validation") or {}
+
+    def join_decision_template(row: dict[str, Any]) -> str:
+        return json.dumps(
+            {
+                "join_id": row.get("join_id"),
+                "left_page": row.get("left_page"),
+                "right_page": row.get("right_page"),
+                "left_candidate_id": row.get("left_candidate_id"),
+                "right_candidate_id": row.get("right_candidate_id"),
+                "decision": "TODO_choose_one_of: accept | reject | needs_review",
+                "reason": "TODO_explain_the_review_decision_from_visible_evidence",
+                "reviewer": "human",
+                "date": generated_date,
+                "evidence_reference": f"phase1_audit.html#{row.get('join_id')}",
+            },
+            ensure_ascii=True,
+        )
+
     cross_page_join_rows = "\n".join(
         "<tr>"
         f"<td><code>{esc(row.get('join_id'))}</code></td>"
         f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('left_page'))}-{esc(row.get('right_page'))}</a></td>"
         f"<td><a href=\"{esc(row.get('left_audit_anchor', '#'))}\"><code>{esc(row.get('left_candidate_id'))}</code></a></td>"
         f"<td><a href=\"{esc(row.get('right_audit_anchor', '#'))}\"><code>{esc(row.get('right_candidate_id'))}</code></a></td>"
+        f"<td>{esc(row.get('decision_status'))}</td>"
         f"<td>{esc(row.get('risk_category'))}</td>"
         f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
         f"<td>{esc(row.get('overlaps_authoritative_gold'))}</td>"
@@ -2873,6 +3027,7 @@ def build_audit_html(
         f"<td>{esc(row.get('left_text_end_preview', ''))}</td>"
         f"<td>{esc(row.get('right_text_start_preview', ''))}</td>"
         f"<td>{esc(row.get('recommended_action', ''))}</td>"
+        f"<td><pre class=\"join-decision-template\">{esc(join_decision_template(row))}</pre></td>"
         "</tr>"
         for row in (cross_page_join_review_report.get("joins") or [])[:120]
     )
@@ -3079,6 +3234,7 @@ def build_audit_html(
     .override-template-panel {{ margin-top: 12px; padding-top: 10px; border-top: 1px solid #d8d6cc; }}
     .override-template-panel p {{ margin: 6px 0 8px; color: #56616b; }}
     .override-template {{ margin: 0; padding: 10px; border: 1px solid #d8d6cc; background: #f7f4ea; white-space: pre-wrap; overflow-wrap: anywhere; }}
+    .join-decision-template {{ max-width: 360px; margin: 0; padding: 8px; border: 1px solid #d8d6cc; background: #f7f4ea; white-space: pre-wrap; overflow-wrap: anywhere; }}
     .bbox-layer {{ position: absolute; inset: 1px; pointer-events: none; }}
     .bbox-overlay {{ position: absolute; box-sizing: border-box; border: 2px solid #111; background: rgba(255,255,255,0.08); padding: 0; pointer-events: auto; cursor: pointer; }}
     .bbox-overlay.hidden {{ display: none; }}
@@ -3248,16 +3404,28 @@ def build_audit_html(
     <li>Possible false joins: <code>{esc(cross_page_join_summary.get('possible_false_joins', 0))}</code></li>
     <li>Boundary or structure risk joins: <code>{esc(cross_page_join_summary.get('boundary_or_structure_risk_joins', 0))}</code></li>
     <li>Needs manual review: <code>{esc(cross_page_join_summary.get('needs_manual_review', 0))}</code></li>
+    <li>Auto likely correct: <code>{esc(cross_page_join_summary.get('auto_likely_correct_joins', 0))}</code></li>
+    <li>Curated accepted: <code>{esc(cross_page_join_summary.get('curated_accepted_joins', 0))}</code></li>
+    <li>Curated rejected: <code>{esc(cross_page_join_summary.get('curated_rejected_joins', 0))}</code></li>
+    <li>Still needs manual review: <code>{esc(cross_page_join_summary.get('still_needs_manual_review_joins', 0))}</code></li>
+    <li>Unresolved joins: <code>{esc(cross_page_join_summary.get('unresolved_join_count', 0))}</code></li>
+    <li>Unresolved risk low enough for adoption: <code>{esc(cross_page_join_summary.get('unresolved_risk_low_enough_for_adoption', False))}</code></li>
     <li>Covered by authoritative gold: <code>{esc(cross_page_join_summary.get('joins_covered_by_authoritative_gold', 0))}</code></li>
     <li>Not covered by gold: <code>{esc(cross_page_join_summary.get('joins_not_covered_by_gold', 0))}</code></li>
+    <li>Decision validation: <code>{esc(cross_page_decision_validation.get('status', 'unknown'))}</code></li>
   </ul>
+  <p>
+    Copy reviewed join decisions into
+    <code>reviews/{esc(book_id)}/cross_page_join_decisions.jsonl</code>, then rerun Phase 1.
+    Templates below are copy-ready only; this audit does not auto-apply changes.
+  </p>
   <h3>Top Pages Needing Review</h3>
   <ul>{cross_page_top_page_items or '<li>No high-risk pages identified.</li>'}</ul>
   <table>
     <thead>
-      <tr><th>Join</th><th>Pages</th><th>Left</th><th>Right</th><th>Risk</th><th>Confidence</th><th>Gold</th><th>Gold IDs</th><th>Evidence</th><th>Left End</th><th>Right Start</th><th>Action</th></tr>
+      <tr><th>Join</th><th>Pages</th><th>Left</th><th>Right</th><th>Decision Status</th><th>Risk</th><th>Confidence</th><th>Gold</th><th>Gold IDs</th><th>Evidence</th><th>Left End</th><th>Right Start</th><th>Action</th><th>Copy-Ready Decision JSONL</th></tr>
     </thead>
-    <tbody>{cross_page_join_rows or '<tr><td colspan="12">No cross-page join review rows.</td></tr>'}</tbody>
+    <tbody>{cross_page_join_rows or '<tr><td colspan="14">No cross-page join review rows.</td></tr>'}</tbody>
   </table>
   <h3>Paragraphs Split By New Policy</h3>
   <table>
@@ -3664,6 +3832,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     clean_objects = read_jsonl(output_dir / "clean_objects.jsonl")
     cleanup_log = read_jsonl(output_dir / "cleanup_log.jsonl")
     review_overrides = read_review_overrides(output_dir / "review_overrides_applied.jsonl")
+    cross_page_join_decisions = read_commented_jsonl(output_dir / "cross_page_join_decisions_applied.jsonl")
     main_paragraphs = read_jsonl(output_dir / "main_paragraph_candidates.jsonl")
     structure = read_jsonl(output_dir / "structure_candidates.jsonl")
     page_artifacts = read_jsonl(output_dir / "page_artifacts_candidates.jsonl")
@@ -3747,8 +3916,40 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check(
         "cross_page_join_review_has_required_fields",
         all(
-            all(row.get(field) is not None for field in ["join_id", "left_page", "right_page", "left_candidate_id", "right_candidate_id", "risk_category"])
+            all(row.get(field) is not None for field in ["join_id", "left_page", "right_page", "left_candidate_id", "right_candidate_id", "risk_category", "decision_status"])
             for row in cross_page_join_rows
+        ),
+    )
+    join_validation = cross_page_join_review_report.get("decision_validation", {})
+    add_check("cross_page_join_decision_validation_passes", join_validation.get("status") == "pass")
+    add_check(
+        "cross_page_join_decision_counts_match_source",
+        join_validation.get("source_row_count", 0) == len(cross_page_join_decisions),
+    )
+    join_ids = [row.get("join_id") for row in cross_page_join_decisions]
+    proposed_join_by_id = {row.get("join_id"): row for row in cross_page_join_rows}
+    add_check("cross_page_join_decision_ids_unique", len(join_ids) == len(set(join_ids)))
+    add_check("cross_page_join_decisions_reference_known_joins", set(join_ids).issubset(set(proposed_join_by_id)))
+    add_check(
+        "cross_page_join_decision_required_fields_present",
+        all(
+            REQUIRED_CROSS_PAGE_JOIN_DECISION_FIELDS.issubset(row)
+            and all(str(row.get(field, "")).strip() for field in REQUIRED_CROSS_PAGE_JOIN_DECISION_FIELDS)
+            for row in cross_page_join_decisions
+        ),
+    )
+    add_check(
+        "cross_page_join_decisions_valid",
+        all(row.get("decision") in VALID_CROSS_PAGE_JOIN_DECISIONS for row in cross_page_join_decisions),
+    )
+    add_check(
+        "cross_page_join_decision_candidate_ids_match",
+        all(
+            proposed_join_by_id.get(row.get("join_id"), {}).get("left_candidate_id") == row.get("left_candidate_id")
+            and proposed_join_by_id.get(row.get("join_id"), {}).get("right_candidate_id") == row.get("right_candidate_id")
+            and str(proposed_join_by_id.get(row.get("join_id"), {}).get("left_page")) == str(row.get("left_page"))
+            and str(proposed_join_by_id.get(row.get("join_id"), {}).get("right_page")) == str(row.get("right_page"))
+            for row in cross_page_join_decisions
         ),
     )
     valid_taxonomy_categories = {
@@ -3943,6 +4144,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("audit_has_canonical_review_drilldown", "Canonical Warning Drilldown" in audit_html and "Risk Clusters" in audit_html)
     add_check("audit_has_gold_review", "Gold Review" in audit_html)
     add_check("audit_has_cross_page_join_review", "Cross-Page Join Review" in audit_html)
+    add_check("audit_has_cross_page_join_decision_template", "cross_page_join_decisions.jsonl" in audit_html and "join-decision-template" in audit_html)
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -3984,6 +4186,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             "promotion_blocker_rows": len(promotion_blockers),
             "canonical_paragraph_review_warning_rows": canonical_review_counts.get("warning_count", 0),
             "review_override_rows": len(review_overrides),
+            "cross_page_join_decision_rows": len(cross_page_join_decisions),
             "page_image_rows": len(page_image_files),
             "cleanup_log_rows": len(cleanup_log),
         },
@@ -4000,6 +4203,12 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     review_overrides_path = curated_review_overrides_path(book_id)
     review_overrides = read_review_overrides(review_overrides_path)
     applied_review_overrides = prepare_applied_review_overrides(review_overrides, review_overrides_path)
+    cross_page_join_decisions_path = curated_cross_page_join_decisions_path(book_id)
+    cross_page_join_decisions = read_commented_jsonl(cross_page_join_decisions_path)
+    applied_cross_page_join_decisions = prepare_applied_cross_page_join_decisions(
+        cross_page_join_decisions,
+        cross_page_join_decisions_path,
+    )
 
     inventory: list[dict[str, Any]] = []
     raw_pages: list[dict[str, Any]] = []
@@ -4084,6 +4293,8 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "reading_order_candidate": "reading_order_candidate.json",
             "review_overrides_source": str(review_overrides_path.relative_to(ROOT)),
             "review_overrides_applied": "review_overrides_applied.jsonl",
+            "cross_page_join_decisions_source": str(cross_page_join_decisions_path.relative_to(ROOT)),
+            "cross_page_join_decisions_applied": "cross_page_join_decisions_applied.jsonl",
             "cleanup_log": "cleanup_log.jsonl",
             "validation_report": "validation_report.json",
             "phase1_audit": "phase1_audit.html",
@@ -4136,7 +4347,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         book_id, run_id, baseline_evaluation, experimental_evaluation, cross_page_experiment_details
     )
     cross_page_join_review_report = build_cross_page_join_review_report(
-        book_id, run_id, cross_page_experiment_details
+        book_id, run_id, cross_page_experiment_details, applied_cross_page_join_decisions
     )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
@@ -4186,6 +4397,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "reconstruction_map_candidate.json", reconstruction_map)
     write_json(output_dir / "reading_order_candidate.json", reading_order_candidate)
     write_jsonl(output_dir / "review_overrides_applied.jsonl", applied_review_overrides)
+    write_jsonl(output_dir / "cross_page_join_decisions_applied.jsonl", applied_cross_page_join_decisions)
     write_jsonl(output_dir / "canonical_paragraphs.jsonl", canonical_paragraphs)
     write_jsonl(output_dir / "promotion_blockers.jsonl", promotion_blockers)
     write_json(output_dir / "canonical_promotion_report.json", canonical_promotion_report)
