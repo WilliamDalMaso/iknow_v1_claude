@@ -34,8 +34,9 @@ safe. The current post-adoption blocker is `bbox_span_risk`; gold coverage has b
 former 6 gold-set gap cases. The front-matter/metadata review found 7 valid Preface/Letter
 paragraphs and 2 valid Chapter I paragraphs caught by an overbroad early-page warning. Downstream is
 still blocked. The visual-review queue found 7 valid canonical paragraphs and 1 true grouping defect
-on page 109, so the next correction should be narrow grouping work, not a broad metadata or
-promotion block.
+on page 109. The next correction is designed as an experiment-only chained cross-page continuation
+test for that confirmed defect class, not a broad metadata block, promotion block, or active policy
+change.
 
 ## Documentation Model
 

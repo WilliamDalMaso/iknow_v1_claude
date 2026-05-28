@@ -50,6 +50,7 @@ REQUIRED_ARTIFACTS = [
     "post_adoption_remediation_plan.json",
     "front_matter_metadata_review_report.json",
     "visual_review_cases_report.json",
+    "narrow_grouping_correction_design.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -3395,6 +3396,159 @@ def update_remediation_plan_after_reviews(
     return plan
 
 
+def build_narrow_grouping_correction_design(
+    book_id: str,
+    run_id: str,
+    canonical_paragraphs: list[dict[str, Any]],
+    visual_review_report: dict[str, Any],
+    gold_evaluation_report: dict[str, Any],
+    active_policy: str,
+) -> dict[str, Any]:
+    canonical_by_id = {row.get("canonical_paragraph_id"): row for row in canonical_paragraphs}
+    defect_rows = [
+        row
+        for row in visual_review_report.get("rows", [])
+        if row.get("likely_classification") == "true_paragraph_grouping_defect"
+    ]
+    designs = []
+    for row in defect_rows:
+        canonical_id = row.get("canonical_paragraph_id")
+        canonical_row = canonical_by_id.get(canonical_id, {})
+        overlapping_gold_ids = row.get("overlapping_gold_ids", [])
+        gold_id = overlapping_gold_ids[0] if overlapping_gold_ids else None
+        current_source_id = canonical_row.get("source_candidate_object_id")
+        expected_matched_ids = []
+        for split in gold_evaluation_report.get("over_split_paragraphs", []):
+            if split.get("gold_id") == gold_id:
+                expected_matched_ids = split.get("matched_object_ids", [])
+                break
+        designs.append(
+            {
+                "defect_id": f"grouping_defect_{canonical_id}",
+                "canonical_paragraph_id": canonical_id,
+                "affected_pages": [107, 108, 109] if canonical_id == "cp_000103" else [row.get("page")],
+                "current_paragraph_grouping_behavior": {
+                    "active_policy": active_policy,
+                    "left_joined_candidate": "douglass_narrative:p0107:obj002__xpage__obj002" if canonical_id == "cp_000103" else None,
+                    "right_fragment_candidate": current_source_id,
+                    "observed_problem": (
+                        "The active policy joined pages 107 and 108, but left page 109 as a separate "
+                        "canonical paragraph even though the page 107-108 text still ends incomplete."
+                    ),
+                },
+                "expected_gold_behavior": {
+                    "gold_id": gold_id,
+                    "gold_pages": [107, 108, 109] if canonical_id == "cp_000103" else [],
+                    "current_matched_object_ids": expected_matched_ids,
+                    "expected_result": "One logical paragraph spanning pages 107, 108, and 109.",
+                },
+                "source_line_evidence": row.get("source_line_evidence", {}),
+                "bbox_evidence": {
+                    "page_109_bbox": {
+                        "vertical_bbox_span": (row.get("source_line_evidence") or {}).get("vertical_bbox_span"),
+                        "page_height_ratio": (row.get("source_line_evidence") or {}).get("page_height_ratio"),
+                    },
+                    "current_left_candidate_is_cross_page": canonical_id == "cp_000103",
+                },
+                "visual_evidence_references": [
+                    "phase1_audit.html#page-107",
+                    "phase1_audit.html#page-108",
+                    "phase1_audit.html#page-109",
+                    "page_images/page_0107.jpg",
+                    "page_images/page_0108.jpg",
+                    "page_images/page_0109.jpg",
+                    row.get("visual_evidence_reference"),
+                ],
+                "why_current_policy_failed": (
+                    "v2_cross_page_continuation can create a two-page joined candidate, but it does not "
+                    "chain another continuation decision from that newly joined candidate into the next page."
+                ),
+                "proposed_narrow_correction_rule": {
+                    "name": "v3_chained_cross_page_continuation_design",
+                    "description": (
+                        "After a cross-page join, re-evaluate the newly joined paragraph against the next "
+                        "page's first body paragraph only when the joined text still ends syntactically "
+                        "incomplete and the next page starts as continuation text."
+                    ),
+                },
+                "conditions_required_before_rule_applies": [
+                    "left candidate was already created by a reviewed cross-page continuation join",
+                    "left joined text ends without terminal punctuation or ends with an incomplete phrase",
+                    "right candidate is the first main paragraph candidate on the next page after page furniture removal",
+                    "right candidate starts lowercase or with continuation-like syntax",
+                    "no structure candidate, chapter heading, appendix boundary, or section boundary intervenes",
+                    "both candidates are main paragraph candidates with source line provenance",
+                    "the combined source lines match or improve authoritative gold coverage when a gold row exists",
+                ],
+                "conditions_that_must_block_rule": [
+                    "right candidate starts a new paragraph with strong indentation plus capitalized sentence start after terminal punctuation",
+                    "a chapter, section, appendix, preface, or metadata boundary intervenes",
+                    "either side is not a main paragraph candidate",
+                    "candidate source lines are missing",
+                    "the join would cross more than one unreviewed page boundary",
+                    "the join would worsen authoritative gold precision or recall",
+                    "side-effect review flags the join as false or unresolved",
+                ],
+                "expected_effect_on_gold_metrics": {
+                    "paragraph_precision": "0.941 -> 1.000 if the page 107-109 over-split is resolved without new errors",
+                    "paragraph_recall": "0.941 -> 1.000 if the page 107-109 over-split is resolved without new errors",
+                    "over_split_paragraphs": "1 -> 0 for douglass_gold_p0107_0109_001",
+                    "over_merged_paragraphs": "must remain 0",
+                },
+                "expected_side_effects": [
+                    "canonical paragraph count may decrease by 1 for the resolved split",
+                    "bbox/span warnings may decrease for cp_000103 but could increase for the longer joined paragraph",
+                    "new chained joins outside page 109 must be listed and reviewed before adoption",
+                ],
+                "risk_analysis": [
+                    "A chained rule could over-join true page-start paragraphs if applied broadly.",
+                    "The rule should be limited to previously joined cross-page candidates and next-page first body candidates.",
+                    "Gold and side-effect review must control adoption, as with v2_cross_page_continuation.",
+                ],
+                "validation_plan": [
+                    "Run extraction with the proposed rule as experiment-only.",
+                    "Compare gold_evaluation_report before and after.",
+                    "Require douglass_gold_p0107_0109_001 to match one candidate.",
+                    "Require over_merged_paragraphs to remain 0.",
+                    "Generate a chained-join side-effect review report before adoption.",
+                    "Run python3 -B -m pytest tests and validation_report.json.",
+                ],
+                "adoption_gates": [
+                    "Gold precision and recall improve or remain perfect after fixing the confirmed defect.",
+                    "No new over-merged or missing gold paragraphs.",
+                    "All proposed chained joins have evidence review status accepted or low-risk.",
+                    "Audit safety metrics do not materially regress.",
+                    "Policy adoption is recorded in a formal decision artifact before becoming active.",
+                ],
+            }
+        )
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "narrow_grouping_correction_design",
+        "active_policy": active_policy,
+        "design_only": True,
+        "does_not_change_extraction_behavior": True,
+        "does_not_change_active_policy": True,
+        "does_not_change_canonical_promotion": True,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion", "broad merge-policy experiment"],
+        "source_artifacts": [
+            "visual_review_cases_report.json",
+            "gold_evaluation_report.json",
+            "canonical_paragraphs.jsonl",
+            "phase1_audit.html",
+        ],
+        "summary": {
+            "confirmed_defects": len(designs),
+            "primary_defect": designs[0].get("canonical_paragraph_id") if designs else None,
+            "recommended_next_action": "implement_experiment_only_chained_cross_page_continuation",
+            "downstream_remains_blocked": True,
+        },
+        "designs": designs,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -3457,6 +3611,7 @@ def build_audit_html(
     post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json") if (output_dir / "post_adoption_remediation_plan.json").exists() else {}
     front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json") if (output_dir / "front_matter_metadata_review_report.json").exists() else {}
     visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json") if (output_dir / "visual_review_cases_report.json").exists() else {}
+    narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json") if (output_dir / "narrow_grouping_correction_design.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -4175,6 +4330,22 @@ def build_audit_html(
         "</tr>"
         for row in (visual_review_cases_report.get("rows") or [])
     )
+    narrow_design_summary = narrow_grouping_correction_design.get("summary") or {}
+    narrow_design_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('defect_id'))}</code></td>"
+        f"<td><a href=\"{esc('#page-' + str((row.get('affected_pages') or [''])[0]))}\">{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</a></td>"
+        f"<td><code>{esc(row.get('canonical_paragraph_id'))}</code></td>"
+        f"<td>{esc((row.get('expected_gold_behavior') or {}).get('gold_id'))}</td>"
+        f"<td>{esc((row.get('current_paragraph_grouping_behavior') or {}).get('observed_problem'))}</td>"
+        f"<td>{esc(row.get('why_current_policy_failed'))}</td>"
+        f"<td><code>{esc(((row.get('proposed_narrow_correction_rule') or {}).get('name')))}</code>: {esc(((row.get('proposed_narrow_correction_rule') or {}).get('description')))}</td>"
+        f"<td>{esc('; '.join(row.get('conditions_required_before_rule_applies', [])))}</td>"
+        f"<td>{esc('; '.join(row.get('conditions_that_must_block_rule', [])))}</td>"
+        f"<td>{esc('; '.join(row.get('adoption_gates', [])))}</td>"
+        "</tr>"
+        for row in (narrow_grouping_correction_design.get("designs") or [])
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -4761,6 +4932,25 @@ def build_audit_html(
     <tbody>{visual_review_rows or '<tr><td colspan="12">No visual-review rows.</td></tr>'}</tbody>
   </table>
 
+  <h2>Narrow Grouping Correction Design</h2>
+  <div class="rule">
+    This is design-only. It records the proposed correction for confirmed grouping defects without
+    changing extraction behavior, active policy, canonical promotion, OCR, model review, retrieval,
+    or graph work.
+  </div>
+  <ul>
+    <li>Confirmed defects: <code>{esc(narrow_design_summary.get('confirmed_defects', '-'))}</code></li>
+    <li>Primary defect: <code>{esc(narrow_design_summary.get('primary_defect', '-'))}</code></li>
+    <li>Recommended next action: <code>{esc(narrow_design_summary.get('recommended_next_action', '-'))}</code></li>
+    <li>Downstream remains blocked: <code>{esc(narrow_design_summary.get('downstream_remains_blocked', '-'))}</code></li>
+  </ul>
+  <table>
+    <thead>
+      <tr><th>Defect</th><th>Pages</th><th>Canonical ID</th><th>Gold</th><th>Current Behavior</th><th>Why Policy Failed</th><th>Proposed Rule</th><th>Required Conditions</th><th>Block Conditions</th><th>Adoption Gates</th></tr>
+    </thead>
+    <tbody>{narrow_design_rows or '<tr><td colspan="10">No narrow grouping correction design rows.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -5025,6 +5215,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json")
     front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json")
     visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json")
+    narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -5064,6 +5255,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("post_adoption_remediation_plan_exists", (output_dir / "post_adoption_remediation_plan.json").exists())
     add_check("front_matter_metadata_review_report_exists", (output_dir / "front_matter_metadata_review_report.json").exists())
     add_check("visual_review_cases_report_exists", (output_dir / "visual_review_cases_report.json").exists())
+    add_check("narrow_grouping_correction_design_exists", (output_dir / "narrow_grouping_correction_design.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -5428,6 +5620,13 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
         visual_progress.get("reviewed") == visual_review_summary.get("total_reviewed")
         and visual_progress.get("total") == visual_review_queue_count,
     )
+    narrow_design_rows = narrow_grouping_correction_design.get("designs") or []
+    narrow_design_summary = narrow_grouping_correction_design.get("summary") or {}
+    add_check("audit_has_narrow_grouping_correction_design", "Narrow Grouping Correction Design" in audit_html)
+    add_check("narrow_grouping_design_matches_active_policy", narrow_grouping_correction_design.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check("narrow_grouping_design_is_design_only", bool(narrow_grouping_correction_design.get("design_only")))
+    add_check("narrow_grouping_design_count_matches_rows", narrow_design_summary.get("confirmed_defects") == len(narrow_design_rows))
+    add_check("narrow_grouping_design_references_visual_defects", {row.get("canonical_paragraph_id") for row in narrow_design_rows}.issubset({row.get("canonical_paragraph_id") for row in visual_review_rows}))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -5609,6 +5808,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "post_adoption_remediation_plan": "post_adoption_remediation_plan.json",
             "front_matter_metadata_review_report": "front_matter_metadata_review_report.json",
             "visual_review_cases_report": "visual_review_cases_report.json",
+            "narrow_grouping_correction_design": "narrow_grouping_correction_design.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -5712,6 +5912,14 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         front_matter_metadata_review_report,
         visual_review_cases_report,
     )
+    narrow_grouping_correction_design = build_narrow_grouping_correction_design(
+        book_id,
+        run_id,
+        canonical_paragraphs,
+        visual_review_cases_report,
+        active_evaluation["gold_evaluation_report"],
+        ACTIVE_PARAGRAPH_MERGE_POLICY,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -5775,6 +5983,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "post_adoption_remediation_plan.json", post_adoption_remediation_plan)
     write_json(output_dir / "front_matter_metadata_review_report.json", front_matter_metadata_review_report)
     write_json(output_dir / "visual_review_cases_report.json", visual_review_cases_report)
+    write_json(output_dir / "narrow_grouping_correction_design.json", narrow_grouping_correction_design)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

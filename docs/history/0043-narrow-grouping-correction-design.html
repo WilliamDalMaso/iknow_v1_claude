@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narrow Grouping Correction Design</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Narrow Grouping Correction Design</h1>
+  <p><strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The project has one confirmed visual-review grouping defect: <code>cp_000103</code> on page
+    <code>109</code>. This checkpoint designed a narrow correction for that defect class without
+    changing active extraction behavior.
+  </p>
+
+  <div class="rule">
+    This is design-only. It did not change extraction behavior, active policy, canonical promotion,
+    OCR, AI/model review, embeddings, retrieval, graph work, structure promotion, or downstream use.
+  </div>
+
+  <h2>Confirmed Defect</h2>
+  <ol>
+    <li>Canonical paragraph: <code>cp_000103</code>.</li>
+    <li>Affected pages: <code>107-109</code>.</li>
+    <li>Gold row: <code>douglass_gold_p0107_0109_001</code>.</li>
+    <li>Current behavior: pages <code>107-108</code> are joined, but page <code>109</code> remains a separate continuation fragment.</li>
+    <li>Expected behavior: one logical paragraph spanning pages <code>107</code>, <code>108</code>, and <code>109</code>.</li>
+  </ol>
+
+  <h2>Why Current Policy Failed</h2>
+  <p>
+    <code>v2_cross_page_continuation</code> can create a two-page joined candidate, but it does not
+    re-evaluate that newly joined candidate against the next page. In this case, the page
+    <code>107-108</code> candidate still ends with the incomplete phrase <code>I now had three weeks
+    during</code>, and page <code>109</code> begins with continuation text.
+  </p>
+
+  <h2>Designed Correction</h2>
+  <p>
+    The proposed next experiment is <code>v3_chained_cross_page_continuation_design</code>: after a
+    cross-page join, re-evaluate the newly joined paragraph against the next page's first body
+    paragraph only when the joined text still ends syntactically incomplete and no structure boundary
+    intervenes.
+  </p>
+
+  <h2>Adoption Requirements</h2>
+  <ol>
+    <li>Implement as experiment-only first.</li>
+    <li>Improve the page <code>107-109</code> gold over-split without introducing over-merges.</li>
+    <li>Keep over-merged gold paragraphs at <code>0</code>.</li>
+    <li>List and review all proposed chained joins before adoption.</li>
+    <li>Record a formal adoption decision before any active policy change.</li>
+  </ol>
+
+  <div class="warn">
+    Downstream remains blocked. The next implementation should test the designed chained-continuation
+    rule as an experiment, not adopt it directly.
+  </div>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Generated <code>narrow_grouping_correction_design.json</code>.</li>
+    <li>Updated <code>phase1_audit.html</code> with a Narrow Grouping Correction Design section.</li>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>

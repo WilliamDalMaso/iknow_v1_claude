@@ -214,6 +214,11 @@
         <td>Separates valid canonical paragraphs from true grouping defects, threshold noise, suspected extraction loss, and unresolved cases before any grouping correction.</td>
       </tr>
       <tr>
+        <td><code>narrow_grouping_correction_design.json</code></td>
+        <td>Design-only artifact for confirmed grouping defects, including current behavior, expected gold behavior, source-line evidence, bbox evidence, visual evidence references, proposed rule, required conditions, block conditions, expected metric effects, side effects, risks, validation plan, and adoption gates.</td>
+        <td>Prevents a confirmed defect from jumping straight to active policy; the next rule must be tested as an experiment and adopted only through gates.</td>
+      </tr>
+      <tr>
         <td><code>paragraph_merge_failure_taxonomy_report.json</code></td>
         <td>Deterministic sample of likely true accidental merge rows with provisional category, confidence, recommended next action, source-line previews, bbox metrics, page anchors, and summary counts.</td>
         <td>Identifies the specific merge failure pattern before another merge-rule correction is attempted.</td>
