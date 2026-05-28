@@ -902,6 +902,10 @@ def test_validation_rejects_malformed_review_override_row() -> None:
                     "active_policy": "v1_consecutive_lines",
                     "summary": {"total_cases": 0},
                     "queues": [],
+                    "review_progress": {
+                        "front_matter_metadata_artifacts": {"reviewed": 0, "total": 0},
+                        "needs_visual_review": {"reviewed": 0, "total": 0},
+                    },
                 }
             ),
             encoding="utf-8",

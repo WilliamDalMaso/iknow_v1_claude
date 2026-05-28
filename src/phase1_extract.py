@@ -3315,6 +3315,86 @@ def build_visual_review_cases_report(
     }
 
 
+def update_remediation_plan_after_reviews(
+    remediation_plan: dict[str, Any],
+    front_matter_report: dict[str, Any],
+    visual_review_report: dict[str, Any],
+) -> dict[str, Any]:
+    plan = dict(remediation_plan)
+    queues = [dict(row) for row in remediation_plan.get("queues", [])]
+    queue_by_name = {row.get("group"): row for row in queues}
+
+    review_progress: dict[str, Any] = {}
+    front_queue = queue_by_name.get("front_matter_metadata_artifacts", {})
+    front_summary = front_matter_report.get("summary") or {}
+    front_reviewed = int(front_summary.get("total_reviewed") or 0)
+    front_total = int(front_queue.get("count") or 0)
+    front_complete = front_total == 0 or (front_reviewed == front_total and front_total > 0)
+    if front_queue:
+        front_queue["review_status"] = "reviewed" if front_complete else "pending_review"
+        front_queue["review_artifact"] = "front_matter_metadata_review_report.json"
+        front_queue["review_summary"] = front_summary
+        front_queue["recommended_next_action"] = (
+            "Front-matter/metadata review is complete; do not apply a broad metadata or promotion block."
+            if front_complete
+            else front_queue.get("recommended_next_action")
+        )
+    review_progress["front_matter_metadata_artifacts"] = {
+        "status": "reviewed" if front_complete else "pending_review",
+        "reviewed": front_reviewed,
+        "total": front_total,
+        "artifact": "front_matter_metadata_review_report.json",
+    }
+
+    visual_queue = queue_by_name.get("needs_visual_review", {})
+    visual_summary = visual_review_report.get("summary") or {}
+    visual_reviewed = int(visual_summary.get("total_reviewed") or 0)
+    visual_total = int(visual_queue.get("count") or 0)
+    visual_complete = visual_total == 0 or (visual_reviewed == visual_total and visual_total > 0)
+    if visual_queue:
+        visual_queue["review_status"] = "reviewed" if visual_complete else "pending_review"
+        visual_queue["review_artifact"] = "visual_review_cases_report.json"
+        visual_queue["review_summary"] = visual_summary
+        visual_queue["recommended_next_action"] = (
+            "Visual review is complete; use confirmed grouping defects to guide a narrow correction."
+            if visual_complete
+            else visual_queue.get("recommended_next_action")
+        )
+    review_progress["needs_visual_review"] = {
+        "status": "reviewed" if visual_complete else "pending_review",
+        "reviewed": visual_reviewed,
+        "total": visual_total,
+        "artifact": "visual_review_cases_report.json",
+    }
+
+    queue_counts = {row["group"]: row["count"] for row in queues}
+    recommended_order = []
+    if queue_counts.get("gold_set_gaps", 0):
+        recommended_order.append(f"Expand authoritative gold rows for the {queue_counts['gold_set_gaps']} gold-set gaps.")
+    if queue_counts.get("front_matter_metadata_artifacts", 0) and not front_complete:
+        recommended_order.append(
+            f"Review the {queue_counts['front_matter_metadata_artifacts']} front-matter/metadata artifacts as likely promotion/classification issues."
+        )
+    if queue_counts.get("needs_visual_review", 0) and not visual_complete:
+        recommended_order.append(f"Review the {queue_counts['needs_visual_review']} needs-visual-review cases.")
+    if queue_counts.get("likely_true_paragraph_grouping_defects", 0):
+        recommended_order.append(
+            f"Consider a narrow correction for the {queue_counts['likely_true_paragraph_grouping_defects']} likely true paragraph grouping defects, starting with confirmed page 109 over-splitting."
+        )
+    plan["queues"] = queues
+    plan["review_progress"] = review_progress
+    plan["recommended_order"] = recommended_order
+    if queue_counts.get("gold_set_gaps", 0):
+        plan["next_action"] = "expand_gold_rows_before_new_merge_experiment"
+    elif not front_complete:
+        plan["next_action"] = "review_front_matter_metadata_queue"
+    elif not visual_complete:
+        plan["next_action"] = "review_visual_review_queue"
+    else:
+        plan["next_action"] = "design_narrow_grouping_correction_for_confirmed_defects"
+    return plan
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -5335,6 +5415,19 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("visual_review_classifications_valid", all(row.get("likely_classification") in VALID_VISUAL_REVIEW_CLASSIFICATIONS for row in visual_review_rows))
     add_check("visual_review_trace_to_canonical", {row.get("canonical_paragraph_id") for row in visual_review_rows}.issubset(set(canonical_ids)))
     add_check("visual_review_is_review_only", bool(visual_review_cases_report.get("review_only")))
+    remediation_review_progress = post_adoption_remediation_plan.get("review_progress") or {}
+    front_progress = remediation_review_progress.get("front_matter_metadata_artifacts") or {}
+    visual_progress = remediation_review_progress.get("needs_visual_review") or {}
+    add_check(
+        "remediation_plan_front_matter_progress_matches_review",
+        front_progress.get("reviewed") == front_matter_summary.get("total_reviewed")
+        and front_progress.get("total") == front_matter_queue_count,
+    )
+    add_check(
+        "remediation_plan_visual_progress_matches_review",
+        visual_progress.get("reviewed") == visual_review_summary.get("total_reviewed")
+        and visual_progress.get("total") == visual_review_queue_count,
+    )
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -5613,6 +5706,11 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         post_adoption_remediation_plan,
         canonical_paragraphs,
         ACTIVE_PARAGRAPH_MERGE_POLICY,
+    )
+    post_adoption_remediation_plan = update_remediation_plan_after_reviews(
+        post_adoption_remediation_plan,
+        front_matter_metadata_review_report,
+        visual_review_cases_report,
     )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report

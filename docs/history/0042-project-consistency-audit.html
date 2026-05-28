@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project Consistency Audit</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Project Consistency Audit</h1>
+  <p><strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Scope</h2>
+  <p>
+    This checkpoint reviewed the current project memory after the visual-review pass: source of
+    truth, Codex guidance, work loop, strategy, artifact contract, lessons, history index,
+    observability events, and generated Phase 1 reports.
+  </p>
+
+  <h2>Finding</h2>
+  <p>
+    The durable docs and lessons were aligned with the current state, but the generated
+    <code>post_adoption_remediation_plan.json</code> still listed front-matter review and visual
+    review as upcoming work even though those review reports had already been completed.
+  </p>
+
+  <div class="warn">
+    That was a real drift risk. Future Codex sessions could have followed the stale generated plan
+    instead of the latest review reports.
+  </div>
+
+  <h2>Repair</h2>
+  <ol>
+    <li>Updated the remediation plan generation to record <code>review_progress</code>.</li>
+    <li>Updated the remaining recommendation to <code>design_narrow_grouping_correction_for_confirmed_defects</code>.</li>
+    <li>Updated validation so remediation-plan progress must match the front-matter and visual-review reports.</li>
+    <li>Updated the artifact contract to document review progress in the remediation plan.</li>
+  </ol>
+
+  <h2>Current State After Repair</h2>
+  <ol>
+    <li>Gold-set gap queue: <code>0</code>.</li>
+    <li>Front-matter/metadata review: <code>9 / 9</code> reviewed.</li>
+    <li>Visual-review queue: <code>8 / 8</code> reviewed.</li>
+    <li>Confirmed visual-review defect: <code>cp_000103</code> on page <code>109</code>.</li>
+    <li>Next action: narrow grouping correction for confirmed defects.</li>
+    <li>Downstream remains blocked.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>
