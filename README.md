@@ -27,6 +27,11 @@ Phase 1 outputs are candidate-first. Nothing is called canonical until it has pa
 Paragraph merge policy changes also require a tracked gold review set. Heuristic warning counts can
 show symptoms, but they are not enough to adopt a new extraction policy.
 
+Current Douglass Phase 1 status: `v2_cross_page_continuation` is the active paragraph merge policy
+after formal gold, side-effect review, blocker investigation, and validation gates. Downstream
+retrieval, embeddings, reasoning, and graph work remain blocked until canonical paragraph review is
+safe.
+
 ## Documentation Model
 
 Local durable documentation is HTML-first.

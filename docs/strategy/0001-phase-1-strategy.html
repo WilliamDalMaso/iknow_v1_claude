@@ -124,22 +124,24 @@
     <li>Seed rows are excluded from scoring until explicitly marked authoritative after review.</li>
   </ol>
 
-  <h2>Cross-Page Continuation Experiment</h2>
+  <h2>Cross-Page Continuation Policy</h2>
   <p>
     The first authoritative gold set showed that reviewed object labels were correct, while paragraph
     boundaries failed where one logical paragraph crossed a page break. The
-    <code>v2_cross_page_continuation</code> experiment targets that specific failure by joining the
+    <code>v2_cross_page_continuation</code> policy targets that specific failure by joining the
     last body paragraph candidate on page <code>N</code> with the first body paragraph candidate on
     page <code>N+1</code> only when deterministic continuation evidence is present and no structure
     boundary intervenes.
   </p>
   <ol>
-    <li>The active canonical extraction policy remains <code>v1_consecutive_lines</code> until adoption is explicit.</li>
+    <li>The active Douglass paragraph merge policy is now <code>v2_cross_page_continuation</code>.</li>
+    <li><code>policy_adoption_decision.json</code> records the formal adoption evidence and current downstream hold.</li>
     <li>Experiment reports must compare gold precision, recall, over-splits, over-merges, warning counts, and joined examples.</li>
     <li>A cross-page policy can only be adopted after <code>cross_page_join_review_report.json</code> exposes every proposed join, gold coverage, risk category, and top pages needing review.</li>
     <li>Reviewed join decisions must be stored in <code>reviews/&lt;book_id&gt;/cross_page_join_decisions.jsonl</code> and replayed into generated runs before adoption.</li>
-    <li>Unresolved boundary, structure, and manual-review joins keep the adoption gate closed.</li>
+    <li>Unresolved boundary, structure, and manual-review joins keep future adoption gates closed.</li>
     <li>Strong gold improvement is not enough by itself when most joins are outside the current gold set.</li>
+    <li>Policy adoption does not unlock retrieval or graph work; canonical paragraph review must still become safe for downstream use.</li>
   </ol>
 
   <h2>Page Furniture Detection</h2>

@@ -97,6 +97,13 @@
     Durable decisions for those joins belong in
     <code>reviews/&lt;book_id&gt;/cross_page_join_decisions.jsonl</code>, not in generated run output.
   </p>
+  <p>
+    For Douglass <code>phase1_v3</code>, <code>v2_cross_page_continuation</code> is now the active
+    paragraph merge policy because it passed the gold, side-effect review, blocker investigation,
+    and validation gates. This adoption does not unlock downstream intelligence; the canonical
+    paragraph review gate still controls whether retrieval, embeddings, reasoning, or graph work may
+    depend on the output.
+  </p>
 
   <h2>Phase 1 Evidence Stack</h2>
   <div class="rule">

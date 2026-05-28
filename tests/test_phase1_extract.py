@@ -857,6 +857,21 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             ),
             encoding="utf-8",
         )
+        (output_dir / "policy_adoption_decision.json").write_text(
+            json.dumps(
+                {
+                    "decision": "adopt_v2_cross_page_continuation",
+                    "active_paragraph_merge_policy": "v1_consecutive_lines",
+                    "gate_evidence": {
+                        "gold_paragraph_precision_before": 0.0,
+                        "gold_paragraph_precision_after": 1.0,
+                        "proposed_joins": 0,
+                        "unresolved_joins": 0,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {

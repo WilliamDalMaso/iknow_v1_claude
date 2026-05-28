@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cross-Page Continuation Adoption</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 0.55rem 0.65rem; text-align: left; vertical-align: top; }
+    th { background: #efede5; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Cross-Page Continuation Adoption</h1>
+  <p><strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Decision</h2>
+  <p>
+    <code>v2_cross_page_continuation</code> is now the active paragraph merge policy for the
+    Douglass <code>phase1_v3</code> run. The previous active policy was
+    <code>v1_consecutive_lines</code>.
+  </p>
+
+  <div class="rule">
+    This adoption only changes deterministic paragraph merging. It does not add OCR, AI/model
+    review, embeddings, retrieval, graph work, user-facing answers, structure promotion, or a new
+    merge-policy experiment.
+  </div>
+
+  <h2>Gate Evidence</h2>
+  <table>
+    <thead>
+      <tr><th>Measure</th><th>Before</th><th>After</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Gold paragraph precision</td><td><code>0.455</code></td><td><code>1.000</code></td></tr>
+      <tr><td>Gold paragraph recall</td><td><code>0.455</code></td><td><code>1.000</code></td></tr>
+      <tr><td>Matched gold paragraphs</td><td><code>5</code></td><td><code>11</code></td></tr>
+      <tr><td>Over-split gold paragraphs</td><td><code>6</code></td><td><code>0</code></td></tr>
+      <tr><td>Over-merged gold paragraphs</td><td><code>0</code></td><td><code>0</code></td></tr>
+      <tr><td>Object-label accuracy</td><td><code>1.000</code></td><td><code>1.000</code></td></tr>
+      <tr><td>BBox span risk</td><td><code>74</code></td><td><code>40</code></td></tr>
+      <tr><td>Likely true accidental merges</td><td><code>49</code></td><td><code>23</code></td></tr>
+      <tr><td>Merged across paragraph break</td><td><code>35</code></td><td><code>16</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Join Review</h2>
+  <ol>
+    <li>Proposed cross-page joins: <code>79</code>.</li>
+    <li>Curated accepted joins: <code>31</code>.</li>
+    <li>Curated rejected joins: <code>0</code>.</li>
+    <li>Unresolved joins: <code>0</code>.</li>
+    <li><code>xpage_join_0032</code> result: <code>valid_continuation</code>.</li>
+    <li>Join decision validation: <code>pass</code>.</li>
+  </ol>
+
+  <h2>Active Run After Adoption</h2>
+  <ol>
+    <li>Paragraph candidates reviewed: <code>270</code>.</li>
+    <li>Promoted canonical paragraphs: <code>122</code>.</li>
+    <li>Blocked paragraph candidates: <code>148</code>.</li>
+    <li>Canonical review warning count: <code>143</code>.</li>
+    <li>Risky canonical paragraphs: <code>79</code>.</li>
+    <li>Clean-looking canonical paragraphs: <code>43</code>.</li>
+  </ol>
+
+  <div class="warn">
+    Downstream intelligence remains blocked. The active policy is adopted, but
+    <code>canonical_paragraph_review_report.json</code> still says
+    <code>safe_for_downstream: false</code> with recommendation
+    <code>hold_downstream_intelligence_until_risks_are_reviewed</code>.
+  </div>
+
+  <h2>Artifacts</h2>
+  <ol>
+    <li><code>policy_adoption_decision.json</code> records the formal decision and gate evidence.</li>
+    <li><code>source_manifest.json</code> records <code>paragraph_merge_policy: v2_cross_page_continuation</code>.</li>
+    <li><code>phase1_audit.html</code> includes a Policy Adoption Decision section.</li>
+    <li><code>gold_evaluation_report.json</code> confirms gold precision and recall remain <code>1.000</code>.</li>
+  </ol>
+
+  <h2>Lesson</h2>
+  <p>
+    Formal adoption must be separate from readiness. A policy becomes active only after known failure
+    improves against gold truth, side effects are reviewed, blockers are resolved, validation passes,
+    and the decision is documented.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated under the active policy.</li>
+    <li>Generated validation status: <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>
