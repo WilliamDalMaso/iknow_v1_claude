@@ -30,7 +30,7 @@ show symptoms, but they are not enough to adopt a new extraction policy.
 Current Douglass Phase 1 status: `v2_cross_page_continuation` is the active paragraph merge policy
 after formal gold, side-effect review, blocker investigation, and validation gates. Downstream
 retrieval, embeddings, reasoning, and graph work remain blocked until canonical paragraph review is
-safe.
+safe. The current post-adoption blocker is `bbox_span_risk`.
 
 ## Documentation Model
 

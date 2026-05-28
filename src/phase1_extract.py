@@ -45,6 +45,7 @@ REQUIRED_ARTIFACTS = [
     "cross_page_join_review_report.json",
     "xpage_join_0032_investigation.json",
     "policy_adoption_decision.json",
+    "post_adoption_canonical_safety_report.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -2714,6 +2715,135 @@ def build_policy_adoption_decision(
     }
 
 
+def build_post_adoption_canonical_safety_report(
+    book_id: str,
+    run_id: str,
+    baseline_review_report: dict[str, Any],
+    active_review_report: dict[str, Any],
+    paragraph_merge_experiment_report: dict[str, Any],
+    policy_adoption_decision: dict[str, Any],
+) -> dict[str, Any]:
+    baseline_counts = baseline_review_report.get("counts", {})
+    active_counts = active_review_report.get("counts", {})
+    baseline_warning_categories = baseline_review_report.get("warning_categories", {})
+    active_warning_categories = active_review_report.get("warning_categories", {})
+    merge_counts = paragraph_merge_experiment_report.get("counts", {})
+    taxonomy_counts = paragraph_merge_experiment_report.get("taxonomy_counts", {})
+    active_clusters = active_review_report.get("risky_paragraph_clusters", [])
+    active_drilldown = active_review_report.get("warning_category_drilldown", [])
+    top_cluster = active_clusters[0] if active_clusters else {}
+    top_warning = active_drilldown[0] if active_drilldown else {}
+    affected_pages = first_unique(
+        list(top_cluster.get("affected_pages", [])) + list(top_warning.get("affected_pages", [])),
+        20,
+    )
+    sample_risky = []
+    for row in active_review_report.get("sample_risky_canonical_paragraphs", [])[:12]:
+        sample_risky.append(
+            {
+                "canonical_paragraph_id": row.get("canonical_paragraph_id"),
+                "source_candidate_object_id": row.get("source_candidate_object_id"),
+                "page_number": row.get("page_number"),
+                "warnings": row.get("warnings", []),
+                "word_count": row.get("word_count"),
+                "source_line_ids": row.get("source_line_ids", []),
+                "text_preview": row.get("clean_text_sample", "")[:260],
+                "audit_anchor": audit_anchor_for_object(row.get("source_candidate_object_id")),
+                "page_anchor": f"#page-{row.get('page_number')}",
+            }
+        )
+
+    def category_delta(category: str) -> dict[str, Any]:
+        before = int(baseline_warning_categories.get(category, 0) or 0)
+        after = int(active_warning_categories.get(category, 0) or 0)
+        return {"warning": category, "before": before, "after": after, "delta": after - before}
+
+    all_categories = sorted(set(baseline_warning_categories) | set(active_warning_categories))
+    category_deltas = sorted(
+        [category_delta(category) for category in all_categories],
+        key=lambda row: (-abs(int(row["delta"])), -int(row["after"]), str(row["warning"])),
+    )
+    likely_corrective_path = top_cluster.get("likely_next_corrective_action") or top_warning.get("likely_next_corrective_action")
+    may_require = top_cluster.get("may_require") or top_warning.get("may_require") or ["manual_inspection"]
+    issue_type = "manual-review issue"
+    if "detector_changes" in may_require:
+        issue_type = "detector issue"
+    elif "promotion_rule_changes" in may_require:
+        issue_type = "promotion-rule issue"
+    elif "review_overrides" in may_require:
+        issue_type = "manual-review issue"
+    elif "gold_review" in may_require:
+        issue_type = "gold-set gap"
+
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "post_adoption_canonical_paragraph_safety_analysis",
+        "active_policy": policy_adoption_decision.get("active_paragraph_merge_policy"),
+        "does_not_change_extraction_behavior": True,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion"],
+        "current_state": {
+            "promoted_canonical_paragraphs": active_counts.get("total_canonical_paragraphs_reviewed"),
+            "risky_canonical_paragraphs": active_counts.get("risky_paragraph_count"),
+            "clean_looking_canonical_paragraphs": active_counts.get("clean_looking_count"),
+            "warning_count": active_counts.get("warning_count"),
+            "safe_for_downstream": active_review_report.get("safe_for_downstream"),
+            "downstream_recommendation": active_review_report.get("recommendation"),
+        },
+        "before_after_adoption": {
+            "risky_canonical_paragraphs": {
+                "before": baseline_counts.get("risky_paragraph_count"),
+                "after": active_counts.get("risky_paragraph_count"),
+            },
+            "warning_count": {
+                "before": baseline_counts.get("warning_count"),
+                "after": active_counts.get("warning_count"),
+            },
+            "bbox_span_risk": {
+                "before": merge_counts.get("baseline_bbox_span_risk_count"),
+                "after": merge_counts.get("new_bbox_span_risk_count"),
+            },
+            "likely_true_accidental_merges": {
+                "before": merge_counts.get("baseline_likely_true_accidental_merge_count"),
+                "after": merge_counts.get("new_likely_true_accidental_merge_count"),
+            },
+            "merged_across_paragraph_break": {
+                "before": merge_counts.get("baseline_merged_across_paragraph_break_count"),
+                "after": merge_counts.get("new_merged_across_paragraph_break_count"),
+            },
+            "taxonomy_counts": taxonomy_counts,
+            "warning_category_deltas": category_deltas,
+        },
+        "current_top_risk": {
+            "cluster": top_cluster.get("cluster") or top_warning.get("cluster"),
+            "warning": top_warning.get("warning"),
+            "count": top_cluster.get("count") or top_warning.get("count"),
+            "severity": top_cluster.get("severity") or top_warning.get("severity"),
+            "affected_pages": affected_pages,
+            "likely_corrective_path": likely_corrective_path,
+            "may_require": may_require,
+            "issue_type": issue_type,
+            "why_it_matters": (active_review_report.get("recommendation_detail") or {}).get("why_it_matters"),
+        },
+        "risk_counts": {
+            "warning_categories": active_warning_categories,
+            "risk_clusters": [
+                {
+                    "cluster": row.get("cluster"),
+                    "count": row.get("count"),
+                    "severity": row.get("severity"),
+                    "affected_pages": row.get("affected_pages", []),
+                    "may_require": row.get("may_require", []),
+                }
+                for row in active_clusters
+            ],
+        },
+        "sample_risky_paragraphs": sample_risky,
+        "recommendation": "analyze_top_blocker_before_changing_extraction_behavior",
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -2771,6 +2901,7 @@ def build_audit_html(
     cross_page_join_review_report = read_json(output_dir / "cross_page_join_review_report.json") if (output_dir / "cross_page_join_review_report.json").exists() else {}
     xpage_join_0032_investigation = read_json(output_dir / "xpage_join_0032_investigation.json") if (output_dir / "xpage_join_0032_investigation.json").exists() else {}
     policy_adoption_decision = read_json(output_dir / "policy_adoption_decision.json") if (output_dir / "policy_adoption_decision.json").exists() else {}
+    post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json") if (output_dir / "post_adoption_canonical_safety_report.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -3359,6 +3490,28 @@ def build_audit_html(
         for row in (canonical_review_report.get("bbox_span_decisions") or [])
     )
     canonical_review_recommendation = canonical_review_report.get("recommendation_detail") or {}
+    post_adoption_state = post_adoption_safety_report.get("current_state") or {}
+    post_adoption_comparison = post_adoption_safety_report.get("before_after_adoption") or {}
+    post_adoption_top_risk = post_adoption_safety_report.get("current_top_risk") or {}
+    post_adoption_category_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('warning'))}</code></td>"
+        f"<td>{esc(row.get('before'))}</td>"
+        f"<td>{esc(row.get('after'))}</td>"
+        f"<td>{esc(row.get('delta'))}</td>"
+        "</tr>"
+        for row in (post_adoption_comparison.get("warning_category_deltas") or [])
+    )
+    post_adoption_sample_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page_number'))}</a></td>"
+        f"<td><code>{esc(row.get('source_candidate_object_id'))}</code></td>"
+        f"<td>{esc(', '.join(row.get('warnings', [])))}</td>"
+        f"<td>{esc(row.get('text_preview', ''))}</td>"
+        "</tr>"
+        for row in (post_adoption_safety_report.get("sample_risky_paragraphs") or [])[:12]
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -3803,6 +3956,46 @@ def build_audit_html(
     <tbody>{canonical_review_sample_rows or '<tr><td colspan="5">No risky canonical paragraph samples.</td></tr>'}</tbody>
   </table>
 
+  <h2>Post-Adoption Canonical Safety</h2>
+  <div class="warn">
+    This section reassesses canonical paragraph safety under the active adopted policy. It is
+    analysis-only and does not change extraction behavior.
+  </div>
+  <ul>
+    <li>Active policy: <code>{esc(post_adoption_safety_report.get('active_policy', '-'))}</code></li>
+    <li>Promoted canonical paragraphs: <code>{esc(post_adoption_state.get('promoted_canonical_paragraphs', '-'))}</code></li>
+    <li>Risky canonical paragraphs: <code>{esc(post_adoption_state.get('risky_canonical_paragraphs', '-'))}</code></li>
+    <li>Clean-looking canonical paragraphs: <code>{esc(post_adoption_state.get('clean_looking_canonical_paragraphs', '-'))}</code></li>
+    <li>Warning count: <code>{esc(post_adoption_state.get('warning_count', '-'))}</code></li>
+    <li>Safe for downstream: <code>{esc(post_adoption_state.get('safe_for_downstream', '-'))}</code></li>
+    <li>Current top risk: <code>{esc(post_adoption_top_risk.get('cluster', '-'))}</code> / <code>{esc(post_adoption_top_risk.get('warning', '-'))}</code></li>
+    <li>Issue type: <code>{esc(post_adoption_top_risk.get('issue_type', '-'))}</code></li>
+    <li>Likely corrective path: {esc(post_adoption_top_risk.get('likely_corrective_path', '-'))}</li>
+    <li>May require: <code>{esc(', '.join(post_adoption_top_risk.get('may_require', [])))}</code></li>
+  </ul>
+  <h3>Before/After Adoption Comparison</h3>
+  <ul>
+    <li>Risky canonical paragraphs: <code>{esc((post_adoption_comparison.get('risky_canonical_paragraphs') or {}).get('before', '-'))}</code> to <code>{esc((post_adoption_comparison.get('risky_canonical_paragraphs') or {}).get('after', '-'))}</code></li>
+    <li>Total warnings: <code>{esc((post_adoption_comparison.get('warning_count') or {}).get('before', '-'))}</code> to <code>{esc((post_adoption_comparison.get('warning_count') or {}).get('after', '-'))}</code></li>
+    <li>BBox span risk: <code>{esc((post_adoption_comparison.get('bbox_span_risk') or {}).get('before', '-'))}</code> to <code>{esc((post_adoption_comparison.get('bbox_span_risk') or {}).get('after', '-'))}</code></li>
+    <li>Likely true accidental merges: <code>{esc((post_adoption_comparison.get('likely_true_accidental_merges') or {}).get('before', '-'))}</code> to <code>{esc((post_adoption_comparison.get('likely_true_accidental_merges') or {}).get('after', '-'))}</code></li>
+    <li>Merged across paragraph break: <code>{esc((post_adoption_comparison.get('merged_across_paragraph_break') or {}).get('before', '-'))}</code> to <code>{esc((post_adoption_comparison.get('merged_across_paragraph_break') or {}).get('after', '-'))}</code></li>
+  </ul>
+  <h3>Warning Category Deltas</h3>
+  <table>
+    <thead>
+      <tr><th>Warning</th><th>Before</th><th>After</th><th>Delta</th></tr>
+    </thead>
+    <tbody>{post_adoption_category_rows or '<tr><td colspan="4">No warning deltas recorded.</td></tr>'}</tbody>
+  </table>
+  <h3>Sample Risky Paragraphs After Adoption</h3>
+  <table>
+    <thead>
+      <tr><th>Canonical ID</th><th>Page</th><th>Source Candidate</th><th>Warnings</th><th>Text Preview</th></tr>
+    </thead>
+    <tbody>{post_adoption_sample_rows or '<tr><td colspan="5">No post-adoption risky paragraph samples.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -4062,6 +4255,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     cross_page_join_review_report = read_json(output_dir / "cross_page_join_review_report.json")
     xpage_join_0032_investigation = read_json(output_dir / "xpage_join_0032_investigation.json")
     policy_adoption_decision = read_json(output_dir / "policy_adoption_decision.json")
+    post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -4096,6 +4290,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("cross_page_join_review_report_exists", (output_dir / "cross_page_join_review_report.json").exists())
     add_check("xpage_join_0032_investigation_exists", (output_dir / "xpage_join_0032_investigation.json").exists())
     add_check("policy_adoption_decision_exists", (output_dir / "policy_adoption_decision.json").exists())
+    add_check("post_adoption_canonical_safety_report_exists", (output_dir / "post_adoption_canonical_safety_report.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -4379,6 +4574,17 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
             for key in ["gold_paragraph_precision_before", "gold_paragraph_precision_after", "proposed_joins", "unresolved_joins"]
         ),
     )
+    post_adoption_state = post_adoption_safety_report.get("current_state") or {}
+    post_adoption_top_risk = post_adoption_safety_report.get("current_top_risk") or {}
+    add_check("audit_has_post_adoption_canonical_safety", "Post-Adoption Canonical Safety" in audit_html)
+    add_check("post_adoption_safety_matches_active_policy", post_adoption_safety_report.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check(
+        "post_adoption_safety_counts_match_review",
+        post_adoption_state.get("promoted_canonical_paragraphs") == canonical_review_counts.get("total_canonical_paragraphs_reviewed")
+        and post_adoption_state.get("risky_canonical_paragraphs") == canonical_review_counts.get("risky_paragraph_count")
+        and post_adoption_state.get("warning_count") == canonical_review_counts.get("warning_count"),
+    )
+    add_check("post_adoption_top_risk_present", bool(post_adoption_top_risk.get("cluster")) or canonical_review_counts.get("warning_count", 0) == 0)
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -4555,6 +4761,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "cross_page_join_review_report": "cross_page_join_review_report.json",
             "xpage_join_0032_investigation": "xpage_join_0032_investigation.json",
             "policy_adoption_decision": "policy_adoption_decision.json",
+            "post_adoption_canonical_safety_report": "post_adoption_canonical_safety_report.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -4618,6 +4825,14 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         canonical_paragraph_review_report,
         active_evaluation["gold_evaluation_report"],
     )
+    post_adoption_canonical_safety_report = build_post_adoption_canonical_safety_report(
+        book_id,
+        run_id,
+        baseline_evaluation["review_report"],
+        canonical_paragraph_review_report,
+        paragraph_merge_experiment_report,
+        policy_adoption_decision,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -4676,6 +4891,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "cross_page_join_review_report.json", cross_page_join_review_report)
     write_json(output_dir / "xpage_join_0032_investigation.json", xpage_join_0032_investigation)
     write_json(output_dir / "policy_adoption_decision.json", policy_adoption_decision)
+    write_json(output_dir / "post_adoption_canonical_safety_report.json", post_adoption_canonical_safety_report)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

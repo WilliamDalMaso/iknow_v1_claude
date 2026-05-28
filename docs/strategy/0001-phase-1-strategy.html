@@ -144,6 +144,19 @@
     <li>Policy adoption does not unlock retrieval or graph work; canonical paragraph review must still become safe for downstream use.</li>
   </ol>
 
+  <h2>Post-Adoption Safety</h2>
+  <p>
+    After policy adoption, Phase 1 must recalculate canonical paragraph safety before any downstream
+    work. The current Douglass report writes
+    <code>post_adoption_canonical_safety_report.json</code>, which confirms that
+    <code>bbox_span_risk</code> remains the top blocker under the adopted policy.
+  </p>
+  <ol>
+    <li>Post-adoption safety analysis is report-only; it must not change extraction behavior.</li>
+    <li>The next blocker should be diagnosed before another merge or promotion-rule change is attempted.</li>
+    <li>Downstream intelligence remains blocked while <code>safe_for_downstream</code> is <code>false</code>.</li>
+  </ol>
+
   <h2>Page Furniture Detection</h2>
   <p>
     Phase 1 v3 adds candidate-only page furniture detection before any OCR or model review. The

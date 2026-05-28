@@ -189,6 +189,11 @@
         <td>Prevents a policy from becoming active merely because it feels ready; adoption must be traceable to gate evidence and validation.</td>
       </tr>
       <tr>
+        <td><code>post_adoption_canonical_safety_report.json</code></td>
+        <td>Analysis-only reassessment of canonical paragraph safety under the adopted active policy, including current top risk, before/after warning comparisons, warning-category deltas, affected pages, likely corrective path, issue type, and risky paragraph samples.</td>
+        <td>Identifies the next blocker after policy adoption without changing extraction behavior or unlocking downstream intelligence.</td>
+      </tr>
+      <tr>
         <td><code>paragraph_merge_failure_taxonomy_report.json</code></td>
         <td>Deterministic sample of likely true accidental merge rows with provisional category, confidence, recommended next action, source-line previews, bbox metrics, page anchors, and summary counts.</td>
         <td>Identifies the specific merge failure pattern before another merge-rule correction is attempted.</td>

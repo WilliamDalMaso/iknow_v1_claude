@@ -872,6 +872,20 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             ),
             encoding="utf-8",
         )
+        (output_dir / "post_adoption_canonical_safety_report.json").write_text(
+            json.dumps(
+                {
+                    "active_policy": "v1_consecutive_lines",
+                    "current_state": {
+                        "promoted_canonical_paragraphs": 1,
+                        "risky_canonical_paragraphs": 1,
+                        "warning_count": 1,
+                    },
+                    "current_top_risk": {"cluster": "bbox_span_risk"},
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {
