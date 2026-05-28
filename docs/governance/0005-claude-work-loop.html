@@ -60,9 +60,11 @@
 
   <h2>Observability Port Rule</h2>
   <div class="warn">
-    Use one observability endpoint: <code>http://127.0.0.1:8765</code>. Do not open new ports for
-    each build. If the dashboard is already running, reuse it. If code changes require a restart,
-    stop the existing process and restart the same port.
+    The Claude lane uses one observability endpoint: <code>http://127.0.0.1:8799</code>
+    (<code>src/claude_observability_server.py</code>). Do not open new ports for each build. If the
+    dashboard is already running, reuse it; if a code change requires a restart, stop the existing
+    process and restart on <code>8799</code>. Port <code>8765</code> is the legacy/Codex dashboard
+    and must stay free for it &mdash; never bind the Claude lane to 8765.
   </div>
 
   <h2>Test Environment Rule</h2>

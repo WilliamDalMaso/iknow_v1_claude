@@ -54,27 +54,33 @@ Start here locally:
 
 ## Local Observability
 
-The repo includes a dependency-free black-and-white localhost dashboard for watching project/process events during development.
+The Claude lane runs a dependency-free localhost dashboard with severity levels, run correlation,
+search, faceted filters, and run grouping.
 
-Run:
+Run (Claude-lane port `8799`):
 
 ```bash
-python3 src/observability_server.py --host 127.0.0.1 --port 8765
+python3 src/claude_observability_server.py --host 127.0.0.1 --port 8799
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:8765
+http://127.0.0.1:8799
 ```
 
-Append an event:
+Append a structured event:
 
 ```bash
-python3 src/observe.py claude "Started Phase 1 extraction design" --details '{"phase":"phase_1"}'
+python3 src/observe.py phase "Started Phase 1 extraction design" \
+  --level milestone --book douglass_narrative --run phase1_v3 --phase A \
+  --details '{"note":"design"}'
 ```
 
-Runtime observability logs are ignored by git.
+Events carry `schema, timestamp, level, actor, kind, book_id, run_id, phase, git_commit, message,
+details` (`git_commit` is stamped automatically). The legacy/Codex dashboard remains on port `8765`
+(`src/observability_server.py`); the Claude lane never reuses 8765 so both can run at once. Runtime
+observability logs are ignored by git.
 
 ## Local API Key
 

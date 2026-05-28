@@ -162,9 +162,14 @@
   },
   "observability": {
     "host": "127.0.0.1",
-    "port": 8765,
-    "url": "http://127.0.0.1:8765",
-    "port_rule": "Reuse the same observability port. Do not open new ports for each build."
+    "port": 8799,
+    "url": "http://127.0.0.1:8799",
+    "server": "src/claude_observability_server.py",
+    "writer": "src/observe.py",
+    "event_schema": "iknow.observe/2",
+    "legacy_port": 8765,
+    "port_rule": "The Claude lane uses port 8799 (dashboard: src/claude_observability_server.py). Always reuse 8799; do not open new ports for each build. Port 8765 belongs to the legacy/Codex dashboard (src/observability_server.py) and must not be reused by the Claude lane so both can run at once.",
+    "event_fields": "Events carry schema, timestamp, level (debug|info|milestone|warning|error), actor, kind, book_id, run_id, phase, git_commit, message, details. Use --level/--book/--run/--phase on src/observe.py to keep events correlated to a run."
   },
   "artifact_boundaries": {
     "source_code": "src/",

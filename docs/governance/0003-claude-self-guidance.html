@@ -88,9 +88,10 @@
 
   <h2>Observability Discipline</h2>
   <ol>
-    <li>Use <code>http://127.0.0.1:8765</code> as the single observability dashboard.</li>
+    <li>Use <code>http://127.0.0.1:8799</code> as the single Claude-lane observability dashboard (<code>src/claude_observability_server.py</code>). Port <code>8765</code> belongs to the legacy/Codex dashboard; never reuse it, so both can run at once.</li>
     <li>Do not start alternate observability ports unless William explicitly asks.</li>
-    <li>If the server needs a restart, stop the existing process and reuse port <code>8765</code>.</li>
+    <li>If the server needs a restart, stop the existing process and reuse port <code>8799</code>.</li>
+    <li>Emit structured events via <code>src/observe.py</code> with <code>--level</code>, <code>--book</code>, <code>--run</code>, and <code>--phase</code> so events stay correlated to a run; <code>git_commit</code> is stamped automatically.</li>
   </ol>
 </main>
 </body>

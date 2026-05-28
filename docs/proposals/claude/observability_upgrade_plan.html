@@ -21,8 +21,11 @@
   <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28</p>
 
   <div class="rule">
-    Proposal only. Honors the standing port rule: one endpoint at
-    <code>http://127.0.0.1:8765</code>, no new ports per build.
+    <strong>Largely delivered (2026-05-28).</strong> The Claude lane now runs its own dashboard at
+    <code>http://127.0.0.1:8799</code> (<code>src/claude_observability_server.py</code>), distinct
+    from the legacy/Codex dashboard on <code>8765</code> so both run at once. The writer
+    (<code>src/observe.py</code>) emits the structured schema below. Remaining: decision-artifact
+    linkage (item 4) once the Phase B refactor exposes a clean pipeline seam.
   </div>
 
   <h2>1. Current State</h2>
@@ -40,13 +43,13 @@
     <li><strong>No second-book dimension.</strong> Nothing namespaces events by book.</li>
   </ul>
 
-  <h2>3. Proposed Upgrades (incremental, low-risk)</h2>
+  <h2>3. Upgrades</h2>
   <ol>
-    <li><strong>Structured event fields:</strong> add optional <code>book_id</code>, <code>run_id</code>, <code>git_commit</code>, <code>actor</code> to the event schema. Keep backward compatibility (old events still parse).</li>
-    <li><strong>Run stamp helper:</strong> a small function that, at run start, records the git commit + book + version so every downstream event can reference it.</li>
-    <li><strong>Dashboard filters:</strong> filter by <code>book_id</code> and <code>actor</code>; group by run.</li>
-    <li><strong>Decision linkage:</strong> when an adoption decision artifact is written, emit a paired observability event carrying the artifact path and key metrics, so the dashboard becomes an index into the durable ledger.</li>
-    <li><strong>Event-schema test:</strong> a contract test asserting required fields, mirroring the artifact-contract testing style already used.</li>
+    <li><strong>[DONE] Structured event fields:</strong> <code>schema</code>, <code>level</code>, <code>actor</code>, <code>book_id</code>, <code>run_id</code>, <code>phase</code>, <code>git_commit</code> added to <code>src/observe.py</code>. Backward compatible &mdash; legacy flat events still parse and render.</li>
+    <li><strong>[DONE] Auto git-commit stamp:</strong> every event records the short commit automatically; <code>--book/--run/--phase</code> correlate events to a run.</li>
+    <li><strong>[DONE] Dashboard filters &amp; UX:</strong> severity colors, search, faceted filters (level/actor/book/phase), issues-only, group-by-run, pause, keyboard shortcuts, summary cards &mdash; <code>src/claude_observability_server.py</code> on port 8799.</li>
+    <li><strong>[PENDING] Decision linkage:</strong> emit a paired event when an adoption-decision artifact is written, so the dashboard indexes the durable ledger. Deferred until the Phase B refactor exposes a clean pipeline seam.</li>
+    <li><strong>[DONE] Schema/helper tests:</strong> <code>tests/test_claude_observability.py</code> asserts the writer schema, normalization of legacy events, and aggregate summaries.</li>
   </ol>
 
   <h2>4. Sequencing vs. Refactor</h2>
