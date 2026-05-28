@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Post-Adoption Remediation Plan</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d8d6cc; padding: 0.55rem 0.65rem; text-align: left; vertical-align: top; }
+    th { background: #efede5; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Post-Adoption Remediation Plan</h1>
+  <p><strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The remaining bbox/span blocker is now split into separate action queues. This checkpoint turns
+    diagnosis into a remediation plan without changing extraction behavior.
+  </p>
+
+  <div class="rule">
+    This is planning only. No OCR, AI/model review, embeddings, retrieval, graph work, user-facing
+    answers, structure promotion, demotion/promotion change, or new merge-policy experiment was
+    added.
+  </div>
+
+  <h2>Queues</h2>
+  <table>
+    <thead>
+      <tr><th>Queue</th><th>Count</th><th>Action Type</th><th>Risk</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Likely true paragraph grouping defects</td><td><code>23</code></td><td>Merge/grouping rule work</td><td>High</td></tr>
+      <tr><td>Front-matter or metadata artifacts</td><td><code>9</code></td><td>Promotion-rule work</td><td>High</td></tr>
+      <tr><td>Gold-set gaps</td><td><code>6</code></td><td>Gold expansion</td><td>Medium</td></tr>
+      <tr><td>Needs visual review</td><td><code>2</code></td><td>Manual visual review</td><td>Medium</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Recommended Order</h2>
+  <ol>
+    <li>Expand authoritative gold rows for the <code>6</code> gold-set gaps.</li>
+    <li>Review the <code>9</code> front-matter/metadata artifacts as likely promotion/classification issues.</li>
+    <li>Review the <code>2</code> needs-visual-review cases.</li>
+    <li>Only then consider a narrow correction for the <code>23</code> likely true paragraph grouping defects.</li>
+  </ol>
+
+  <div class="warn">
+    Downstream remains blocked. Every queue still has enough uncertainty to prevent retrieval,
+    embeddings, reasoning, or graph work from depending on canonical paragraphs.
+  </div>
+
+  <h2>Generated Artifact</h2>
+  <p>
+    The run now writes <code>post_adoption_remediation_plan.json</code>. The audit page includes a
+    Post-Adoption Remediation Plan section with queue counts, action type, risk level, affected
+    pages, sample canonical ids, and recommended order.
+  </p>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>

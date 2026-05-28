@@ -47,6 +47,7 @@ REQUIRED_ARTIFACTS = [
     "policy_adoption_decision.json",
     "post_adoption_canonical_safety_report.json",
     "post_adoption_bbox_span_diagnosis.json",
+    "post_adoption_remediation_plan.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -2990,6 +2991,94 @@ def build_post_adoption_bbox_span_diagnosis(
     }
 
 
+REMEDIATION_GROUPS = {
+    "likely_true_paragraph_grouping_defects": {
+        "likely_causes": {"true_paragraph_grouping_defect"},
+        "recommended_next_action": "Visually inspect a focused sample, then design a narrow grouping correction only after the defect pattern is confirmed.",
+        "action_type": "merge/grouping rule work",
+        "risk_level": "high",
+        "downstream_blocked": True,
+    },
+    "front_matter_metadata_artifacts": {
+        "likely_causes": {"front_matter_or_metadata_artifact"},
+        "recommended_next_action": "Review these as promotion/classification issues and keep front matter out of downstream body content until structure handling is explicit.",
+        "action_type": "promotion-rule work",
+        "risk_level": "high",
+        "downstream_blocked": True,
+    },
+    "gold_set_gaps": {
+        "likely_causes": {"gold_set_gap"},
+        "recommended_next_action": "Expand authoritative gold rows for these pages or cases before using them to judge future policy changes.",
+        "action_type": "gold expansion",
+        "risk_level": "medium",
+        "downstream_blocked": True,
+    },
+    "needs_visual_review": {
+        "likely_causes": {"needs_visual_review", "normal_long_paragraph", "threshold_noise"},
+        "recommended_next_action": "Inspect page images, overlays, source lines, and neighboring objects before deciding whether the warning is real or threshold noise.",
+        "action_type": "manual visual review",
+        "risk_level": "medium",
+        "downstream_blocked": True,
+    },
+}
+
+
+def build_post_adoption_remediation_plan(
+    book_id: str,
+    run_id: str,
+    bbox_diagnosis_report: dict[str, Any],
+    canonical_safety_report: dict[str, Any],
+) -> dict[str, Any]:
+    diagnoses = bbox_diagnosis_report.get("diagnoses", [])
+    queues = []
+    assigned_count = 0
+    for group_name, config in REMEDIATION_GROUPS.items():
+        likely_causes = set(config["likely_causes"])
+        rows = [row for row in diagnoses if row.get("likely_cause") in likely_causes]
+        assigned_count += len(rows)
+        queues.append(
+            {
+                "group": group_name,
+                "count": len(rows),
+                "affected_pages": first_unique([row.get("page_number") for row in rows], 30),
+                "sample_canonical_paragraph_ids": first_unique([row.get("canonical_paragraph_id") for row in rows], 12),
+                "text_previews": [row.get("text_preview", "") for row in rows[:5]],
+                "recommended_next_action": config["recommended_next_action"],
+                "action_type": config["action_type"],
+                "risk_level": config["risk_level"],
+                "downstream_remains_blocked_because_of_this_group": bool(rows) and bool(config["downstream_blocked"]),
+                "sample_rows": rows[:10],
+            }
+        )
+    safety_state = canonical_safety_report.get("current_state") or {}
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "post_adoption_remediation_planning",
+        "active_policy": bbox_diagnosis_report.get("active_policy"),
+        "planning_only": True,
+        "does_not_change_extraction_behavior": True,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion", "new merge-policy experiment"],
+        "source_artifact": "post_adoption_bbox_span_diagnosis.json",
+        "summary": {
+            "total_cases": len(diagnoses),
+            "assigned_cases": assigned_count,
+            "queue_count": len(queues),
+            "safe_for_downstream": safety_state.get("safe_for_downstream"),
+            "downstream_recommendation": safety_state.get("downstream_recommendation"),
+        },
+        "queues": queues,
+        "recommended_order": [
+            "Expand authoritative gold rows for the 6 gold-set gaps.",
+            "Review the 9 front-matter/metadata artifacts as likely promotion/classification issues.",
+            "Review the 2 needs-visual-review cases.",
+            "Only then consider a narrow correction for the 23 likely true paragraph grouping defects.",
+        ],
+        "next_action": "expand_gold_and_review_non_grouping_queues_before_new_merge_experiment",
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -3049,6 +3138,7 @@ def build_audit_html(
     policy_adoption_decision = read_json(output_dir / "policy_adoption_decision.json") if (output_dir / "policy_adoption_decision.json").exists() else {}
     post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json") if (output_dir / "post_adoption_canonical_safety_report.json").exists() else {}
     post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json") if (output_dir / "post_adoption_bbox_span_diagnosis.json").exists() else {}
+    post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json") if (output_dir / "post_adoption_remediation_plan.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -3707,6 +3797,24 @@ def build_audit_html(
         "</tr>"
         for row in (post_adoption_bbox_diagnosis.get("diagnoses") or [])[:80]
     )
+    remediation_summary = post_adoption_remediation_plan.get("summary") or {}
+    remediation_queue_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('group'))}</code></td>"
+        f"<td>{esc(row.get('count'))}</td>"
+        f"<td>{esc(row.get('risk_level'))}</td>"
+        f"<td>{esc(row.get('action_type'))}</td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</td>"
+        f"<td><code>{esc(', '.join(str(item) for item in row.get('sample_canonical_paragraph_ids', [])))}</code></td>"
+        f"<td>{esc(row.get('recommended_next_action', ''))}</td>"
+        f"<td><code>{esc(row.get('downstream_remains_blocked_because_of_this_group'))}</code></td>"
+        "</tr>"
+        for row in (post_adoption_remediation_plan.get("queues") or [])
+    )
+    remediation_order_items = "\n".join(
+        f"<li>{esc(item)}</li>"
+        for item in (post_adoption_remediation_plan.get("recommended_order") or [])
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -4230,6 +4338,27 @@ def build_audit_html(
     <tbody>{bbox_diagnosis_all_rows or '<tr><td colspan="10">No bbox/span diagnosis rows.</td></tr>'}</tbody>
   </table>
 
+  <h2>Post-Adoption Remediation Plan</h2>
+  <div class="rule">
+    This is planning-only. It separates remaining bbox/span cases into action queues and does not
+    change extraction behavior.
+  </div>
+  <ul>
+    <li>Total cases: <code>{esc(remediation_summary.get('total_cases', '-'))}</code></li>
+    <li>Assigned cases: <code>{esc(remediation_summary.get('assigned_cases', '-'))}</code></li>
+    <li>Queue count: <code>{esc(remediation_summary.get('queue_count', '-'))}</code></li>
+    <li>Safe for downstream: <code>{esc(remediation_summary.get('safe_for_downstream', '-'))}</code></li>
+    <li>Next action: <code>{esc(post_adoption_remediation_plan.get('next_action', '-'))}</code></li>
+  </ul>
+  <table>
+    <thead>
+      <tr><th>Queue</th><th>Count</th><th>Risk</th><th>Action Type</th><th>Affected Pages</th><th>Samples</th><th>Recommended Next Action</th><th>Blocks Downstream</th></tr>
+    </thead>
+    <tbody>{remediation_queue_rows or '<tr><td colspan="8">No remediation queues recorded.</td></tr>'}</tbody>
+  </table>
+  <h3>Recommended Order</h3>
+  <ol>{remediation_order_items or '<li>No remediation order recorded.</li>'}</ol>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -4491,6 +4620,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     policy_adoption_decision = read_json(output_dir / "policy_adoption_decision.json")
     post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json")
     post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json")
+    post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -4527,6 +4657,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("policy_adoption_decision_exists", (output_dir / "policy_adoption_decision.json").exists())
     add_check("post_adoption_canonical_safety_report_exists", (output_dir / "post_adoption_canonical_safety_report.json").exists())
     add_check("post_adoption_bbox_span_diagnosis_exists", (output_dir / "post_adoption_bbox_span_diagnosis.json").exists())
+    add_check("post_adoption_remediation_plan_exists", (output_dir / "post_adoption_remediation_plan.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -4839,6 +4970,21 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     )
     add_check("post_adoption_bbox_diagnosis_causes_valid", all(row.get("likely_cause") in valid_post_adoption_bbox_causes for row in bbox_diagnoses))
     add_check("post_adoption_bbox_diagnosis_trace_to_canonical", {row.get("canonical_paragraph_id") for row in bbox_diagnoses}.issubset(set(canonical_ids)))
+    remediation_summary = post_adoption_remediation_plan.get("summary") or {}
+    remediation_queues = post_adoption_remediation_plan.get("queues") or []
+    valid_remediation_groups = set(REMEDIATION_GROUPS)
+    valid_action_types = {
+        "merge/grouping rule work",
+        "promotion-rule work",
+        "object classification work",
+        "gold expansion",
+        "manual visual review",
+    }
+    add_check("audit_has_post_adoption_remediation_plan", "Post-Adoption Remediation Plan" in audit_html)
+    add_check("post_adoption_remediation_plan_matches_active_policy", post_adoption_remediation_plan.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check("post_adoption_remediation_plan_counts_match_diagnosis", remediation_summary.get("total_cases") == bbox_diagnosis_summary.get("total_bbox_span_cases"))
+    add_check("post_adoption_remediation_groups_valid", {row.get("group") for row in remediation_queues}.issubset(valid_remediation_groups))
+    add_check("post_adoption_remediation_action_types_valid", all(row.get("action_type") in valid_action_types for row in remediation_queues))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -5017,6 +5163,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "policy_adoption_decision": "policy_adoption_decision.json",
             "post_adoption_canonical_safety_report": "post_adoption_canonical_safety_report.json",
             "post_adoption_bbox_span_diagnosis": "post_adoption_bbox_span_diagnosis.json",
+            "post_adoption_remediation_plan": "post_adoption_remediation_plan.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -5095,6 +5242,12 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         canonical_paragraph_review_report,
         ACTIVE_PARAGRAPH_MERGE_POLICY,
     )
+    post_adoption_remediation_plan = build_post_adoption_remediation_plan(
+        book_id,
+        run_id,
+        post_adoption_bbox_span_diagnosis,
+        post_adoption_canonical_safety_report,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -5155,6 +5308,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "policy_adoption_decision.json", policy_adoption_decision)
     write_json(output_dir / "post_adoption_canonical_safety_report.json", post_adoption_canonical_safety_report)
     write_json(output_dir / "post_adoption_bbox_span_diagnosis.json", post_adoption_bbox_span_diagnosis)
+    write_json(output_dir / "post_adoption_remediation_plan.json", post_adoption_remediation_plan)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

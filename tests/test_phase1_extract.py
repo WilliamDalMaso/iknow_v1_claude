@@ -896,6 +896,16 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             ),
             encoding="utf-8",
         )
+        (output_dir / "post_adoption_remediation_plan.json").write_text(
+            json.dumps(
+                {
+                    "active_policy": "v1_consecutive_lines",
+                    "summary": {"total_cases": 0},
+                    "queues": [],
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {

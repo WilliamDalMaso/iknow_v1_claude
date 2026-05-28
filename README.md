@@ -32,7 +32,8 @@ after formal gold, side-effect review, blocker investigation, and validation gat
 retrieval, embeddings, reasoning, and graph work remain blocked until canonical paragraph review is
 safe. The current post-adoption blocker is `bbox_span_risk`; the current diagnosis shows 23 likely
 true grouping defects, 9 front-matter or metadata artifacts, 6 gold-set gaps, and 2 visual-review
-cases.
+cases. The current remediation order is gold expansion, front-matter/promotion review, visual
+review, then any narrow grouping correction.
 
 ## Documentation Model
 
