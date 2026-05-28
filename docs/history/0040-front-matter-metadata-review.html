@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Front-Matter Metadata Review</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Front-Matter Metadata Review</h1>
+  <p><strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The remediation plan said to review the <code>9</code> front-matter/metadata cases after the
+    gold-set gap queue reached <code>0</code>. This checkpoint added a review-only report so those
+    cases can be separated from true paragraph grouping defects before any rule changes.
+  </p>
+
+  <div class="rule">
+    This changed review reporting only. It did not change extraction behavior, promotion rules, OCR,
+    AI/model review, embeddings, retrieval, graph work, structure promotion, or merge policy.
+  </div>
+
+  <h2>Review Result</h2>
+  <ol>
+    <li>Total reviewed: <code>9</code>.</li>
+    <li>Valid front-matter content: <code>7</code>.</li>
+    <li>Needs review: <code>2</code>.</li>
+    <li>Incorrectly promoted metadata: <code>0</code>.</li>
+    <li>Object-label accuracy remains: <code>1.000</code>.</li>
+  </ol>
+
+  <h2>Interpretation</h2>
+  <p>
+    The front-matter queue was mixed. Pages <code>5</code>, <code>6</code>, <code>8</code>,
+    <code>15</code>, <code>16</code>, <code>17</code>, and <code>18</code> are real Preface or
+    Wendell Phillips letter prose. They are not extraction garbage, but they should not silently
+    enter downstream main-body use until the structure layer explicitly handles front matter.
+  </p>
+  <p>
+    Pages <code>19</code> and <code>20</code> are visually valid Chapter I body paragraphs. Their
+    warning is a boundary heuristic problem: the current early-page/front-matter risk signal is too
+    broad and catches the beginning of the narrative.
+  </p>
+
+  <div class="warn">
+    Downstream remains blocked. The next remediation queue is the <code>8</code> visual-review cases.
+    Do not change promotion rules or grouping rules until that review is complete.
+  </div>
+
+  <h2>Artifacts</h2>
+  <ol>
+    <li>Generated <code>front_matter_metadata_review_report.json</code>.</li>
+    <li>Updated <code>phase1_audit.html</code> with a Front-Matter / Metadata Review section.</li>
+    <li>Updated validation so the report must exist, trace to canonical rows, stay review-only, and use valid classifications.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>

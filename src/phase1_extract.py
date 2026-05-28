@@ -48,6 +48,7 @@ REQUIRED_ARTIFACTS = [
     "post_adoption_canonical_safety_report.json",
     "post_adoption_bbox_span_diagnosis.json",
     "post_adoption_remediation_plan.json",
+    "front_matter_metadata_review_report.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -3092,6 +3093,113 @@ def build_post_adoption_remediation_plan(
     }
 
 
+VALID_FRONT_MATTER_REVIEW_CLASSIFICATIONS = {
+    "incorrectly_promoted_metadata",
+    "valid_front_matter_content",
+    "structure_candidate_needed",
+    "promotion_rule_should_block",
+    "needs_review",
+}
+
+
+def build_front_matter_metadata_review_report(
+    book_id: str,
+    run_id: str,
+    remediation_plan: dict[str, Any],
+    canonical_paragraphs: list[dict[str, Any]],
+    active_policy: str,
+) -> dict[str, Any]:
+    canonical_by_id = {row.get("canonical_paragraph_id"): row for row in canonical_paragraphs}
+    front_matter_queue = next(
+        (row for row in remediation_plan.get("queues", []) if row.get("group") == "front_matter_metadata_artifacts"),
+        {},
+    )
+    queue_rows = front_matter_queue.get("sample_rows", [])
+    review_rows = []
+    for queue_row in queue_rows:
+        canonical_id = queue_row.get("canonical_paragraph_id")
+        canonical_row = canonical_by_id.get(canonical_id, {})
+        page_number = int(queue_row.get("page_number") or canonical_row.get("page_number") or 0)
+        warnings = set(str(warning) for warning in queue_row.get("current_warning_labels", []))
+        source_candidate_id = queue_row.get("source_candidate_object_id") or canonical_row.get("source_candidate_object_id")
+        text_preview = queue_row.get("text_preview") or str(canonical_row.get("clean_text", ""))[:300]
+        if page_number in {19, 20}:
+            likely_classification = "needs_review"
+            recommended_action = (
+                "Treat as visually valid Chapter I narrative body; review the front-matter boundary "
+                "warning because the early-page heuristic is overbroad."
+            )
+            confidence = 0.76
+        elif page_number <= 18:
+            likely_classification = "valid_front_matter_content"
+            recommended_action = (
+                "Keep as real prefatory or letter prose, but do not let it enter downstream main-body "
+                "use until front-matter structure handling is explicit."
+            )
+            confidence = 0.84
+        elif "possible_metadata_or_structure_leakage" in warnings:
+            likely_classification = "structure_candidate_needed"
+            recommended_action = "Review as possible structure-bearing prose before changing promotion rules."
+            confidence = 0.62
+        else:
+            likely_classification = "needs_review"
+            recommended_action = "Inspect page image, overlay, object card, and source lines before deciding."
+            confidence = 0.55
+        review_rows.append(
+            {
+                "canonical_paragraph_id": canonical_id,
+                "page": page_number,
+                "source_candidate_id": source_candidate_id,
+                "text_preview": text_preview,
+                "current_bucket": "main_paragraph_candidate",
+                "promotion_status": canonical_row.get("promotion_status"),
+                "visual_evidence_reference": (
+                    f"phase1_audit.html#page-{page_number}; "
+                    f"phase1_audit.html{audit_anchor_for_object(source_candidate_id)}; "
+                    f"{PAGE_IMAGES_DIR_NAME}/{page_image_filename(page_number)}"
+                ),
+                "likely_classification": likely_classification,
+                "recommended_action": recommended_action,
+                "confidence": confidence,
+                "gold_coverage": queue_row.get("gold_coverage"),
+                "matching_gold_ids": queue_row.get("matching_gold_ids", []),
+                "overlapping_gold_ids": queue_row.get("overlapping_gold_ids", []),
+                "current_warning_labels": queue_row.get("current_warning_labels", []),
+                "source_line_count": queue_row.get("source_line_count"),
+                "page_height_ratio": queue_row.get("page_height_ratio"),
+                "audit_anchor": audit_anchor_for_object(source_candidate_id),
+                "page_anchor": f"#page-{page_number}",
+            }
+        )
+    classification_counts = Counter(row["likely_classification"] for row in review_rows)
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "front_matter_metadata_review",
+        "active_policy": active_policy,
+        "review_only": True,
+        "does_not_change_extraction_behavior": True,
+        "does_not_change_promotion_rules": True,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion", "new merge-policy experiment"],
+        "source_artifacts": [
+            "post_adoption_remediation_plan.json",
+            "post_adoption_bbox_span_diagnosis.json",
+            "phase1_audit.html",
+        ],
+        "summary": {
+            "total_reviewed": len(review_rows),
+            "classification_counts": dict(sorted(classification_counts.items())),
+            "gold_covered_rows": sum(1 for row in review_rows if row.get("gold_coverage") in {"exact_gold_match", "partial_gold_overlap"}),
+            "valid_front_matter_content": classification_counts.get("valid_front_matter_content", 0),
+            "needs_review": classification_counts.get("needs_review", 0),
+            "safe_for_downstream": False,
+            "recommendation": "review_front_matter_structure_and_boundary_rules_before_grouping_correction",
+        },
+        "rows": review_rows,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -3152,6 +3260,7 @@ def build_audit_html(
     post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json") if (output_dir / "post_adoption_canonical_safety_report.json").exists() else {}
     post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json") if (output_dir / "post_adoption_bbox_span_diagnosis.json").exists() else {}
     post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json") if (output_dir / "post_adoption_remediation_plan.json").exists() else {}
+    front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json") if (output_dir / "front_matter_metadata_review_report.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -3828,6 +3937,26 @@ def build_audit_html(
         f"<li>{esc(item)}</li>"
         for item in (post_adoption_remediation_plan.get("recommended_order") or [])
     )
+    front_matter_summary = front_matter_metadata_review_report.get("summary") or {}
+    front_matter_classification_items = "\n".join(
+        f"<li><code>{esc(key)}</code>: {esc(value)}</li>"
+        for key, value in sorted((front_matter_summary.get("classification_counts") or {}).items())
+    )
+    front_matter_review_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page'))}</a></td>"
+        f"<td><code>{esc(row.get('source_candidate_id'))}</code></td>"
+        f"<td><code>{esc(row.get('promotion_status'))}</code></td>"
+        f"<td><code>{esc(row.get('likely_classification'))}</code></td>"
+        f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
+        f"<td>{esc(row.get('gold_coverage'))}</td>"
+        f"<td>{esc(row.get('recommended_action'))}</td>"
+        f"<td>{esc(row.get('text_preview', ''))}</td>"
+        f"<td>{esc(row.get('visual_evidence_reference', ''))}</td>"
+        "</tr>"
+        for row in (front_matter_metadata_review_report.get("rows") or [])
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -4372,6 +4501,26 @@ def build_audit_html(
   <h3>Recommended Order</h3>
   <ol>{remediation_order_items or '<li>No remediation order recorded.</li>'}</ol>
 
+  <h2>Front-Matter / Metadata Review</h2>
+  <div class="warn">
+    This review inspects the front-matter/metadata remediation queue only. It does not demote
+    paragraphs, change promotion rules, add OCR, add model review, or unlock downstream use.
+  </div>
+  <ul>
+    <li>Total reviewed: <code>{esc(front_matter_summary.get('total_reviewed', '-'))}</code></li>
+    <li>Gold-covered rows: <code>{esc(front_matter_summary.get('gold_covered_rows', '-'))}</code></li>
+    <li>Safe for downstream: <code>{esc(front_matter_summary.get('safe_for_downstream', '-'))}</code></li>
+    <li>Recommendation: <code>{esc(front_matter_summary.get('recommendation', '-'))}</code></li>
+  </ul>
+  <h3>Classification Counts</h3>
+  <ul>{front_matter_classification_items or '<li>No front-matter review classifications recorded.</li>'}</ul>
+  <table>
+    <thead>
+      <tr><th>Canonical ID</th><th>Page</th><th>Source Candidate</th><th>Promotion</th><th>Classification</th><th>Confidence</th><th>Gold</th><th>Recommended Action</th><th>Text Preview</th><th>Visual Evidence</th></tr>
+    </thead>
+    <tbody>{front_matter_review_rows or '<tr><td colspan="10">No front-matter/metadata review rows.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -4634,6 +4783,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json")
     post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json")
     post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json")
+    front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -4671,6 +4821,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("post_adoption_canonical_safety_report_exists", (output_dir / "post_adoption_canonical_safety_report.json").exists())
     add_check("post_adoption_bbox_span_diagnosis_exists", (output_dir / "post_adoption_bbox_span_diagnosis.json").exists())
     add_check("post_adoption_remediation_plan_exists", (output_dir / "post_adoption_remediation_plan.json").exists())
+    add_check("front_matter_metadata_review_report_exists", (output_dir / "front_matter_metadata_review_report.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -4998,6 +5149,18 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("post_adoption_remediation_plan_counts_match_diagnosis", remediation_summary.get("total_cases") == bbox_diagnosis_summary.get("total_bbox_span_cases"))
     add_check("post_adoption_remediation_groups_valid", {row.get("group") for row in remediation_queues}.issubset(valid_remediation_groups))
     add_check("post_adoption_remediation_action_types_valid", all(row.get("action_type") in valid_action_types for row in remediation_queues))
+    front_matter_rows = front_matter_metadata_review_report.get("rows") or []
+    front_matter_summary = front_matter_metadata_review_report.get("summary") or {}
+    front_matter_queue_count = next(
+        (row.get("count") for row in remediation_queues if row.get("group") == "front_matter_metadata_artifacts"),
+        0,
+    )
+    add_check("audit_has_front_matter_metadata_review", "Front-Matter / Metadata Review" in audit_html)
+    add_check("front_matter_review_matches_active_policy", front_matter_metadata_review_report.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check("front_matter_review_count_matches_queue", front_matter_summary.get("total_reviewed") == front_matter_queue_count == len(front_matter_rows))
+    add_check("front_matter_review_classifications_valid", all(row.get("likely_classification") in VALID_FRONT_MATTER_REVIEW_CLASSIFICATIONS for row in front_matter_rows))
+    add_check("front_matter_review_trace_to_canonical", {row.get("canonical_paragraph_id") for row in front_matter_rows}.issubset(set(canonical_ids)))
+    add_check("front_matter_review_is_review_only", bool(front_matter_metadata_review_report.get("review_only")))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -5177,6 +5340,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "post_adoption_canonical_safety_report": "post_adoption_canonical_safety_report.json",
             "post_adoption_bbox_span_diagnosis": "post_adoption_bbox_span_diagnosis.json",
             "post_adoption_remediation_plan": "post_adoption_remediation_plan.json",
+            "front_matter_metadata_review_report": "front_matter_metadata_review_report.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -5261,6 +5425,13 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         post_adoption_bbox_span_diagnosis,
         post_adoption_canonical_safety_report,
     )
+    front_matter_metadata_review_report = build_front_matter_metadata_review_report(
+        book_id,
+        run_id,
+        post_adoption_remediation_plan,
+        canonical_paragraphs,
+        ACTIVE_PARAGRAPH_MERGE_POLICY,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -5322,6 +5493,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "post_adoption_canonical_safety_report.json", post_adoption_canonical_safety_report)
     write_json(output_dir / "post_adoption_bbox_span_diagnosis.json", post_adoption_bbox_span_diagnosis)
     write_json(output_dir / "post_adoption_remediation_plan.json", post_adoption_remediation_plan)
+    write_json(output_dir / "front_matter_metadata_review_report.json", front_matter_metadata_review_report)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

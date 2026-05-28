@@ -154,8 +154,9 @@
   <ol>
     <li>Post-adoption safety analysis is report-only; it must not change extraction behavior.</li>
     <li>The next blocker should be diagnosed before another merge or promotion-rule change is attempted.</li>
-    <li>The current bbox/span diagnosis splits the remaining <code>40</code> cases into <code>23</code> likely true grouping defects, <code>9</code> front-matter or metadata artifacts, and <code>8</code> cases needing visual review after the gold-set gap queue was expanded to <code>0</code>.</li>
-    <li>The remediation plan turns those cases into separate queues and now recommends front-matter/promotion review before another merge/grouping rule experiment.</li>
+    <li>The current bbox/span diagnosis splits the remaining <code>40</code> cases into <code>23</code> likely true grouping defects and <code>8</code> cases needing visual review after the gold-set gap queue was expanded to <code>0</code>.</li>
+    <li>The front-matter/metadata review found <code>7</code> valid Preface or Letter paragraphs and <code>2</code> valid Chapter I paragraphs caught by an overbroad early-page warning.</li>
+    <li>The remediation plan keeps these as separate queues and now recommends visual review before another promotion or grouping rule experiment.</li>
     <li>Downstream intelligence remains blocked while <code>safe_for_downstream</code> is <code>false</code>.</li>
   </ol>
 

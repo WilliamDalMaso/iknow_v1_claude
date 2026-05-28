@@ -31,9 +31,10 @@ Current Douglass Phase 1 status: `v2_cross_page_continuation` is the active para
 after formal gold, side-effect review, blocker investigation, and validation gates. Downstream
 retrieval, embeddings, reasoning, and graph work remain blocked until canonical paragraph review is
 safe. The current post-adoption blocker is `bbox_span_risk`; gold coverage has been expanded for the
-former 6 gold-set gap cases, leaving 23 likely true grouping defects, 9 front-matter or metadata
-artifacts, and 8 visual-review cases. The current remediation order is front-matter/promotion
-review, visual review, then any narrow grouping correction.
+former 6 gold-set gap cases. The front-matter/metadata review found 7 valid Preface/Letter
+paragraphs and 2 valid Chapter I paragraphs caught by an overbroad early-page warning. Downstream is
+still blocked; the current order is visual-review cases, then any narrow promotion or grouping
+correction.
 
 ## Documentation Model
 
