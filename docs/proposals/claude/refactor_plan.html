@@ -44,6 +44,17 @@
     <li>Preserve the public entry points and all artifact filenames/paths.</li>
   </ul>
 
+  <h2>2a. Progress (2026-05-28)</h2>
+  <p>Decomposition is underway, one behavior-preserving step per commit, each verified by the regression test (every step reproduced the Douglass fingerprint exactly). Monolith <code>7,524 &rarr; 7,267</code> lines so far. Extracted modules:</p>
+  <ul>
+    <li><code>phase1/io_utils.py</code> &mdash; IO + formatting helpers.</li>
+    <li><code>phase1/text_utils.py</code> &mdash; text-pattern constants + pure text/line helpers.</li>
+    <li><code>phase1/layout_geometry.py</code> &mdash; line margin/indent/height/gap helpers.</li>
+    <li><code>phase1/heuristics.py</code> &mdash; paragraph-text + cross-page provenance heuristics.</li>
+    <li><code>phase1/span_metrics.py</code> &mdash; bbox/span range + severity bucketing.</li>
+  </ul>
+  <p>Remaining (larger / more entangled, reference module-level policy constants and call many siblings): scattered pure helpers (<code>page_status</code>, <code>confidence_for_paragraph</code>, page/bbox helpers), then furniture detection, cross-page joins, promotion, review, gold evaluation, and the ~1,900-line audit-HTML renderer.</p>
+
   <h2>3. Proposed Module Seams</h2>
   <p>Decompose into a <code>src/phase1/</code> package, preserving a thin <code>phase1_extract.py</code> facade that re-exports the existing names (so tests and any callers keep working):</p>
   <ul>
