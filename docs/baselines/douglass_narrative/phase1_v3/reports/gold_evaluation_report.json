@@ -1,0 +1,178 @@
+{
+  "book_id": "douglass_narrative",
+  "run_id": "phase1_v3",
+  "created_at": "2026-05-28T17:43:59Z",
+  "method": "deterministic_gold_review_evaluation_v1",
+  "gold_dir": "reviews/douglass_narrative/gold",
+  "analysis_only": true,
+  "scoring_authoritative": true,
+  "sufficient_to_judge_merge_policy_adoption": true,
+  "insufficiency_reasons": [],
+  "counts": {
+    "gold_pages_reviewed": 13,
+    "gold_paragraph_rows": 17,
+    "gold_object_label_rows": 24,
+    "authoritative_paragraph_rows": 17,
+    "authoritative_object_label_rows": 24,
+    "placeholder_paragraph_rows_excluded": 0,
+    "placeholder_object_label_rows_excluded": 0,
+    "matched_paragraphs": 17,
+    "missing_paragraphs": 0,
+    "over_merged_paragraphs": 0,
+    "over_split_paragraphs": 0,
+    "matched_object_labels": 24,
+    "wrong_object_labels": 0,
+    "missing_object_labels": 0
+  },
+  "scores": {
+    "paragraph_precision": 1.0,
+    "paragraph_recall": 1.0,
+    "object_label_accuracy": 1.0
+  },
+  "gold_pages": [
+    {
+      "page": 21,
+      "reason": "Reviewed body prose and cross-page continuation from page 20 into page 21; representative paragraph-boundary risk.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 22,
+      "reason": "Reviewed body prose and continuation from page 21 into page 22; representative paragraph-boundary risk.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 26,
+      "reason": "Reviewed body prose and continuation from page 25 into page 26 and page 26 into page 27.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 30,
+      "reason": "Reviewed body prose and continuation from page 29 into page 30.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 36,
+      "reason": "Reviewed chapter boundary, body prose, and continuation from page 36 into page 37.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 52,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 58,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 66,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 81,
+      "reason": "Reviewed body prose paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 107,
+      "reason": "Reviewed start of long paragraph that continues through page 108 and into page 109.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 108,
+      "reason": "Reviewed middle of long paragraph that starts on page 107 and continues into page 109.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 109,
+      "reason": "Reviewed continuation of long paragraph that starts on page 107; this covers a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    },
+    {
+      "page": 122,
+      "reason": "Reviewed Appendix body paragraph flagged as a post-adoption gold-set gap.",
+      "review_status": "authoritative_rows_present"
+    }
+  ],
+  "matched_paragraphs": [
+    {
+      "gold_id": "douglass_gold_p0020_0021_001",
+      "matched_object_id": "douglass_narrative:p0020:obj004__xpage__obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0021_001",
+      "matched_object_id": "douglass_narrative:p0021:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0021_0022_001",
+      "matched_object_id": "douglass_narrative:p0021:obj004__xpage__obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0022_001",
+      "matched_object_id": "douglass_narrative:p0022:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0025_0026_001",
+      "matched_object_id": "douglass_narrative:p0025:obj004__xpage__obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0026_001",
+      "matched_object_id": "douglass_narrative:p0026:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0026_0027_001",
+      "matched_object_id": "douglass_narrative:p0026:obj004__xpage__obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0029_0030_001",
+      "matched_object_id": "douglass_narrative:p0029:obj006__xpage__obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0030_001",
+      "matched_object_id": "douglass_narrative:p0030:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0036_001",
+      "matched_object_id": "douglass_narrative:p0036:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0036_0037_001",
+      "matched_object_id": "douglass_narrative:p0036:obj004__xpage__obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0052_001",
+      "matched_object_id": "douglass_narrative:p0052:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0058_001",
+      "matched_object_id": "douglass_narrative:p0058:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0066_001",
+      "matched_object_id": "douglass_narrative:p0066:obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0081_001",
+      "matched_object_id": "douglass_narrative:p0081:obj003"
+    },
+    {
+      "gold_id": "douglass_gold_p0107_0109_001",
+      "matched_object_id": "douglass_narrative:p0107:obj002__xpage__obj002__chain__obj002"
+    },
+    {
+      "gold_id": "douglass_gold_p0122_001",
+      "matched_object_id": "douglass_narrative:p0122:obj003"
+    }
+  ],
+  "missing_paragraphs": [],
+  "over_merged_paragraphs": [],
+  "over_split_paragraphs": [],
+  "wrong_object_labels": [],
+  "missing_object_labels": [],
+  "excluded_placeholder_rows": {
+    "paragraph_gold_ids": [],
+    "object_ids": []
+  }
+}

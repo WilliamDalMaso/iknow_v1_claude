@@ -1,0 +1,1049 @@
+{
+  "created_at": "2026-05-28T17:43:59Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "artifact_exists:source_manifest.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:page_inventory.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:raw_pages.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:layout_objects.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:clean_objects.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:main_paragraph_candidates.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:structure_candidates.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:page_artifacts_candidates.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:unknown_objects.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:reconstruction_map_candidate.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:reading_order_candidate.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:page_images",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:review_overrides_applied.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:cross_page_join_decisions_applied.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:canonical_paragraphs.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:promotion_blockers.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:canonical_promotion_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:canonical_paragraph_review_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:paragraph_merge_experiment_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:paragraph_merge_failure_taxonomy_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:cross_page_join_review_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:xpage_join_0032_investigation.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:policy_adoption_decision.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:post_adoption_canonical_safety_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:post_adoption_bbox_span_diagnosis.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:post_adoption_remediation_plan.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:front_matter_metadata_review_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:visual_review_cases_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:narrow_grouping_correction_design.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:chained_cross_page_continuation_experiment.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:chained_join_review_queue.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:chained_join_decisions_applied.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:guarded_chained_cross_page_continuation_experiment.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:guarded_chained_policy_adoption_decision.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:gold_evaluation_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:cleanup_log.jsonl",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:validation_report.json",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "artifact_exists:phase1_audit.html",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "page_inventory_matches_manifest",
+      "status": "pass",
+      "detail": "126 inventory rows / 126 manifest pages"
+    },
+    {
+      "name": "raw_pages_matches_manifest",
+      "status": "pass",
+      "detail": "126 raw rows / 126 manifest pages"
+    },
+    {
+      "name": "page_numbers_align",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "object_ids_unique",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "clean_objects_match_layout",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "reading_order_candidate_ids_match_layout",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "object_count_matches_reading_order_candidate",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "objects_have_source_lines",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cleanup_log_references_known_objects",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "raw_text_preserved",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_flags_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_experiment_report_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_failure_taxonomy_report_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_review_report_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "xpage_join_0032_investigation_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "policy_adoption_decision_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_canonical_safety_report_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_bbox_span_diagnosis_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_remediation_plan_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "front_matter_metadata_review_report_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "visual_review_cases_report_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "narrow_grouping_correction_design_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_cross_page_continuation_experiment_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_review_queue_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_decisions_applied_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_cross_page_continuation_experiment_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_policy_adoption_decision_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "gold_evaluation_report_exists",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_policy_recorded",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_experiment_policy_recorded",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_experiment_active_counts_match_outputs",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_experiment_counts_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_review_counts_match_rows",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_review_has_required_fields",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_decision_validation_passes",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_decision_counts_match_source",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_decision_ids_unique",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_decisions_reference_known_joins",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_decision_required_fields_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_decisions_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "cross_page_join_decision_candidate_ids_match",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_failure_taxonomy_counts_match_samples",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_failure_taxonomy_categories_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_merge_failure_taxonomy_samples_trace_to_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "gold_evaluation_counts_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "gold_evaluation_placeholder_rows_excluded_from_scoring",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "page_image_count_matches_manifest",
+      "status": "pass",
+      "detail": "126 images / 126 pages"
+    },
+    {
+      "name": "page_images_nonempty",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_links_page_images",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "overlay_data_exists_for_bbox_objects",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_renders_overlay_elements",
+      "status": "pass",
+      "detail": "430 overlays / 430 bbox objects"
+    },
+    {
+      "name": "audit_has_overlay_controls",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_selected_object_detail",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_override_template_generator",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "stream_objects_match_layout",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "paragraph_stream_has_paragraph_ids",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "stream_rows_are_evidence_bound",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "reconstruction_map_counts_match_streams",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_ids_unique",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraphs_trace_to_candidates",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraphs_trace_to_main_paragraph_candidates",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraphs_exclude_non_paragraph_streams",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_rows_promoted",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_rows_evidence_bound",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "promotion_blockers_trace_to_candidates",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "promotion_blockers_rows_blocked",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "promotion_report_counts_match_outputs",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "promotion_report_status_pass",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_review_count_matches_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_review_counts_add_up",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_review_samples_trace_to_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_review_drilldown_counts_match_warnings",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "canonical_paragraph_review_recommendation_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "bbox_span_diagnostic_count_matches_summary",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "bbox_span_diagnostics_have_required_fields",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "bbox_span_diagnostics_trace_to_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "bbox_span_decision_count_matches_diagnostics",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "bbox_span_decisions_trace_to_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "bbox_span_decision_causes_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "bbox_span_decision_actions_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_canonical_paragraph_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_canonical_review_drilldown",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_gold_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_cross_page_join_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_policy_adoption_decision",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_cross_page_join_decision_template",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_xpage_join_0032_investigation",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "xpage_join_0032_investigation_recommends_valid_decision",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "policy_adoption_decision_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "policy_adoption_decision_gate_evidence_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_post_adoption_canonical_safety",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_safety_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_safety_counts_match_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_top_risk_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_post_adoption_bbox_span_diagnosis",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_bbox_diagnosis_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_bbox_diagnosis_count_matches_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_bbox_diagnosis_causes_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_bbox_diagnosis_trace_to_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_post_adoption_remediation_plan",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_remediation_plan_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_remediation_plan_counts_match_diagnosis",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_remediation_groups_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "post_adoption_remediation_action_types_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_front_matter_metadata_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "front_matter_review_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "front_matter_review_count_matches_queue",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "front_matter_review_classifications_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "front_matter_review_trace_to_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "front_matter_review_is_review_only",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_visual_review_cases",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "visual_review_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "visual_review_count_matches_queue",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "visual_review_classifications_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "visual_review_trace_to_canonical",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "visual_review_is_review_only",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "remediation_plan_front_matter_progress_matches_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "remediation_plan_visual_progress_matches_review",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_narrow_grouping_correction_design",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "narrow_grouping_design_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "narrow_grouping_design_is_design_only",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "narrow_grouping_design_count_matches_rows",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "narrow_grouping_design_references_visual_defects",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_chained_cross_page_continuation_experiment",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_experiment_keeps_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_experiment_policy_recorded",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_experiment_does_not_change_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_experiment_targets_confirmed_defect",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_experiment_acceptance_fields_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_chained_join_review_queue",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_review_queue_is_review_only",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_review_queue_count_matches_experiment",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_review_queue_risks_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_review_queue_fields_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_chained_join_decisions",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_decision_validation_passes",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_decision_count_matches_queue",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_decisions_do_not_adopt_v3",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "chained_join_decision_values_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_guarded_chained_cross_page_continuation_experiment",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_records_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_policy_recorded",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_adoption_flag_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_blocks_rejected_join",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_preserves_accepted_decisions",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_blocks_rejected_decisions",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_keeps_cp_000103_fixed",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_chained_experiment_has_join_counts",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_guarded_chained_policy_adoption_decision",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_policy_adoption_matches_active_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_policy_adoption_records_guarded_policy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_policy_adoption_decision_is_adopt",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_policy_adoption_does_not_unlock_downstream",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_policy_adoption_gate_evidence_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "guarded_policy_adoption_gates_pass",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_merge_failure_taxonomy",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_bbox_span_diagnostics",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "audit_has_bbox_span_decision_summary",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_overrides_reference_known_objects",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_override_object_ids_unique",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_override_required_fields_present",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_override_original_buckets_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_override_buckets_valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_overrides_are_curated_source",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_overrides_record_source_path",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "review_override_original_bucket_matches_detector",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "name": "reconstruction_map_records_review_overrides",
+      "status": "pass",
+      "detail": ""
+    }
+  ],
+  "summary": {
+    "page_count": 126,
+    "inventory_rows": 126,
+    "raw_page_rows": 126,
+    "layout_object_rows": 430,
+    "clean_object_rows": 430,
+    "main_paragraph_rows": 262,
+    "structure_rows": 51,
+    "page_artifact_rows": 116,
+    "unknown_rows": 1,
+    "canonical_paragraph_rows": 115,
+    "promotion_blocker_rows": 315,
+    "canonical_paragraph_review_warning_rows": 129,
+    "review_override_rows": 4,
+    "cross_page_join_decision_rows": 31,
+    "page_image_rows": 126,
+    "cleanup_log_rows": 191
+  }
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Douglass phase1_v3 — Reproducibility Baseline</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Douglass <code>phase1_v3</code> — Reproducibility Baseline</h1>
+  <p><strong>Captured by Claude:</strong> 2026-05-28 &middot; <strong>Phase:</strong> A (make it trustworthy)</p>
+
+  <div class="rule">
+    This closes risk R1 from the consistency report. Phase 1 run output lives under git-ignored
+    <code>data/runs/</code>, so the documented canonical state was previously unverifiable from a
+    clean clone. This baseline commits the evidence needed to verify a re-run, without committing raw
+    PDFs or bulky output.
+  </div>
+
+  <h2>Contents</h2>
+  <ul>
+    <li><code>artifact_manifest.json</code> &mdash; <code>sha256</code> + size for all 164 files of the captured <code>phase1_v3</code> run (38 artifacts + 126 page images).</li>
+    <li><code>reports/</code> &mdash; tracked snapshot of the small decision-bearing report JSONs that back the governance numbers, including <code>post_adoption_canonical_safety_report.json</code> (<code>warning_count: 129</code>, <code>safe_for_downstream: false</code>), <code>validation_report.json</code>, <code>canonical_promotion_report.json</code>, <code>gold_evaluation_report.json</code>, and the two policy adoption decisions.</li>
+  </ul>
+
+  <h2>How To Verify A Re-run</h2>
+  <p>After regenerating the run locally, compare it against the committed manifest:</p>
+  <pre><code>python3 src/baseline_manifest.py verify \
+  data/runs/douglass_narrative/phase1_v3 \
+  docs/baselines/douglass_narrative/phase1_v3/artifact_manifest.json</code></pre>
+  <p>
+    <code>MATCH</code> means the run reproduces this baseline exactly. Any <code>MISSING</code>,
+    <code>UNEXPECTED</code>, or <code>CHANGED</code> line is a drift signal to investigate before
+    trusting downstream numbers. The tool only hashes bytes; it does not change extraction behavior.
+  </p>
+
+  <h2>Scope &amp; Limits</h2>
+  <ul>
+    <li>This is a byte-level baseline of the current local run. It establishes a fixed point; it does not claim the run is flawless. <code>safe_for_downstream</code> remains <strong>false</strong>.</li>
+    <li>Re-run determinism itself is validated in Phase B via a golden-output regression test that calls this same <code>verify</code> path.</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -1,0 +1,599 @@
+{
+  "book_id": "douglass_narrative",
+  "run_id": "phase1_v3",
+  "created_at": "2026-05-28T17:43:59Z",
+  "scope": "post_adoption_canonical_paragraph_safety_analysis",
+  "active_policy": "v3_chained_cross_page_continuation_guarded",
+  "does_not_change_extraction_behavior": true,
+  "does_not_add": [
+    "OCR",
+    "AI/model review",
+    "embeddings",
+    "retrieval",
+    "graph work",
+    "structure promotion"
+  ],
+  "current_state": {
+    "promoted_canonical_paragraphs": 115,
+    "risky_canonical_paragraphs": 72,
+    "clean_looking_canonical_paragraphs": 43,
+    "warning_count": 129,
+    "safe_for_downstream": false,
+    "downstream_recommendation": "hold_downstream_intelligence_until_risks_are_reviewed"
+  },
+  "before_after_adoption": {
+    "risky_canonical_paragraphs": {
+      "before": 174,
+      "after": 72
+    },
+    "warning_count": {
+      "before": 323,
+      "after": 129
+    },
+    "bbox_span_risk": {
+      "before": 74,
+      "after": 39
+    },
+    "likely_true_accidental_merges": {
+      "before": 49,
+      "after": 23
+    },
+    "merged_across_paragraph_break": {
+      "before": 35,
+      "after": 16
+    },
+    "taxonomy_counts": {
+      "baseline": {
+        "bbox_or_threshold_artifact": 1,
+        "merged_across_large_vertical_whitespace": 13,
+        "merged_across_paragraph_break": 35
+      },
+      "new": {
+        "bbox_or_threshold_artifact": 1,
+        "merged_across_large_vertical_whitespace": 6,
+        "merged_across_paragraph_break": 16
+      }
+    },
+    "warning_category_deltas": [
+      {
+        "warning": "possible_missing_paragraph_start",
+        "before": 64,
+        "after": 4,
+        "delta": -60
+      },
+      {
+        "warning": "unusual_paragraph_ending",
+        "before": 66,
+        "after": 13,
+        "delta": -53
+      },
+      {
+        "warning": "source_lines_span_suspicious_distance",
+        "before": 74,
+        "after": 39,
+        "delta": -35
+      },
+      {
+        "warning": "suspiciously_short_promoted_paragraph",
+        "before": 22,
+        "after": 5,
+        "delta": -17
+      },
+      {
+        "warning": "suspicious_source_line_vertical_span",
+        "before": 22,
+        "after": 12,
+        "delta": -10
+      },
+      {
+        "warning": "front_matter_or_chapter_boundary_risk",
+        "before": 33,
+        "after": 24,
+        "delta": -9
+      },
+      {
+        "warning": "suspiciously_long_promoted_paragraph",
+        "before": 30,
+        "after": 23,
+        "delta": -7
+      },
+      {
+        "warning": "possible_broken_paragraph_merge",
+        "before": 5,
+        "after": 3,
+        "delta": -2
+      },
+      {
+        "warning": "possible_metadata_or_structure_leakage",
+        "before": 7,
+        "after": 6,
+        "delta": -1
+      }
+    ]
+  },
+  "current_top_risk": {
+    "cluster": "bbox_span_risk",
+    "warning": "source_lines_span_suspicious_distance",
+    "count": 51,
+    "severity": "high",
+    "affected_pages": [
+      5,
+      6,
+      8,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      26,
+      29,
+      30,
+      33,
+      37,
+      41,
+      42,
+      45,
+      46
+    ],
+    "likely_corrective_path": "Inspect multi-line paragraph grouping and split candidates with suspicious vertical span. Inspect visual page spans and split paragraph candidates whose source lines cover too much page height.",
+    "may_require": [
+      "detector_changes",
+      "manual_inspection"
+    ],
+    "issue_type": "detector issue",
+    "why_it_matters": "Large source-line or bounding-box spans can indicate accidental paragraph merges, which would contaminate chunks and reasoning."
+  },
+  "risk_counts": {
+    "warning_categories": {
+      "front_matter_or_chapter_boundary_risk": 24,
+      "possible_broken_paragraph_merge": 3,
+      "possible_metadata_or_structure_leakage": 6,
+      "possible_missing_paragraph_start": 4,
+      "source_lines_span_suspicious_distance": 39,
+      "suspicious_source_line_vertical_span": 12,
+      "suspiciously_long_promoted_paragraph": 23,
+      "suspiciously_short_promoted_paragraph": 5,
+      "unusual_paragraph_ending": 13
+    },
+    "risk_clusters": [
+      {
+        "cluster": "bbox_span_risk",
+        "count": 51,
+        "severity": "high",
+        "affected_pages": [
+          5,
+          6,
+          8,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          26,
+          29,
+          30,
+          33,
+          37,
+          41,
+          42,
+          45,
+          46,
+          50,
+          52,
+          58,
+          66
+        ],
+        "may_require": [
+          "detector_changes",
+          "manual_inspection"
+        ]
+      },
+      {
+        "cluster": "unusual_length",
+        "count": 28,
+        "severity": "medium",
+        "affected_pages": [
+          4,
+          6,
+          14,
+          15,
+          17,
+          19,
+          20,
+          26,
+          27,
+          37,
+          44,
+          46,
+          58,
+          60,
+          66,
+          81,
+          84,
+          89,
+          93,
+          95,
+          112,
+          114,
+          118,
+          122
+        ],
+        "may_require": [
+          "detector_changes",
+          "manual_inspection",
+          "promotion_rule_changes"
+        ]
+      },
+      {
+        "cluster": "boundary_page_risk",
+        "count": 24,
+        "severity": "medium",
+        "affected_pages": [
+          4,
+          5,
+          6,
+          8,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "may_require": [
+          "manual_inspection",
+          "promotion_rule_changes",
+          "review_overrides"
+        ]
+      },
+      {
+        "cluster": "missing_paragraph_start_end",
+        "count": 17,
+        "severity": "medium",
+        "affected_pages": [
+          4,
+          5,
+          14,
+          29,
+          74,
+          88,
+          92,
+          112,
+          118,
+          124,
+          125
+        ],
+        "may_require": [
+          "detector_changes",
+          "manual_inspection"
+        ]
+      },
+      {
+        "cluster": "structure_metadata_leakage",
+        "count": 6,
+        "severity": "high",
+        "affected_pages": [
+          4,
+          5,
+          8,
+          13,
+          14,
+          40
+        ],
+        "may_require": [
+          "manual_inspection",
+          "promotion_rule_changes",
+          "review_overrides"
+        ]
+      },
+      {
+        "cluster": "merge_risk",
+        "count": 3,
+        "severity": "high",
+        "affected_pages": [
+          5,
+          18,
+          125
+        ],
+        "may_require": [
+          "detector_changes",
+          "manual_inspection"
+        ]
+      }
+    ]
+  },
+  "sample_risky_paragraphs": [
+    {
+      "canonical_paragraph_id": "cp_000001",
+      "source_candidate_object_id": "douglass_narrative:p0004:obj001",
+      "page_number": 4,
+      "warnings": [
+        "unusual_paragraph_ending",
+        "front_matter_or_chapter_boundary_risk",
+        "suspiciously_short_promoted_paragraph"
+      ],
+      "word_count": 10,
+      "source_line_ids": [
+        "douglass_narrative:p0004:line001"
+      ],
+      "text_preview": "Entered, according to Act of Congress, in the year 1845,",
+      "audit_anchor": "#card-douglass_narrative-p0004-obj001",
+      "page_anchor": "#page-4"
+    },
+    {
+      "canonical_paragraph_id": "cp_000002",
+      "source_candidate_object_id": "douglass_narrative:p0004:obj003",
+      "page_number": 4,
+      "warnings": [
+        "possible_missing_paragraph_start",
+        "front_matter_or_chapter_boundary_risk",
+        "suspiciously_short_promoted_paragraph"
+      ],
+      "word_count": 10,
+      "source_line_ids": [
+        "douglass_narrative:p0004:line003"
+      ],
+      "text_preview": "in the Clerk\u2019s Office of the District Court of Massachusetts.",
+      "audit_anchor": "#card-douglass_narrative-p0004-obj003",
+      "page_anchor": "#page-4"
+    },
+    {
+      "canonical_paragraph_id": "cp_000003",
+      "source_candidate_object_id": "douglass_narrative:p0004:obj006",
+      "page_number": 4,
+      "warnings": [
+        "possible_metadata_or_structure_leakage",
+        "front_matter_or_chapter_boundary_risk"
+      ],
+      "word_count": 69,
+      "source_line_ids": [
+        "douglass_narrative:p0004:line008",
+        "douglass_narrative:p0004:line009",
+        "douglass_narrative:p0004:line010",
+        "douglass_narrative:p0004:line011",
+        "douglass_narrative:p0004:line012",
+        "douglass_narrative:p0004:line013",
+        "douglass_narrative:p0004:line014"
+      ],
+      "text_preview": "The original book is in the public domain in the United States and in most, if not all, other countries as well. Readers outside the United States should check their own countries\u2019 copyright laws to be certain they can legally download this ebook. The Online B",
+      "audit_anchor": "#card-douglass_narrative-p0004-obj006",
+      "page_anchor": "#page-4"
+    },
+    {
+      "canonical_paragraph_id": "cp_000004",
+      "source_candidate_object_id": "douglass_narrative:p0005:obj002",
+      "page_number": 5,
+      "warnings": [
+        "possible_metadata_or_structure_leakage",
+        "front_matter_or_chapter_boundary_risk"
+      ],
+      "word_count": 101,
+      "source_line_ids": [
+        "douglass_narrative:p0005:line002",
+        "douglass_narrative:p0005:line003",
+        "douglass_narrative:p0005:line004",
+        "douglass_narrative:p0005:line005",
+        "douglass_narrative:p0005:line006",
+        "douglass_narrative:p0005:line007",
+        "douglass_narrative:p0005:line008",
+        "douglass_narrative:p0005:line009",
+        "douglass_narrative:p0005:line010",
+        "douglass_narrative:p0005:line011",
+        "douglass_narrative:p0005:line012"
+      ],
+      "text_preview": "IN the month of August, 1841, I attended an anti-slavery convention in Nantucket, at which it was my happiness to become acquainted with FREDERICK DOUGLASS, the writer of the following Narrative. He was a stranger to nearly every member of that body; but, havi",
+      "audit_anchor": "#card-douglass_narrative-p0005-obj002",
+      "page_anchor": "#page-5"
+    },
+    {
+      "canonical_paragraph_id": "cp_000005",
+      "source_candidate_object_id": "douglass_narrative:p0005:obj003",
+      "page_number": 5,
+      "warnings": [
+        "possible_broken_paragraph_merge",
+        "unusual_paragraph_ending",
+        "front_matter_or_chapter_boundary_risk",
+        "source_lines_span_suspicious_distance"
+      ],
+      "word_count": 147,
+      "source_line_ids": [
+        "douglass_narrative:p0005:line013",
+        "douglass_narrative:p0005:line014",
+        "douglass_narrative:p0005:line015",
+        "douglass_narrative:p0005:line016",
+        "douglass_narrative:p0005:line017",
+        "douglass_narrative:p0005:line018",
+        "douglass_narrative:p0005:line019",
+        "douglass_narrative:p0005:line020",
+        "douglass_narrative:p0005:line021",
+        "douglass_narrative:p0005:line022",
+        "douglass_narrative:p0005:line023",
+        "douglass_narrative:p0005:line024",
+        "douglass_narrative:p0005:line025",
+        "douglass_narrative:p0005:line026",
+        "douglass_narrative:p0005:line027"
+      ],
+      "text_preview": "Fortunate, most fortunate occurrence!\u2014fortunate for the millions of his manacled brethren, yet panting for deliverance from their awful thraldom!\u2014fortunate for the cause of negro emancipation, and of universal liberty!\u2014fortunate for the land of his birth, whic",
+      "audit_anchor": "#card-douglass_narrative-p0005-obj003",
+      "page_anchor": "#page-5"
+    },
+    {
+      "canonical_paragraph_id": "cp_000006",
+      "source_candidate_object_id": "douglass_narrative:p0006:obj002",
+      "page_number": 6,
+      "warnings": [
+        "front_matter_or_chapter_boundary_risk"
+      ],
+      "word_count": 34,
+      "source_line_ids": [
+        "douglass_narrative:p0006:line002",
+        "douglass_narrative:p0006:line003",
+        "douglass_narrative:p0006:line004",
+        "douglass_narrative:p0006:line005"
+      ],
+      "text_preview": "\u201cgave the world assurance of a MAN,\u201d quickened the slumbering energies of his soul, and consecrated him to the great work of breaking the rod of the oppressor, and letting the oppressed go free!",
+      "audit_anchor": "#card-douglass_narrative-p0006-obj002",
+      "page_anchor": "#page-6"
+    },
+    {
+      "canonical_paragraph_id": "cp_000007",
+      "source_candidate_object_id": "douglass_narrative:p0006:obj003",
+      "page_number": 6,
+      "warnings": [
+        "suspicious_source_line_vertical_span",
+        "front_matter_or_chapter_boundary_risk",
+        "suspiciously_long_promoted_paragraph",
+        "source_lines_span_suspicious_distance"
+      ],
+      "word_count": 213,
+      "source_line_ids": [
+        "douglass_narrative:p0006:line006",
+        "douglass_narrative:p0006:line007",
+        "douglass_narrative:p0006:line008",
+        "douglass_narrative:p0006:line009",
+        "douglass_narrative:p0006:line010",
+        "douglass_narrative:p0006:line011",
+        "douglass_narrative:p0006:line012",
+        "douglass_narrative:p0006:line013",
+        "douglass_narrative:p0006:line014",
+        "douglass_narrative:p0006:line015",
+        "douglass_narrative:p0006:line016",
+        "douglass_narrative:p0006:line017",
+        "douglass_narrative:p0006:line018",
+        "douglass_narrative:p0006:line019",
+        "douglass_narrative:p0006:line020",
+        "douglass_narrative:p0006:line021",
+        "douglass_narrative:p0006:line022",
+        "douglass_narrative:p0006:line023",
+        "douglass_narrative:p0006:line024",
+        "douglass_narrative:p0006:line025",
+        "douglass_narrative:p0006:line026"
+      ],
+      "text_preview": "I shall never forget his first speech at the convention\u2014the extraordinary emotion it excited in my own mind\u2014the powerful impression it created upon a crowded auditory, completely taken by surprise\u2014the applause which followed from the beginning to the end of hi",
+      "audit_anchor": "#card-douglass_narrative-p0006-obj003",
+      "page_anchor": "#page-6"
+    },
+    {
+      "canonical_paragraph_id": "cp_000008",
+      "source_candidate_object_id": "douglass_narrative:p0008:obj003",
+      "page_number": 8,
+      "warnings": [
+        "possible_metadata_or_structure_leakage",
+        "front_matter_or_chapter_boundary_risk",
+        "source_lines_span_suspicious_distance"
+      ],
+      "word_count": 118,
+      "source_line_ids": [
+        "douglass_narrative:p0008:line022",
+        "douglass_narrative:p0008:line023",
+        "douglass_narrative:p0008:line024",
+        "douglass_narrative:p0008:line025",
+        "douglass_narrative:p0008:line026",
+        "douglass_narrative:p0008:line027",
+        "douglass_narrative:p0008:line028",
+        "douglass_narrative:p0008:line029",
+        "douglass_narrative:p0008:line030",
+        "douglass_narrative:p0008:line031",
+        "douglass_narrative:p0008:line032",
+        "douglass_narrative:p0008:line033"
+      ],
+      "text_preview": "It is certainly a very remarkable fact, that one of the most efficient advocates of the slave population, now before the public, is a fugitive slave, in the person of FREDERICK DOUGLASS; and that the free colored population of the United States are as ably rep",
+      "audit_anchor": "#card-douglass_narrative-p0008-obj003",
+      "page_anchor": "#page-8"
+    },
+    {
+      "canonical_paragraph_id": "cp_000009",
+      "source_candidate_object_id": "douglass_narrative:p0013:obj001",
+      "page_number": 13,
+      "warnings": [
+        "possible_metadata_or_structure_leakage",
+        "front_matter_or_chapter_boundary_risk"
+      ],
+      "word_count": 26,
+      "source_line_ids": [
+        "douglass_narrative:p0013:line001",
+        "douglass_narrative:p0013:line002",
+        "douglass_narrative:p0013:line003",
+        "douglass_narrative:p0013:line004"
+      ],
+      "text_preview": "PREFACE xiii also of those who committed the crimes which he has alleged against them. His statements, therefore, may easily be disproved, if they are untrue.",
+      "audit_anchor": "#card-douglass_narrative-p0013-obj001",
+      "page_anchor": "#page-13"
+    },
+    {
+      "canonical_paragraph_id": "cp_000010",
+      "source_candidate_object_id": "douglass_narrative:p0014:obj001",
+      "page_number": 14,
+      "warnings": [
+        "possible_metadata_or_structure_leakage",
+        "possible_missing_paragraph_start",
+        "front_matter_or_chapter_boundary_risk",
+        "suspiciously_short_promoted_paragraph"
+      ],
+      "word_count": 18,
+      "source_line_ids": [
+        "douglass_narrative:p0014:line001",
+        "douglass_narrative:p0014:line002",
+        "douglass_narrative:p0014:line003"
+      ],
+      "text_preview": "xiv PREFACE Is it possible for the human mind to conceive of a more horrible state of society?",
+      "audit_anchor": "#card-douglass_narrative-p0014-obj001",
+      "page_anchor": "#page-14"
+    },
+    {
+      "canonical_paragraph_id": "cp_000011",
+      "source_candidate_object_id": "douglass_narrative:p0014:obj002",
+      "page_number": 14,
+      "warnings": [
+        "front_matter_or_chapter_boundary_risk"
+      ],
+      "word_count": 93,
+      "source_line_ids": [
+        "douglass_narrative:p0014:line004",
+        "douglass_narrative:p0014:line005",
+        "douglass_narrative:p0014:line006",
+        "douglass_narrative:p0014:line007",
+        "douglass_narrative:p0014:line008",
+        "douglass_narrative:p0014:line009",
+        "douglass_narrative:p0014:line010",
+        "douglass_narrative:p0014:line011",
+        "douglass_narrative:p0014:line012"
+      ],
+      "text_preview": "The effect of a religious profession on the conduct of southern masters is vividly described in the following Narrative, and shown to be any thing but salutary. In the nature of the case, it must be in the highest degree pernicious. The testimony of Mr. DOUGLA",
+      "audit_anchor": "#card-douglass_narrative-p0014-obj002",
+      "page_anchor": "#page-14"
+    },
+    {
+      "canonical_paragraph_id": "cp_000012",
+      "source_candidate_object_id": "douglass_narrative:p0014:obj003",
+      "page_number": 14,
+      "warnings": [
+        "unusual_paragraph_ending",
+        "front_matter_or_chapter_boundary_risk"
+      ],
+      "word_count": 88,
+      "source_line_ids": [
+        "douglass_narrative:p0014:line013",
+        "douglass_narrative:p0014:line014",
+        "douglass_narrative:p0014:line015",
+        "douglass_narrative:p0014:line016",
+        "douglass_narrative:p0014:line017",
+        "douglass_narrative:p0014:line018",
+        "douglass_narrative:p0014:line019",
+        "douglass_narrative:p0014:line020"
+      ],
+      "text_preview": "Reader! are you with the man-stealers in sympathy and purpose, or on the side of their down-trodden victims? If with the former, then are you the foe of God and man. If with the latter, what are you prepared to do and dare in their behalf? Be faithful, be vigi",
+      "audit_anchor": "#card-douglass_narrative-p0014-obj003",
+      "page_anchor": "#page-14"
+    }
+  ],
+  "recommendation": "analyze_top_blocker_before_changing_extraction_behavior"
+}

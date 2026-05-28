@@ -1,0 +1,33 @@
+{
+  "book_id": "douglass_narrative",
+  "run_id": "phase1_v3",
+  "created_at": "2026-05-28T17:43:59Z",
+  "promotion_gate": "paragraph_candidate_promotion_v1",
+  "scope": "main_paragraph_candidates_only",
+  "canonical_does_not_mean_perfect": true,
+  "rule": "Canonical paragraphs are evidence-bound, audited enough under current rules, and safe for downstream use; they are not claimed flawless.",
+  "status": "pass",
+  "counts": {
+    "total_candidates_reviewed": 430,
+    "paragraph_candidates_reviewed": 262,
+    "promoted_paragraphs": 115,
+    "blocked_candidates": 315,
+    "paragraph_candidates_blocked": 147,
+    "non_paragraph_candidates_blocked": 168,
+    "override_influenced_promotions": 0
+  },
+  "warning_counts": {
+    "candidate_only_page_furniture_detection": 117,
+    "cid_noise": 1,
+    "long_paragraph_candidate": 71,
+    "not_canonical_heading_yet": 47,
+    "review_override_applied": 4,
+    "short_paragraph_candidate": 78
+  },
+  "blocking_warning_policy": [
+    "cid_noise",
+    "cid_noise_detected",
+    "long_paragraph_candidate",
+    "short_paragraph_candidate"
+  ]
+}

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Automation Roadmap</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    .done { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 10px; text-align: left; vertical-align: top; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Claude Lane — Automation Roadmap</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28</p>
+  <p><strong>Goal:</strong> a trustworthy, book-agnostic, repeatable automated extraction and cleaned-text pipeline.</p>
+
+  <div class="rule">
+    <strong>Key fact:</strong> the pipeline already exists end-to-end. <code>run_phase1(pdf_path,
+    book_id, run_id)</code> in <code>src/phase1_extract.py</code> runs PDF &rarr; raw &rarr; cleaned
+    text &rarr; review/audit in one shot, with a CLI <code>main()</code> and
+    <code>validate_phase1_run()</code>. The work is not "build a pipeline"; it is to make that
+    pipeline <em>verifiable, book-agnostic, and repeatable</em> without bypassing the gold/review
+    gates.
+  </div>
+
+  <h2>Through-line</h2>
+  <p>
+    The automated deliverable is <strong>candidate cleaned text</strong>
+    (<code>clean_objects.jsonl</code> + <code>cleanup_log.jsonl</code>), produced for any book by one
+    command, with a machine-readable report stating what is blocked and whether it is promotable.
+    Automation means orchestration plus honest gate reporting &mdash; never auto-promotion. All
+    existing blocks stay.
+  </p>
+
+  <h2>Phases</h2>
+  <table>
+    <tr><th>Phase</th><th>Aim</th><th>Key work</th><th>Status</th></tr>
+    <tr>
+      <td>A</td><td>Make it trustworthy</td>
+      <td>Committed artifact-hash manifest + tracked report snapshot so any clone can verify the documented run (closes R1).</td>
+      <td><strong>In progress (this commit)</strong></td>
+    </tr>
+    <tr>
+      <td>B</td><td>Make it safe to change</td>
+      <td>Golden-output regression test (re-run Douglass, assert hashes match the Phase A manifest), then guarded decomposition of the 7.5k-line monolith into <code>src/phase1/</code> seams.</td>
+      <td>Planned</td>
+    </tr>
+    <tr>
+      <td>C</td><td>Make it book-agnostic</td>
+      <td>Per-book config (replace hardcoded <code>run_id="phase1_v3"</code> and module-level policy constants); graceful no-curation path for books without gold/overrides; one consolidated run-gate report.</td>
+      <td>Planned</td>
+    </tr>
+    <tr>
+      <td>D</td><td>Make it observable</td>
+      <td>Structured run-stamped events (book_id / run_id / git_commit / actor); dashboard becomes an index into the durable decision ledger.</td>
+      <td>Planned</td>
+    </tr>
+    <tr>
+      <td>E</td><td>Make it repeatable</td>
+      <td>Single entry command + CI-style fixture test on a tiny PDF; then the Hobbit diagnostic dry-run (extraction + cleaned text + audit, no promotion).</td>
+      <td>Planned</td>
+    </tr>
+  </table>
+
+  <h2>Critical path</h2>
+  <p>
+    <strong>A &rarr; B &rarr; C.</strong> Trustworthy baseline, safe-to-change code, then
+    book-agnostic orchestration. C is where "automated extraction + cleaned text for any book"
+    actually lands.
+  </p>
+
+  <div class="done">
+    <strong>Phase A delivered in this pass:</strong> <code>src/baseline_manifest.py</code> (compute/verify
+    tool + CLI), the committed baseline under
+    <code>docs/baselines/douglass_narrative/phase1_v3/</code> (164-file manifest + snapshot of the
+    decision-bearing reports), and <code>tests/test_baseline_manifest.py</code>. Verified
+    <code>MATCH</code> against the local run.
+  </div>
+
+  <h2>What stays fixed throughout</h2>
+  <ul>
+    <li>Automation never unblocks downstream work; promotion stays gold-gated, side-effect-reviewed, and human-adopted.</li>
+    <li>Douglass stays <code>safe_for_downstream: false</code> until its 23 grouping defects and 39 bbox/span cases are resolved.</li>
+    <li>A second book stays a candidate, not canonical.</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="project_review.html">project_review.html</a></li>
+    <li><a href="refactor_plan.html">refactor_plan.html</a> (Phase B detail)</li>
+    <li><a href="observability_upgrade_plan.html">observability_upgrade_plan.html</a> (Phase D detail)</li>
+    <li><a href="second_book_readiness_plan.html">second_book_readiness_plan.html</a> (Phase E detail)</li>
+    <li><a href="consistency_risk_report.html">consistency_risk_report.html</a> (R1 closed by Phase A)</li>
+    <li><a href="../../baselines/douglass_narrative/phase1_v3/index.html">Douglass phase1_v3 baseline</a></li>
+  </ul>
+</main>
+</body>
+</html>
