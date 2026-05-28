@@ -55,6 +55,7 @@ REQUIRED_ARTIFACTS = [
     "chained_join_review_queue.json",
     "chained_join_decisions_applied.json",
     "guarded_chained_cross_page_continuation_experiment.json",
+    "guarded_chained_policy_adoption_decision.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -71,8 +72,8 @@ PARAGRAPH_BREAK_GUARDED_POLICY = "v2_paragraph_break_guarded"
 CROSS_PAGE_CONTINUATION_POLICY = "v2_cross_page_continuation"
 CHAINED_CROSS_PAGE_CONTINUATION_POLICY = "v3_chained_cross_page_continuation"
 GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY = "v3_chained_cross_page_continuation_guarded"
-ACTIVE_PARAGRAPH_MERGE_POLICY = CROSS_PAGE_CONTINUATION_POLICY
-EXPERIMENTAL_PARAGRAPH_MERGE_POLICY = CROSS_PAGE_CONTINUATION_POLICY
+ACTIVE_PARAGRAPH_MERGE_POLICY = GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY
+EXPERIMENTAL_PARAGRAPH_MERGE_POLICY = GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY
 VALID_PARAGRAPH_MERGE_POLICIES = {
     BASELINE_PARAGRAPH_MERGE_POLICY,
     PARAGRAPH_BREAK_GUARDED_POLICY,
@@ -2929,9 +2930,8 @@ def build_policy_adoption_decision(
         "xpage_join_0032_resolved": xpage_join_0032_investigation.get("recommended_decision") == "accept",
         "validation_required": True,
     }
-    adopted = (
-        active_manifest_policy == CROSS_PAGE_CONTINUATION_POLICY
-        and gates["gold_score_improved"]
+    gates_pass = (
+        gates["gold_score_improved"]
         and gates["over_splits_decreased"]
         and gates["over_merges_not_increased"]
         and not gates["audit_warning_regression"]
@@ -2940,14 +2940,26 @@ def build_policy_adoption_decision(
         and gates["no_curated_rejections"]
         and gates["xpage_join_0032_resolved"]
     )
+    adopted = active_manifest_policy in {CROSS_PAGE_CONTINUATION_POLICY, GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY} and gates_pass
+    if adopted and active_manifest_policy == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY:
+        decision = "v2_cross_page_continuation_adoption_superseded_by_guarded_v3"
+        adoption_note = (
+            "The v2 cross-page continuation gate remains satisfied as a prerequisite, but current active policy is governed by guarded_chained_policy_adoption_decision.json."
+        )
+    elif adopted:
+        decision = "adopt_v2_cross_page_continuation"
+        adoption_note = "Policy is active for Phase 1 paragraph merging; downstream intelligence remains blocked until canonical paragraph review becomes safe."
+    else:
+        decision = "do_not_adopt"
+        adoption_note = "Policy was not adopted because one or more gates failed."
     return {
         "book_id": book_id,
         "run_id": run_id,
         "created_at": utc_now(),
-        "decision": "adopt_v2_cross_page_continuation" if adopted else "do_not_adopt",
+        "decision": decision,
         "active_paragraph_merge_policy": active_manifest_policy,
         "previous_policy": BASELINE_PARAGRAPH_MERGE_POLICY,
-        "adopted_policy": CROSS_PAGE_CONTINUATION_POLICY if adopted else None,
+        "adopted_policy": active_manifest_policy if adopted else None,
         "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion"],
         "gate_evidence": {
             "gold_paragraph_precision_before": gold_scores.get("baseline_paragraph_precision"),
@@ -2990,11 +3002,7 @@ def build_policy_adoption_decision(
             "object_label_accuracy": active_gold_scores.get("object_label_accuracy"),
         },
         "gates": gates,
-        "adoption_note": (
-            "Policy is active for Phase 1 paragraph merging; downstream intelligence remains blocked until canonical paragraph review becomes safe."
-            if adopted
-            else "Policy was not adopted because one or more gates failed."
-        ),
+        "adoption_note": adoption_note,
     }
 
 
@@ -3563,6 +3571,7 @@ def build_visual_review_cases_report(
             }
         )
     classification_counts = Counter(row["likely_classification"] for row in review_rows)
+    true_grouping_defects = classification_counts.get("true_paragraph_grouping_defect", 0)
     return {
         "book_id": book_id,
         "run_id": run_id,
@@ -3583,12 +3592,16 @@ def build_visual_review_cases_report(
             "classification_counts": dict(sorted(classification_counts.items())),
             "gold_covered_rows": sum(1 for row in review_rows if row.get("gold_coverage") in {"exact_gold_match", "partial_gold_overlap"}),
             "valid_canonical_paragraphs": classification_counts.get("valid_canonical_paragraph", 0),
-            "true_paragraph_grouping_defects": classification_counts.get("true_paragraph_grouping_defect", 0),
+            "true_paragraph_grouping_defects": true_grouping_defects,
             "threshold_noise": classification_counts.get("threshold_noise", 0),
             "extraction_loss_suspected": classification_counts.get("extraction_loss_suspected", 0),
             "unresolved": classification_counts.get("unresolved", 0),
             "safe_for_downstream": False,
-            "recommendation": "fix_or_gate_the_confirmed_page_109_grouping_defect_before_downstream_use",
+            "recommendation": (
+                "fix_or_gate_confirmed_visual_grouping_defects_before_downstream_use"
+                if true_grouping_defects
+                else "no_visual_review_grouping_defect_remains; continue_with_remaining_likely_grouping_defect_queue"
+            ),
         },
         "rows": review_rows,
     }
@@ -3658,7 +3671,7 @@ def update_remediation_plan_after_reviews(
         recommended_order.append(f"Review the {queue_counts['needs_visual_review']} needs-visual-review cases.")
     if queue_counts.get("likely_true_paragraph_grouping_defects", 0):
         recommended_order.append(
-            f"Consider a narrow correction for the {queue_counts['likely_true_paragraph_grouping_defects']} likely true paragraph grouping defects, starting with confirmed page 109 over-splitting."
+            f"Review and design a narrow correction path for the {queue_counts['likely_true_paragraph_grouping_defects']} likely true paragraph grouping defects under the active policy."
         )
     plan["queues"] = queues
     plan["review_progress"] = review_progress
@@ -3670,7 +3683,7 @@ def update_remediation_plan_after_reviews(
     elif not visual_complete:
         plan["next_action"] = "review_visual_review_queue"
     else:
-        plan["next_action"] = "design_narrow_grouping_correction_for_confirmed_defects"
+        plan["next_action"] = "review_likely_true_grouping_defects_under_active_policy"
     return plan
 
 
@@ -4290,10 +4303,11 @@ def build_guarded_chained_cross_page_continuation_experiment(
         "created_at": utc_now(),
         "scope": "experiment_only_guarded_chained_cross_page_continuation",
         "active_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
+        "active_v2_policy_before_guarded_adoption": CROSS_PAGE_CONTINUATION_POLICY,
         "previous_experimental_policy": CHAINED_CROSS_PAGE_CONTINUATION_POLICY,
         "guarded_experimental_policy": GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY,
-        "does_not_change_active_policy": True,
-        "does_not_adopt_guarded_policy": True,
+        "does_not_change_active_policy": ACTIVE_PARAGRAPH_MERGE_POLICY != GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY,
+        "does_not_adopt_guarded_policy": ACTIVE_PARAGRAPH_MERGE_POLICY != GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY,
         "does_not_change_canonical_promotion_rules": True,
         "guard_rule": "Block chained joins when terminal page of the existing joined candidate contains later non-furniture paragraph content before the next-page candidate.",
         "active_v2_metrics": {
@@ -4379,6 +4393,125 @@ def build_guarded_chained_cross_page_continuation_experiment(
     }
 
 
+def build_guarded_chained_policy_adoption_decision(
+    book_id: str,
+    run_id: str,
+    guarded_experiment: dict[str, Any],
+    active_evaluation: dict[str, Any],
+    active_policy: str,
+    validation_status: str = "pending",
+) -> dict[str, Any]:
+    acceptance = guarded_experiment.get("acceptance_rule") or {}
+    decision_replay = guarded_experiment.get("decision_replay") or {}
+    side_effects = guarded_experiment.get("side_effects") or {}
+    gold_scores = guarded_experiment.get("gold_scores") or {}
+    gold_counts = guarded_experiment.get("gold_counts") or {}
+    warning_deltas = guarded_experiment.get("warning_deltas") or {}
+    active_review = active_evaluation.get("review_report", {})
+    active_review_counts = active_review.get("counts", {})
+    active_promotion_counts = active_evaluation.get("promotion_report", {}).get("counts", {})
+    active_gold = active_evaluation.get("gold_evaluation_report", {})
+    active_gold_scores = active_gold.get("scores", {})
+    active_gold_counts = active_gold.get("counts", {})
+    unresolved_chained_joins = int(decision_replay.get("accepted_prior_decisions", 0) or 0) - int(
+        decision_replay.get("accepted_prior_decisions_preserved", 0) or 0
+    )
+    unresolved_chained_joins += int(decision_replay.get("rejected_prior_decisions", 0) or 0) - int(
+        decision_replay.get("rejected_prior_decisions_blocked", 0) or 0
+    )
+    gates = {
+        "guarded_experiment_passed": bool(acceptance.get("passes_experiment_gate")),
+        "cp_000103_remains_fixed": bool(acceptance.get("cp_000103_remains_fixed")),
+        "false_join_blocked": bool(acceptance.get("chained_join_review_0004_blocked")),
+        "accepted_prior_decisions_preserved": bool(acceptance.get("all_accepted_prior_decisions_preserved")),
+        "rejected_prior_decisions_blocked": bool(acceptance.get("rejected_prior_decisions_blocked")),
+        "gold_score_improved": bool(acceptance.get("gold_score_improved")),
+        "over_merges_not_increased": bool(acceptance.get("over_merges_not_increased")),
+        "object_label_accuracy_not_worsened": bool(acceptance.get("object_label_accuracy_not_worsened")),
+        "audit_warning_regression": bool(acceptance.get("audit_warning_regression")),
+        "bbox_span_regression": bool(acceptance.get("bbox_span_regression")),
+        "unresolved_chained_joins": unresolved_chained_joins,
+        "active_policy_is_guarded_v3": active_policy == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY,
+    }
+    adopted = (
+        gates["active_policy_is_guarded_v3"]
+        and gates["guarded_experiment_passed"]
+        and gates["cp_000103_remains_fixed"]
+        and gates["false_join_blocked"]
+        and gates["accepted_prior_decisions_preserved"]
+        and gates["rejected_prior_decisions_blocked"]
+        and gates["gold_score_improved"]
+        and gates["over_merges_not_increased"]
+        and gates["object_label_accuracy_not_worsened"]
+        and not gates["audit_warning_regression"]
+        and not gates["bbox_span_regression"]
+        and unresolved_chained_joins == 0
+    )
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "formal_guarded_chained_policy_adoption_decision",
+        "decision": "adopt_v3_chained_cross_page_continuation_guarded" if adopted else "do_not_adopt_guarded_v3",
+        "previous_active_policy": CROSS_PAGE_CONTINUATION_POLICY,
+        "active_paragraph_merge_policy": active_policy,
+        "adopted_policy": GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY if adopted else None,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion", "broad promotion blocking"],
+        "does_not_unlock_downstream": True,
+        "validation_status": validation_status,
+        "gate_evidence": {
+            "active_v2_metrics": guarded_experiment.get("active_v2_metrics"),
+            "previous_unguarded_v3_metrics": guarded_experiment.get("previous_v3_metrics"),
+            "guarded_v3_metrics": guarded_experiment.get("guarded_v3_metrics"),
+            "gold_paragraph_precision_before": gold_scores.get("active_paragraph_precision"),
+            "gold_paragraph_precision_after": gold_scores.get("guarded_paragraph_precision"),
+            "gold_paragraph_recall_before": gold_scores.get("active_paragraph_recall"),
+            "gold_paragraph_recall_after": gold_scores.get("guarded_paragraph_recall"),
+            "matched_paragraphs_before": gold_counts.get("active_matched_paragraphs"),
+            "matched_paragraphs_after": gold_counts.get("guarded_matched_paragraphs"),
+            "over_split_paragraphs_before": gold_counts.get("active_over_split_paragraphs"),
+            "over_split_paragraphs_after": gold_counts.get("guarded_over_split_paragraphs"),
+            "over_merged_paragraphs_before": gold_counts.get("active_over_merged_paragraphs"),
+            "over_merged_paragraphs_after": gold_counts.get("guarded_over_merged_paragraphs"),
+            "object_label_accuracy_before": gold_scores.get("active_object_label_accuracy"),
+            "object_label_accuracy_after": gold_scores.get("guarded_object_label_accuracy"),
+            "warning_deltas": warning_deltas,
+            "cp_000103_remains_fixed": acceptance.get("cp_000103_remains_fixed"),
+            "chained_join_review_0004_blocked": acceptance.get("chained_join_review_0004_blocked"),
+            "accepted_prior_decisions_preserved": decision_replay.get("accepted_prior_decisions_preserved"),
+            "accepted_prior_decisions": decision_replay.get("accepted_prior_decisions"),
+            "rejected_prior_decisions_blocked": decision_replay.get("rejected_prior_decisions_blocked"),
+            "rejected_prior_decisions": decision_replay.get("rejected_prior_decisions"),
+            "unresolved_chained_joins": unresolved_chained_joins,
+            "guarded_proposed_chained_joins": side_effects.get("proposed_chained_joins"),
+            "guarded_rejected_chained_joins": side_effects.get("rejected_chained_joins"),
+            "validation_status": validation_status,
+            "downstream_safety_status": active_review.get("safe_for_downstream"),
+        },
+        "active_run_after_adoption": {
+            "canonical_promoted_paragraphs": active_promotion_counts.get("promoted_paragraphs"),
+            "paragraph_candidates": active_promotion_counts.get("paragraph_candidates_reviewed"),
+            "blocked_paragraph_candidates": active_promotion_counts.get("paragraph_candidates_blocked"),
+            "canonical_review_warning_count": active_review_counts.get("warning_count"),
+            "canonical_review_risky_paragraph_count": active_review_counts.get("risky_paragraph_count"),
+            "safe_for_downstream": active_review.get("safe_for_downstream"),
+            "downstream_recommendation": active_review.get("recommendation"),
+            "gold_paragraph_precision": active_gold_scores.get("paragraph_precision"),
+            "gold_paragraph_recall": active_gold_scores.get("paragraph_recall"),
+            "gold_matched_paragraphs": active_gold_counts.get("matched_paragraphs"),
+            "gold_over_split_paragraphs": active_gold_counts.get("over_split_paragraphs"),
+            "gold_over_merged_paragraphs": active_gold_counts.get("over_merged_paragraphs"),
+            "object_label_accuracy": active_gold_scores.get("object_label_accuracy"),
+        },
+        "gates": gates,
+        "adoption_note": (
+            "Guarded v3 is now the active paragraph merge policy. Downstream intelligence remains blocked until canonical paragraph safety is separately safe."
+            if adopted
+            else "Guarded v3 was not adopted because one or more adoption gates failed."
+        ),
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -4446,6 +4579,7 @@ def build_audit_html(
     chained_join_review_queue = read_json(output_dir / "chained_join_review_queue.json") if (output_dir / "chained_join_review_queue.json").exists() else {}
     chained_join_decisions_applied = read_json(output_dir / "chained_join_decisions_applied.json") if (output_dir / "chained_join_decisions_applied.json").exists() else {}
     guarded_chained_experiment = read_json(output_dir / "guarded_chained_cross_page_continuation_experiment.json") if (output_dir / "guarded_chained_cross_page_continuation_experiment.json").exists() else {}
+    guarded_policy_adoption_decision = read_json(output_dir / "guarded_chained_policy_adoption_decision.json") if (output_dir / "guarded_chained_policy_adoption_decision.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -5257,6 +5391,9 @@ def build_audit_html(
     guarded_decision_replay = guarded_chained_experiment.get("decision_replay") or {}
     guarded_side_effects = guarded_chained_experiment.get("side_effects") or {}
     guarded_warning_deltas = guarded_chained_experiment.get("warning_deltas") or {}
+    guarded_adoption_gate_evidence = guarded_policy_adoption_decision.get("gate_evidence") or {}
+    guarded_adoption_active_run = guarded_policy_adoption_decision.get("active_run_after_adoption") or {}
+    guarded_adoption_gates = guarded_policy_adoption_decision.get("gates") or {}
     guarded_join_rows = "\n".join(
         "<tr>"
         f"<td><code>{esc(row.get('first_object_id'))}</code></td>"
@@ -6029,6 +6166,42 @@ def build_audit_html(
     <tbody>{guarded_rejected_rows or '<tr><td colspan="7">No guarded rejected chained candidates.</td></tr>'}</tbody>
   </table>
 
+  <h2>Guarded Chained Policy Adoption Decision</h2>
+  <div class="rule">
+    This is the formal adoption checkpoint for
+    <code>{esc(guarded_policy_adoption_decision.get('adopted_policy', '-'))}</code>. It records
+    policy adoption separately from downstream readiness.
+  </div>
+  <ul>
+    <li>Decision: <code>{esc(guarded_policy_adoption_decision.get('decision', '-'))}</code></li>
+    <li>Previous active policy: <code>{esc(guarded_policy_adoption_decision.get('previous_active_policy', '-'))}</code></li>
+    <li>Current active policy: <code>{esc(guarded_policy_adoption_decision.get('active_paragraph_merge_policy', '-'))}</code></li>
+    <li>Validation status: <code>{esc(guarded_policy_adoption_decision.get('validation_status', '-'))}</code></li>
+    <li>Gold precision before/after: <code>{esc(fmt_decimal(guarded_adoption_gate_evidence.get('gold_paragraph_precision_before'), 3))}</code> to <code>{esc(fmt_decimal(guarded_adoption_gate_evidence.get('gold_paragraph_precision_after'), 3))}</code></li>
+    <li>Gold recall before/after: <code>{esc(fmt_decimal(guarded_adoption_gate_evidence.get('gold_paragraph_recall_before'), 3))}</code> to <code>{esc(fmt_decimal(guarded_adoption_gate_evidence.get('gold_paragraph_recall_after'), 3))}</code></li>
+    <li>Matched paragraphs before/after: <code>{esc(guarded_adoption_gate_evidence.get('matched_paragraphs_before', '-'))}</code> to <code>{esc(guarded_adoption_gate_evidence.get('matched_paragraphs_after', '-'))}</code></li>
+    <li>Over-split before/after: <code>{esc(guarded_adoption_gate_evidence.get('over_split_paragraphs_before', '-'))}</code> to <code>{esc(guarded_adoption_gate_evidence.get('over_split_paragraphs_after', '-'))}</code></li>
+    <li>Over-merged before/after: <code>{esc(guarded_adoption_gate_evidence.get('over_merged_paragraphs_before', '-'))}</code> to <code>{esc(guarded_adoption_gate_evidence.get('over_merged_paragraphs_after', '-'))}</code></li>
+    <li><code>cp_000103</code> remains fixed: <code>{esc(guarded_adoption_gate_evidence.get('cp_000103_remains_fixed', '-'))}</code></li>
+    <li><code>chained_join_review_0004</code> blocked: <code>{esc(guarded_adoption_gate_evidence.get('chained_join_review_0004_blocked', '-'))}</code></li>
+    <li>Unresolved chained joins: <code>{esc(guarded_adoption_gate_evidence.get('unresolved_chained_joins', '-'))}</code></li>
+    <li>Canonical promoted paragraphs after adoption: <code>{esc(guarded_adoption_active_run.get('canonical_promoted_paragraphs', '-'))}</code></li>
+    <li>Canonical review warnings after adoption: <code>{esc(guarded_adoption_active_run.get('canonical_review_warning_count', '-'))}</code></li>
+    <li>Safe for downstream: <code>{esc(guarded_adoption_active_run.get('safe_for_downstream', '-'))}</code></li>
+    <li>Does not unlock downstream: <code>{esc(guarded_policy_adoption_decision.get('does_not_unlock_downstream', '-'))}</code></li>
+  </ul>
+  <h3>Adoption Gates</h3>
+  <ul>
+    <li>Guarded experiment passed: <code>{esc(guarded_adoption_gates.get('guarded_experiment_passed', '-'))}</code></li>
+    <li>Accepted decisions preserved: <code>{esc(guarded_adoption_gates.get('accepted_prior_decisions_preserved', '-'))}</code></li>
+    <li>Rejected decisions blocked: <code>{esc(guarded_adoption_gates.get('rejected_prior_decisions_blocked', '-'))}</code></li>
+    <li>Gold score improved: <code>{esc(guarded_adoption_gates.get('gold_score_improved', '-'))}</code></li>
+    <li>Over-merges not increased: <code>{esc(guarded_adoption_gates.get('over_merges_not_increased', '-'))}</code></li>
+    <li>Object-label accuracy not worsened: <code>{esc(guarded_adoption_gates.get('object_label_accuracy_not_worsened', '-'))}</code></li>
+    <li>Warning regression: <code>{esc(guarded_adoption_gates.get('audit_warning_regression', '-'))}</code></li>
+    <li>BBox/span regression: <code>{esc(guarded_adoption_gates.get('bbox_span_regression', '-'))}</code></li>
+  </ul>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -6298,6 +6471,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     chained_join_review_queue = read_json(output_dir / "chained_join_review_queue.json")
     chained_join_decisions_applied = read_json(output_dir / "chained_join_decisions_applied.json")
     guarded_chained_experiment = read_json(output_dir / "guarded_chained_cross_page_continuation_experiment.json")
+    guarded_policy_adoption_decision = read_json(output_dir / "guarded_chained_policy_adoption_decision.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -6342,6 +6516,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("chained_join_review_queue_exists", (output_dir / "chained_join_review_queue.json").exists())
     add_check("chained_join_decisions_applied_exists", (output_dir / "chained_join_decisions_applied.json").exists())
     add_check("guarded_chained_cross_page_continuation_experiment_exists", (output_dir / "guarded_chained_cross_page_continuation_experiment.json").exists())
+    add_check("guarded_chained_policy_adoption_decision_exists", (output_dir / "guarded_chained_policy_adoption_decision.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -6750,10 +6925,13 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     guarded_decision_replay = guarded_chained_experiment.get("decision_replay") or {}
     guarded_side_effects = guarded_chained_experiment.get("side_effects") or {}
     add_check("audit_has_guarded_chained_cross_page_continuation_experiment", "Guarded Chained Cross-Page Continuation Experiment" in audit_html)
-    add_check("guarded_chained_experiment_keeps_active_policy", guarded_chained_experiment.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check("guarded_chained_experiment_records_active_policy", guarded_chained_experiment.get("active_policy") == manifest.get("paragraph_merge_policy"))
     add_check("guarded_chained_experiment_policy_recorded", guarded_chained_experiment.get("guarded_experimental_policy") == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY)
-    add_check("guarded_chained_experiment_does_not_change_active_policy", bool(guarded_chained_experiment.get("does_not_change_active_policy")))
-    add_check("guarded_chained_experiment_does_not_adopt", bool(guarded_chained_experiment.get("does_not_adopt_guarded_policy")))
+    add_check(
+        "guarded_chained_experiment_adoption_flag_matches_active_policy",
+        bool(guarded_chained_experiment.get("does_not_adopt_guarded_policy"))
+        == (manifest.get("paragraph_merge_policy") != GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY),
+    )
     add_check("guarded_chained_experiment_blocks_rejected_join", bool(guarded_decision_replay.get("chained_join_review_0004_blocked")))
     add_check(
         "guarded_chained_experiment_preserves_accepted_decisions",
@@ -6765,6 +6943,45 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     )
     add_check("guarded_chained_experiment_keeps_cp_000103_fixed", bool(guarded_acceptance.get("cp_000103_remains_fixed")))
     add_check("guarded_chained_experiment_has_join_counts", all(key in guarded_side_effects for key in ["proposed_chained_joins", "rejected_chained_joins"]))
+    guarded_adoption_evidence = guarded_policy_adoption_decision.get("gate_evidence") or {}
+    guarded_adoption_gates = guarded_policy_adoption_decision.get("gates") or {}
+    add_check("audit_has_guarded_chained_policy_adoption_decision", "Guarded Chained Policy Adoption Decision" in audit_html)
+    add_check("guarded_policy_adoption_matches_active_policy", guarded_policy_adoption_decision.get("active_paragraph_merge_policy") == manifest.get("paragraph_merge_policy"))
+    add_check("guarded_policy_adoption_records_guarded_policy", guarded_policy_adoption_decision.get("adopted_policy") == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY)
+    add_check("guarded_policy_adoption_decision_is_adopt", guarded_policy_adoption_decision.get("decision") == "adopt_v3_chained_cross_page_continuation_guarded")
+    add_check("guarded_policy_adoption_does_not_unlock_downstream", bool(guarded_policy_adoption_decision.get("does_not_unlock_downstream")))
+    add_check(
+        "guarded_policy_adoption_gate_evidence_present",
+        all(
+            key in guarded_adoption_evidence
+            for key in [
+                "active_v2_metrics",
+                "previous_unguarded_v3_metrics",
+                "guarded_v3_metrics",
+                "gold_paragraph_precision_before",
+                "gold_paragraph_precision_after",
+                "matched_paragraphs_before",
+                "matched_paragraphs_after",
+                "unresolved_chained_joins",
+                "validation_status",
+                "downstream_safety_status",
+            ]
+        ),
+    )
+    add_check(
+        "guarded_policy_adoption_gates_pass",
+        guarded_adoption_gates.get("guarded_experiment_passed")
+        and guarded_adoption_gates.get("cp_000103_remains_fixed")
+        and guarded_adoption_gates.get("false_join_blocked")
+        and guarded_adoption_gates.get("accepted_prior_decisions_preserved")
+        and guarded_adoption_gates.get("rejected_prior_decisions_blocked")
+        and guarded_adoption_gates.get("gold_score_improved")
+        and guarded_adoption_gates.get("over_merges_not_increased")
+        and guarded_adoption_gates.get("object_label_accuracy_not_worsened")
+        and not guarded_adoption_gates.get("audit_warning_regression")
+        and not guarded_adoption_gates.get("bbox_span_regression")
+        and guarded_adoption_gates.get("unresolved_chained_joins") == 0,
+    )
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -6844,6 +7061,9 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     clean_objects: list[dict[str, Any]] = []
     cleanup_log: list[dict[str, Any]] = []
     cross_page_experiment_details: dict[str, Any] = {}
+    v2_layout_objects: list[dict[str, Any]] = []
+    v2_clean_objects: list[dict[str, Any]] = []
+    guarded_active_experiment_details: dict[str, Any] = {}
 
     with pdfplumber.open(str(pdf_path)) as pdf:
         page_count = len(pdf.pages)
@@ -6890,11 +7110,13 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             layout_objects.extend(page_active_layout)
             clean_objects.extend(page_active_clean)
             cleanup_log.extend(page_active_cleanup)
-    if ACTIVE_PARAGRAPH_MERGE_POLICY == CROSS_PAGE_CONTINUATION_POLICY:
+    if ACTIVE_PARAGRAPH_MERGE_POLICY in {CROSS_PAGE_CONTINUATION_POLICY, GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY}:
         layout_objects, clean_objects, cross_page_experiment_details = apply_cross_page_continuation_experiment(
             layout_objects,
             clean_objects,
         )
+        v2_layout_objects = [dict(row) for row in layout_objects]
+        v2_clean_objects = [dict(row) for row in clean_objects]
         layout_by_id = {row["object_id"]: row for row in layout_objects}
         cleanup_log = [row for row in cleanup_log if row.get("object_id") in layout_by_id]
         for clean_row in clean_objects:
@@ -6911,6 +7133,31 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
                     "clean_text": clean_row.get("clean_text", ""),
                 }
             )
+    if ACTIVE_PARAGRAPH_MERGE_POLICY == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY:
+        layout_objects, clean_objects, guarded_active_experiment_details = apply_chained_cross_page_continuation_experiment(
+            layout_objects,
+            clean_objects,
+            guarded=True,
+        )
+        layout_by_id = {row["object_id"]: row for row in layout_objects}
+        cleanup_log = [row for row in cleanup_log if row.get("object_id") in layout_by_id]
+        for clean_row in clean_objects:
+            if "chained_cross_page_paragraph_continuation_join" not in clean_row.get("cleanup_operations", []):
+                continue
+            layout_row = layout_by_id.get(clean_row.get("object_id"), {})
+            cleanup_log.append(
+                {
+                    "book_id": book_id,
+                    "object_id": clean_row["object_id"],
+                    "page_number": layout_row.get("page_number"),
+                    "operation": "chained_cross_page_paragraph_continuation_join",
+                    "raw_text": layout_row.get("raw_text", ""),
+                    "clean_text": clean_row.get("clean_text", ""),
+                }
+            )
+    if not v2_layout_objects:
+        v2_layout_objects = [dict(row) for row in layout_objects]
+        v2_clean_objects = [dict(row) for row in clean_objects]
     page_images = render_page_images(pdf_path, output_dir)
 
     manifest = {
@@ -6923,7 +7170,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         "page_count": page_count,
         "tooling": {"pdfplumber": getattr(pdfplumber, "__version__", "unknown")},
         "paragraph_merge_policy": ACTIVE_PARAGRAPH_MERGE_POLICY,
-        "paragraph_merge_experiment_policy": CROSS_PAGE_CONTINUATION_POLICY,
+        "paragraph_merge_experiment_policy": EXPERIMENTAL_PARAGRAPH_MERGE_POLICY,
         "outputs": {
             "page_inventory": "page_inventory.jsonl",
             "raw_pages": "raw_pages.jsonl",
@@ -6958,6 +7205,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "chained_cross_page_continuation_experiment": "chained_cross_page_continuation_experiment.json",
             "chained_join_review_queue": "chained_join_review_queue.json",
             "guarded_chained_cross_page_continuation_experiment": "guarded_chained_cross_page_continuation_experiment.json",
+            "guarded_chained_policy_adoption_decision": "guarded_chained_policy_adoption_decision.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -6986,6 +7234,20 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         page_count,
         applied_review_overrides,
         page_heights_by_page,
+    )
+    v2_evaluation = (
+        paragraph_policy_evaluation(
+            book_id,
+            run_id,
+            v2_layout_objects,
+            v2_clean_objects,
+            inventory,
+            page_count,
+            applied_review_overrides,
+            page_heights_by_page,
+        )
+        if ACTIVE_PARAGRAPH_MERGE_POLICY == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY
+        else active_evaluation
     )
     main_paragraphs = active_evaluation["main_paragraphs"]
     structure = active_evaluation["structure"]
@@ -7070,8 +7332,8 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         ACTIVE_PARAGRAPH_MERGE_POLICY,
     )
     chained_layout_objects, chained_clean_objects, chained_experiment_details = apply_chained_cross_page_continuation_experiment(
-        layout_objects,
-        clean_objects,
+        v2_layout_objects,
+        v2_clean_objects,
     )
     chained_evaluation = paragraph_policy_evaluation(
         book_id,
@@ -7086,7 +7348,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     chained_cross_page_continuation_experiment = build_chained_cross_page_continuation_experiment(
         book_id,
         run_id,
-        active_evaluation,
+        v2_evaluation,
         chained_evaluation,
         chained_experiment_details,
         narrow_grouping_correction_design,
@@ -7102,12 +7364,16 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         chained_join_review_queue,
         applied_chained_join_decisions,
     )
-    guarded_chained_layout_objects, guarded_chained_clean_objects, guarded_chained_experiment_details = apply_chained_cross_page_continuation_experiment(
-        layout_objects,
-        clean_objects,
-        guarded=True,
+    guarded_chained_layout_objects, guarded_chained_clean_objects, guarded_chained_experiment_details = (
+        (layout_objects, clean_objects, guarded_active_experiment_details)
+        if ACTIVE_PARAGRAPH_MERGE_POLICY == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY
+        else apply_chained_cross_page_continuation_experiment(
+            v2_layout_objects,
+            v2_clean_objects,
+            guarded=True,
+        )
     )
-    guarded_chained_evaluation = paragraph_policy_evaluation(
+    guarded_chained_evaluation = active_evaluation if ACTIVE_PARAGRAPH_MERGE_POLICY == GUARDED_CHAINED_CROSS_PAGE_CONTINUATION_POLICY else paragraph_policy_evaluation(
         book_id,
         run_id,
         guarded_chained_layout_objects,
@@ -7120,11 +7386,18 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     guarded_chained_cross_page_continuation_experiment = build_guarded_chained_cross_page_continuation_experiment(
         book_id,
         run_id,
-        active_evaluation,
+        v2_evaluation,
         chained_cross_page_continuation_experiment,
         guarded_chained_evaluation,
         guarded_chained_experiment_details,
         chained_join_decisions_applied,
+    )
+    guarded_chained_policy_adoption_decision = build_guarded_chained_policy_adoption_decision(
+        book_id,
+        run_id,
+        guarded_chained_cross_page_continuation_experiment,
+        active_evaluation,
+        ACTIVE_PARAGRAPH_MERGE_POLICY,
     )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
@@ -7194,6 +7467,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "chained_cross_page_continuation_experiment.json", chained_cross_page_continuation_experiment)
     write_json(output_dir / "chained_join_review_queue.json", chained_join_review_queue)
     write_json(output_dir / "guarded_chained_cross_page_continuation_experiment.json", guarded_chained_cross_page_continuation_experiment)
+    write_json(output_dir / "guarded_chained_policy_adoption_decision.json", guarded_chained_policy_adoption_decision)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {
@@ -7216,6 +7490,15 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     )
     validation_report = validate_phase1_run(output_dir)
     write_json(output_dir / "validation_report.json", validation_report)
+    guarded_chained_policy_adoption_decision = build_guarded_chained_policy_adoption_decision(
+        book_id,
+        run_id,
+        guarded_chained_cross_page_continuation_experiment,
+        active_evaluation,
+        ACTIVE_PARAGRAPH_MERGE_POLICY,
+        validation_report.get("status", "unknown"),
+    )
+    write_json(output_dir / "guarded_chained_policy_adoption_decision.json", guarded_chained_policy_adoption_decision)
     (output_dir / "phase1_audit.html").write_text(
         build_audit_html(book_id, pdf_path, manifest, inventory, layout_objects, object_counts, stream_counts, stream_samples, validation_report, output_dir),
         encoding="utf-8",

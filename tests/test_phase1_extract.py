@@ -1085,6 +1085,43 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             ),
             encoding="utf-8",
         )
+        (output_dir / "guarded_chained_policy_adoption_decision.json").write_text(
+            json.dumps(
+                {
+                    "decision": "do_not_adopt_guarded_v3",
+                    "active_paragraph_merge_policy": "v1_consecutive_lines",
+                    "adopted_policy": None,
+                    "does_not_unlock_downstream": True,
+                    "validation_status": "pending",
+                    "gate_evidence": {
+                        "active_v2_metrics": {},
+                        "previous_unguarded_v3_metrics": {},
+                        "guarded_v3_metrics": {},
+                        "gold_paragraph_precision_before": 0.0,
+                        "gold_paragraph_precision_after": 0.0,
+                        "matched_paragraphs_before": 0,
+                        "matched_paragraphs_after": 0,
+                        "unresolved_chained_joins": 0,
+                        "validation_status": "pending",
+                        "downstream_safety_status": False,
+                    },
+                    "gates": {
+                        "guarded_experiment_passed": False,
+                        "cp_000103_remains_fixed": False,
+                        "false_join_blocked": False,
+                        "accepted_prior_decisions_preserved": True,
+                        "rejected_prior_decisions_blocked": True,
+                        "gold_score_improved": False,
+                        "over_merges_not_increased": True,
+                        "object_label_accuracy_not_worsened": True,
+                        "audit_warning_regression": False,
+                        "bbox_span_regression": False,
+                        "unresolved_chained_joins": 0,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {

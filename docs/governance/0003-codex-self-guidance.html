@@ -52,19 +52,18 @@
     <li>Use page images and bounding-box overlays to check where extracted objects came from.</li>
     <li>Keep reviewer corrections in tracked review override files, not hidden detector tweaks.</li>
     <li>Use tracked gold review rows as the answer key for paragraph-boundary policy experiments.</li>
-    <li>Treat <code>v2_cross_page_continuation</code> as the active Douglass paragraph merge policy only because its adoption decision is documented and validated.</li>
+    <li>Treat <code>v3_chained_cross_page_continuation_guarded</code> as the active Douglass paragraph merge policy only because its adoption decision is documented and validated.</li>
     <li>Store reviewed cross-page join decisions under <code>reviews/&lt;book_id&gt;/cross_page_join_decisions.jsonl</code>.</li>
     <li>Do not confuse policy adoption with downstream readiness; canonical paragraph review can still block retrieval and graph work.</li>
     <li>Use <code>post_adoption_canonical_safety_report.json</code> to identify the next blocker after policy adoption; currently that blocker is <code>bbox_span_risk</code>.</li>
-    <li>Use <code>post_adoption_bbox_span_diagnosis.json</code> before changing rules; current remaining cases are dominated by likely true grouping defects. The gold-set gap queue has been expanded to <code>0</code>, the front-matter/metadata review found valid prose, and visual review confirmed one page 109 grouping defect.</li>
+    <li>Use <code>post_adoption_bbox_span_diagnosis.json</code> before changing rules; current remaining cases are dominated by likely true grouping defects. The gold-set gap queue has been expanded to <code>0</code>, the front-matter/metadata review found valid prose, and guarded v3 resolved the earlier page 109 visual-review grouping defect.</li>
     <li>Use <code>post_adoption_remediation_plan.json</code> to choose the right class of fix; do not apply one broad merge fix to all remaining bbox/span cases.</li>
     <li>Use <code>front_matter_metadata_review_report.json</code> before changing front-matter promotion behavior; it is a review-only report, not a demotion or promotion rule.</li>
     <li>Use <code>visual_review_cases_report.json</code> before changing grouping behavior; it confirms which visual warnings are valid paragraphs and which are real grouping defects.</li>
-    <li>Use <code>narrow_grouping_correction_design.json</code> before implementing grouping behavior; the next step is experiment-only chained cross-page continuation, not direct adoption.</li>
-    <li>Use <code>chained_cross_page_continuation_experiment.json</code> before considering chained continuation adoption; it fixed <code>cp_000103</code> but leaves unscored joins that require side-effect review.</li>
-    <li>Use <code>chained_join_review_queue.json</code> to review unscored chained joins; do not adopt <code>v3</code> while any queued side effects remain unresolved.</li>
+    <li>Use <code>narrow_grouping_correction_design.json</code> before implementing grouping behavior; the page 109 defect was addressed by a guarded chained-continuation policy, not a broad merge rewrite.</li>
+    <li>Use <code>chained_cross_page_continuation_experiment.json</code> and <code>chained_join_review_queue.json</code> as the historical side-effect evidence for guarded v3 adoption.</li>
     <li>Use <code>chained_join_decisions_applied.json</code> before changing <code>v3</code>; current curated decisions include <code>7</code> accepted joins and <code>1</code> rejected false join caused by skipped intervening page content.</li>
-    <li>Use <code>guarded_chained_cross_page_continuation_experiment.json</code> before any chained-continuation adoption checkpoint; it must preserve accepted decisions, block rejected decisions, keep <code>cp_000103</code> fixed, and remain experiment-only until formally adopted.</li>
+    <li>Use <code>guarded_chained_cross_page_continuation_experiment.json</code> and <code>guarded_chained_policy_adoption_decision.json</code> to verify guarded v3 adoption; downstream remains blocked while canonical safety is false.</li>
     <li>Do not add OCR, model review, retrieval, or graph work just because the audit UI improved.</li>
   </ol>
 

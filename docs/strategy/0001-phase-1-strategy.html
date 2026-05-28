@@ -154,15 +154,16 @@
   <ol>
     <li>Post-adoption safety analysis is report-only; it must not change extraction behavior.</li>
     <li>The next blocker should be diagnosed before another merge or promotion-rule change is attempted.</li>
-    <li>The current bbox/span diagnosis splits the remaining <code>40</code> cases into <code>23</code> likely true grouping defects and <code>8</code> cases needing visual review after the gold-set gap queue was expanded to <code>0</code>.</li>
+    <li>The current bbox/span diagnosis splits the remaining <code>39</code> cases into <code>23</code> likely true grouping defects and <code>7</code> cases needing visual review after the gold-set gap queue was expanded to <code>0</code>.</li>
     <li>The front-matter/metadata review found <code>7</code> valid Preface or Letter paragraphs and <code>2</code> valid Chapter I paragraphs caught by an overbroad early-page warning.</li>
-    <li>The visual-review queue found <code>7</code> valid canonical paragraphs and <code>1</code> true grouping defect on page <code>109</code>.</li>
+    <li>The guarded policy resolved the earlier page <code>109</code> visual-review defect; the remaining visual-review queue now contains <code>7</code> valid canonical paragraphs.</li>
     <li>The <code>v3_chained_cross_page_continuation</code> experiment fixed <code>cp_000103</code> and improved gold paragraph precision and recall to <code>1.000</code>, but proposed <code>9</code> chained joins, with <code>8</code> outside authoritative gold coverage.</li>
     <li>The chained-join review queue classifies the <code>8</code> unscored joins as <code>5</code> likely valid continuations, <code>2</code> visual-review cases, and <code>1</code> structure-boundary risk.</li>
     <li>Curated decisions accepted <code>7</code> queued joins and rejected <code>1</code> false join caused by skipped intervening page content.</li>
-    <li>The guarded chained-continuation experiment blocks the false join, preserves all <code>7</code> accepted decisions, keeps <code>cp_000103</code> fixed, and passes the experiment gate.</li>
-    <li>The next gate is a formal guarded-v3 adoption checkpoint, not direct adoption inside an experiment run.</li>
-    <li>Downstream intelligence remains blocked while <code>safe_for_downstream</code> is <code>false</code>.</li>
+    <li>The guarded chained-continuation policy blocks the false join, preserves all <code>7</code> accepted decisions, keeps <code>cp_000103</code> fixed, passes the experiment gate, and is now formally adopted.</li>
+    <li>The active policy is <code>v3_chained_cross_page_continuation_guarded</code>.</li>
+    <li>The recalculated canonical layer has <code>115</code> promoted paragraphs, <code>129</code> warnings, <code>72</code> risky paragraphs, and <code>safe_for_downstream</code> is still <code>false</code>.</li>
+    <li>The next gate is renewed safety diagnosis under guarded v3, not retrieval or graph work.</li>
   </ol>
 
   <h2>Page Furniture Detection</h2>

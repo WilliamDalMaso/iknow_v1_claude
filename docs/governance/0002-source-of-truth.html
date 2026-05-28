@@ -109,23 +109,27 @@
     dominant blocker. That blocker must be diagnosed from evidence before changing extraction rules
     again.
     The current diagnosis classifies <code>23</code> cases as likely true paragraph grouping
-    defects and <code>8</code> as needing visual review after the gold-set gap queue was expanded
+    defects and <code>7</code> as needing visual review after the gold-set gap queue was expanded
     to <code>0</code>. The front-matter/metadata review found <code>7</code> valid Preface or
     Letter paragraphs and <code>2</code> valid Chapter I body paragraphs caught by an overbroad
-    early-page warning. The visual-review queue found <code>7</code> valid canonical paragraphs and
-    <code>1</code> true paragraph grouping defect on page <code>109</code>. The next correction
-    was tested as <code>v3_chained_cross_page_continuation</code> in experiment-only mode. It fixed
+    early-page warning. After guarded v3 adoption, the visual-review queue contains
+    <code>7</code> valid canonical paragraphs and no confirmed visual-review grouping defect.
+    The earlier page <code>109</code> defect was tested as
+    <code>v3_chained_cross_page_continuation</code> in experiment-only mode. It fixed
     <code>cp_000103</code>, improved paragraph precision and recall to <code>1.000</code>, and kept
     object-label accuracy at <code>1.000</code>, but it proposed <code>9</code> chained joins, with
     <code>8</code> outside authoritative gold coverage. A review queue now classifies those
     unscored joins as <code>5</code> likely valid continuations, <code>2</code> needs visual review,
     and <code>1</code> structure-boundary risk. Curated review accepted <code>7</code> joins and
     rejected <code>1</code> false join on pages <code>59-61</code>, where the proposed chain skipped
-    intervening poem/prose content on page <code>60</code>. The guarded experiment
-    <code>v3_chained_cross_page_continuation_guarded</code> blocks that false-join class, preserves
-    all <code>7</code> prior accepted decisions, keeps <code>cp_000103</code> fixed, and improves
-    paragraph precision/recall to <code>1.000</code>. It is still not active; the next step must be a
-    formal adoption checkpoint, not casual activation.
+    intervening poem/prose content on page <code>60</code>. The guarded policy
+    <code>v3_chained_cross_page_continuation_guarded</code> now blocks that false-join class, preserves
+    all <code>7</code> prior accepted decisions, keeps <code>cp_000103</code> fixed, improves
+    paragraph precision/recall to <code>1.000</code>, and is the active paragraph merge policy after
+    a formal adoption checkpoint. This adoption still does not unlock downstream intelligence:
+    the recalculated canonical layer has <code>115</code> promoted paragraphs, <code>129</code>
+    review warnings, <code>72</code> risky paragraphs, and <code>safe_for_downstream</code> remains
+    <code>false</code>.
   </p>
 
   <h2>Phase 1 Evidence Stack</h2>

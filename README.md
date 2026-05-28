@@ -27,19 +27,12 @@ Phase 1 outputs are candidate-first. Nothing is called canonical until it has pa
 Paragraph merge policy changes also require a tracked gold review set. Heuristic warning counts can
 show symptoms, but they are not enough to adopt a new extraction policy.
 
-Current Douglass Phase 1 status: `v2_cross_page_continuation` is the active paragraph merge policy
-after formal gold, side-effect review, blocker investigation, and validation gates. Downstream
-retrieval, embeddings, reasoning, and graph work remain blocked until canonical paragraph review is
-safe. The current post-adoption blocker is `bbox_span_risk`; gold coverage has been expanded for the
-former 6 gold-set gap cases. The front-matter/metadata review found 7 valid Preface/Letter
-paragraphs and 2 valid Chapter I paragraphs caught by an overbroad early-page warning. Downstream is
-still blocked. The visual-review queue found 7 valid canonical paragraphs and 1 true grouping defect
-on page 109. The `v3_chained_cross_page_continuation` experiment fixed that defect and improved gold
-paragraph precision/recall to 1.000 without object-label regression, but side-effect review rejected
-1 false join where v3 skipped intervening page content. The guarded experiment
-`v3_chained_cross_page_continuation_guarded` blocks that false-join class, preserves all 7 prior
-accepted chained-join decisions, keeps `cp_000103` fixed, and passes the experiment gate. It is not
-active; the next step is a formal guarded-v3 adoption checkpoint.
+Current Douglass Phase 1 status: `v3_chained_cross_page_continuation_guarded` is the active
+paragraph merge policy after formal gold, side-effect review, false-join blocking, and validation
+gates. It keeps `cp_000103` fixed, blocks the rejected pages 59-61 false join, preserves 7/7 accepted
+chained-join decisions, and improves gold paragraph precision/recall to 1.000. Downstream retrieval,
+embeddings, reasoning, and graph work remain blocked. The recalculated canonical layer has 115
+promoted paragraphs, 129 review warnings, 72 risky paragraphs, and `safe_for_downstream: false`.
 
 ## Documentation Model
 
