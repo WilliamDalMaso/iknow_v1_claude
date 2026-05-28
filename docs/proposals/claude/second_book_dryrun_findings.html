@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Second-Book Dry-Run Findings (The Hobbit)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 10px; text-align: left; vertical-align: top; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Second-Book Dry-Run Findings &mdash; The Hobbit</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28 &middot; <strong>Phase:</strong> C reconnaissance</p>
+
+  <div class="rule">
+    <strong>Read-only reconnaissance.</strong> Phase 1 was run once on
+    <code>data/books/the_hobbit.pdf</code> into a disposable, git-ignored candidate run. Nothing was
+    promoted, no policy was adopted, no gold set was created, and Douglass was untouched. The run
+    directory was deleted after capturing these findings. This is diagnosis, not widening to a second
+    book. To reproduce: <code>python3 src/phase1_extract.py data/books/the_hobbit.pdf --book-id
+    the_hobbit --run-id dryrun</code>.
+  </div>
+
+  <h2>Headline</h2>
+  <p>
+    The pipeline ran end-to-end on a brand-new 270-page book and produced clean text &mdash; the core
+    extraction generalizes. But the <strong>review / validation / policy layer is hardcoded to
+    Douglass</strong>, so the run cannot be judged or trusted for a second book yet. The validation
+    report came back <code>fail</code> &mdash; for the right reason (Douglass-specific checks), which
+    is exactly the signal we wanted.
+  </p>
+
+  <h2>What worked (core extraction generalizes)</h2>
+  <table>
+    <tr><th>Signal</th><th>The Hobbit</th><th>Douglass</th></tr>
+    <tr><td>Pages extracted</td><td>270</td><td>126</td></tr>
+    <tr><td>Page images rendered</td><td>270</td><td>126</td></tr>
+    <tr><td>Layout / clean objects</td><td>1,913</td><td>&mdash;</td></tr>
+    <tr><td>Main paragraph candidates</td><td>1,853</td><td>262</td></tr>
+    <tr><td>Canonical paragraphs (candidate)</td><td>1,367</td><td>115</td></tr>
+    <tr><td>Review warnings</td><td>598</td><td>129</td></tr>
+    <tr><td>Validation status</td><td><strong>fail</strong></td><td>pass</td></tr>
+  </table>
+  <p>PDF &rarr; raw &rarr; cleaned text &rarr; candidate paragraphs &rarr; page images all succeeded with no crash.</p>
+
+  <h2>Where the single-book assumptions live (the real findings)</h2>
+  <ol>
+    <li>
+      <strong>Validation conflates generic structure checks with Douglass acceptance criteria.</strong>
+      The failing checks are all Douglass-specific assertions run against every book:
+      <code>guarded_chained_experiment_keeps_cp_000103_fixed</code> (a specific Douglass paragraph id),
+      <code>guarded_chained_experiment_blocks_rejected_join</code> (the Douglass pages 59&ndash;61 false
+      join), and the <code>guarded_policy_adoption_*</code> gates. The Hobbit has no
+      <code>cp_000103</code>, so it can never pass. <em>Fix: split generic structural validation from
+      per-book acceptance checks.</em>
+    </li>
+    <li>
+      <strong>Page-furniture detection is literally Douglass text.</strong>
+      <code>looks_like_running_page_furniture</code> matches only
+      <code>narrative | life of frederick douglass</code>. The Hobbit's running headers / chapter
+      titles will not be recognized or stripped. <em>Fix: per-book furniture patterns (config-driven).</em>
+    </li>
+    <li>
+      <strong>A Douglass-gold-validated paragraph policy is applied globally.</strong>
+      <code>v3_chained_cross_page_continuation_guarded</code> was tuned and gold-validated for Douglass
+      only; it is the active policy for The Hobbit by default. <em>Fix: policy selection per book.</em>
+    </li>
+    <li>
+      <strong>The Hobbit contains layouts Douglass never had &mdash; notably verse/songs</strong>
+      (e.g. &ldquo;Far over the misty mountains grim / To dungeons deep and caverns dim&rdquo;), plus
+      heavy dialogue. The paragraph-continuation heuristics were never designed for poetry and will
+      mis-merge it. <em>Fix: needs new heuristics and, first, a gold set to measure against.</em>
+    </li>
+    <li>
+      <strong>No gold set exists for The Hobbit</strong>, so quality is currently unmeasurable. Per the
+      gold-gated method, warning counts alone are not truth. <em>Fix: authoring a gold set is a
+      prerequisite before any second-book quality claim.</em>
+    </li>
+    <li>
+      Minor: Douglass-specific ids/strings are baked into report builders (e.g.
+      <code>cp_000103</code>, <code>douglass_narrative:p0107&hellip;</code>). These belong in per-book
+      data, not in shared code.
+    </li>
+  </ol>
+
+  <h2>Implications for the roadmap</h2>
+  <ul>
+    <li><strong>Phase C is now concretely scoped.</strong> The book-specific surface area is: (a) the active paragraph policy, (b) furniture patterns, (c) the acceptance/validation checks, (d) curated decisions + gold. Everything else generalized cleanly.</li>
+    <li><strong>This also guides the remaining Phase B decomposition.</strong> Book-specificity concentrates in the review / validation / gold / policy-adoption code, so those modules should be designed to take a per-book config object rather than hardcode Douglass.</li>
+    <li><strong>Gates still hold.</strong> The hard rule stands: no second-book adoption until Douglass passes its gates and The Hobbit has its own gold set. This dry-run changes none of that.</li>
+  </ul>
+
+  <h2>Recommended next step</h2>
+  <p>
+    Introduce a small <strong>per-book config</strong> (policy + furniture patterns + paths) and split
+    generic validation from Douglass acceptance checks &mdash; the first concrete Phase C increment.
+    This is additive and does not change Douglass behavior (the regression test will confirm).
+  </p>
+</main>
+</body>
+</html>
