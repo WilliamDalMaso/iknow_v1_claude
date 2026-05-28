@@ -36,8 +36,9 @@ paragraphs and 2 valid Chapter I paragraphs caught by an overbroad early-page wa
 still blocked. The visual-review queue found 7 valid canonical paragraphs and 1 true grouping defect
 on page 109. The `v3_chained_cross_page_continuation` experiment fixed that defect and improved gold
 paragraph precision/recall to 1.000 without object-label regression, but it proposed 9 chained joins
-and 8 are outside authoritative gold coverage. It is not active; the next gate is side-effect review,
-not adoption.
+and 8 are outside authoritative gold coverage. The review queue classifies those 8 as 5 likely valid
+continuations, 2 visual-review cases, and 1 structure-boundary risk. It is not active; the next gate
+is side-effect review, not adoption.
 
 ## Documentation Model
 

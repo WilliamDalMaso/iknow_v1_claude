@@ -117,8 +117,10 @@
     was tested as <code>v3_chained_cross_page_continuation</code> in experiment-only mode. It fixed
     <code>cp_000103</code>, improved paragraph precision and recall to <code>1.000</code>, and kept
     object-label accuracy at <code>1.000</code>, but it proposed <code>9</code> chained joins, with
-    <code>8</code> outside authoritative gold coverage. It is not active; those side effects need a
-    review queue before any adoption decision.
+    <code>8</code> outside authoritative gold coverage. A review queue now classifies those
+    unscored joins as <code>5</code> likely valid continuations, <code>2</code> needs visual review,
+    and <code>1</code> structure-boundary risk. It is not active; those queued side effects must be
+    reviewed before any adoption decision.
   </p>
 
   <h2>Phase 1 Evidence Stack</h2>

@@ -52,6 +52,7 @@ REQUIRED_ARTIFACTS = [
     "visual_review_cases_report.json",
     "narrow_grouping_correction_design.json",
     "chained_cross_page_continuation_experiment.json",
+    "chained_join_review_queue.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -3908,6 +3909,99 @@ def build_chained_cross_page_continuation_experiment(
     }
 
 
+def classify_chained_join_review_risk(join: dict[str, Any]) -> tuple[str, float, str]:
+    pages = [int(page) for page in join.get("pages", []) if isinstance(page, int)]
+    source_line_count = int(join.get("source_line_count") or 0)
+    first_end = str(join.get("first_text_end", "")).strip()
+    second_start = str(join.get("second_text_start", "")).lstrip()
+    if any(page <= 18 for page in pages):
+        return "structure_boundary_risk", 0.62, "inspect early/front-matter boundary visually before any decision"
+    if re.search(r"\b(chapter|preface|appendix|letter from|contents)\b", second_start[:80], re.IGNORECASE):
+        return "structure_boundary_risk", 0.68, "inspect possible structure boundary before accepting"
+    if source_line_count >= 55:
+        return "needs_visual_review", 0.60, "inspect long chained paragraph across all affected pages"
+    if second_start[:1].isupper() and not first_end.endswith(tuple(TERMINAL_PUNCTUATION)):
+        return "possible_overmerge", 0.58, "inspect whether the next page starts a new sentence or continues the previous one"
+    if "running_header" in str(join.get("join_reasons", "")):
+        return "page_furniture_risk", 0.55, "inspect page furniture before accepting"
+    return "likely_valid_chained_continuation", 0.66, "review visual evidence and accept only if the sentence clearly continues"
+
+
+def build_chained_join_review_queue(
+    book_id: str,
+    run_id: str,
+    chained_experiment: dict[str, Any],
+) -> dict[str, Any]:
+    queue_rows = []
+    for index, join in enumerate(chained_experiment.get("proposed_chained_joins", []), start=1):
+        join_lines = set(join.get("source_line_ids", []))
+        covered_gold = []
+        for gold in authoritative_gold_line_sets(book_id):
+            if join_lines and join_lines == gold.get("source_line_ids"):
+                covered_gold.append(gold.get("gold_id"))
+        if covered_gold:
+            continue
+        risk, confidence, action = classify_chained_join_review_risk(join)
+        affected_pages = join.get("pages", [])
+        left_id = join.get("first_object_id")
+        right_id = join.get("second_object_id")
+        queue_rows.append(
+            {
+                "chained_join_id": f"chained_join_review_{len(queue_rows) + 1:04d}",
+                "source_experiment_join_index": index,
+                "affected_pages": affected_pages,
+                "source_candidate_ids": {
+                    "left_candidate_id": left_id,
+                    "right_candidate_id": right_id,
+                },
+                "current_active_v2_behavior": "Candidates remain separate under the active v2 output; v3 is experiment-only.",
+                "experimental_v3_behavior": "Experimental v3 would chain the existing cross-page candidate into the next page's first body paragraph.",
+                "text_preview_before_join": {
+                    "left_text_end": join.get("first_text_end"),
+                    "right_text_start": join.get("second_text_start"),
+                },
+                "text_preview_after_join": join.get("joined_text_preview"),
+                "source_line_evidence": {
+                    "source_line_ids": join.get("source_line_ids", []),
+                    "source_line_count": join.get("source_line_count", 0),
+                    "join_reasons": join.get("join_reasons", []),
+                },
+                "visual_evidence_references": [
+                    f"phase1_audit.html#page-{page}" for page in affected_pages
+                ]
+                + [
+                    f"phase1_audit.html#card-{safe_dom_id(str(left_id))}",
+                    f"phase1_audit.html#card-{safe_dom_id(str(right_id))}",
+                ],
+                "gold_coverage_exists": False,
+                "gold_ids": [],
+                "likely_risk": risk,
+                "confidence": confidence,
+                "recommended_review_action": action,
+                "decision_status": "queued_for_review",
+            }
+        )
+    risk_counts = Counter(row["likely_risk"] for row in queue_rows)
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "review_queue_only_for_unscored_chained_joins",
+        "source_artifact": "chained_cross_page_continuation_experiment.json",
+        "does_not_change_active_policy": True,
+        "does_not_apply_decisions": True,
+        "does_not_change_canonical_promotion_rules": True,
+        "summary": {
+            "total_unscored_chained_joins": len(queue_rows),
+            "risk_counts": dict(sorted(risk_counts.items())),
+            "review_queue_open": bool(queue_rows),
+            "adoption_remains_blocked": True,
+            "recommended_next_action": "review_chained_join_queue_before_any_v3_adoption",
+        },
+        "queue": queue_rows,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -3972,6 +4066,7 @@ def build_audit_html(
     visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json") if (output_dir / "visual_review_cases_report.json").exists() else {}
     narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json") if (output_dir / "narrow_grouping_correction_design.json").exists() else {}
     chained_cross_page_experiment = read_json(output_dir / "chained_cross_page_continuation_experiment.json") if (output_dir / "chained_cross_page_continuation_experiment.json").exists() else {}
+    chained_join_review_queue = read_json(output_dir / "chained_join_review_queue.json") if (output_dir / "chained_join_review_queue.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -4736,6 +4831,28 @@ def build_audit_html(
         "</tr>"
         for row in (chained_cross_page_experiment.get("rejected_chained_joins") or [])[:60]
     )
+    chained_queue_summary = chained_join_review_queue.get("summary") or {}
+    chained_queue_risk_items = "\n".join(
+        f"<li><code>{esc(key)}</code>: {esc(value)}</li>"
+        for key, value in sorted((chained_queue_summary.get("risk_counts") or {}).items())
+    )
+    chained_queue_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{esc(row.get('chained_join_id'))}</code></td>"
+        f"<td>{esc(', '.join(str(page) for page in row.get('affected_pages', [])))}</td>"
+        f"<td><code>{esc((row.get('source_candidate_ids') or {}).get('left_candidate_id'))}</code></td>"
+        f"<td><code>{esc((row.get('source_candidate_ids') or {}).get('right_candidate_id'))}</code></td>"
+        f"<td>{esc(row.get('likely_risk'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
+        f"<td>{esc(row.get('gold_coverage_exists'))}</td>"
+        f"<td>{esc(row.get('recommended_review_action'))}</td>"
+        f"<td>{esc((row.get('text_preview_before_join') or {}).get('left_text_end', ''))}</td>"
+        f"<td>{esc((row.get('text_preview_before_join') or {}).get('right_text_start', ''))}</td>"
+        f"<td>{esc(row.get('text_preview_after_join', ''))}</td>"
+        f"<td>{esc('; '.join(row.get('visual_evidence_references', [])))}</td>"
+        "</tr>"
+        for row in (chained_join_review_queue.get("queue") or [])[:80]
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -5392,6 +5509,26 @@ def build_audit_html(
     <tbody>{chained_rejected_rows or '<tr><td colspan="6">No rejected chained candidates.</td></tr>'}</tbody>
   </table>
 
+  <h2>Chained Join Side-Effect Review Queue</h2>
+  <div class="warn">
+    This queue contains unscored chained joins from the v3 experiment. It is review-only: no
+    accept/reject decisions are applied here, and v3 remains inactive.
+  </div>
+  <ul>
+    <li>Total unscored chained joins: <code>{esc(chained_queue_summary.get('total_unscored_chained_joins', '-'))}</code></li>
+    <li>Review queue open: <code>{esc(chained_queue_summary.get('review_queue_open', '-'))}</code></li>
+    <li>Adoption remains blocked: <code>{esc(chained_queue_summary.get('adoption_remains_blocked', '-'))}</code></li>
+    <li>Recommended next action: <code>{esc(chained_queue_summary.get('recommended_next_action', '-'))}</code></li>
+  </ul>
+  <h3>Risk Counts</h3>
+  <ul>{chained_queue_risk_items or '<li>No queued risk counts.</li>'}</ul>
+  <table>
+    <thead>
+      <tr><th>Queue ID</th><th>Pages</th><th>Left Candidate</th><th>Right Candidate</th><th>Likely Risk</th><th>Confidence</th><th>Gold</th><th>Action</th><th>Left End</th><th>Right Start</th><th>Joined Preview</th><th>Evidence</th></tr>
+    </thead>
+    <tbody>{chained_queue_rows or '<tr><td colspan="12">No unscored chained joins queued.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -5658,6 +5795,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json")
     narrow_grouping_correction_design = read_json(output_dir / "narrow_grouping_correction_design.json")
     chained_cross_page_experiment = read_json(output_dir / "chained_cross_page_continuation_experiment.json")
+    chained_join_review_queue = read_json(output_dir / "chained_join_review_queue.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -5699,6 +5837,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("visual_review_cases_report_exists", (output_dir / "visual_review_cases_report.json").exists())
     add_check("narrow_grouping_correction_design_exists", (output_dir / "narrow_grouping_correction_design.json").exists())
     add_check("chained_cross_page_continuation_experiment_exists", (output_dir / "chained_cross_page_continuation_experiment.json").exists())
+    add_check("chained_join_review_queue_exists", (output_dir / "chained_join_review_queue.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -6072,12 +6211,29 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("narrow_grouping_design_references_visual_defects", {row.get("canonical_paragraph_id") for row in narrow_design_rows}.issubset({row.get("canonical_paragraph_id") for row in visual_review_rows}))
     chained_acceptance = chained_cross_page_experiment.get("acceptance_rule") or {}
     chained_target = chained_cross_page_experiment.get("target_defect") or {}
+    chained_queue_rows = chained_join_review_queue.get("queue") or []
+    chained_queue_summary = chained_join_review_queue.get("summary") or {}
+    valid_chained_queue_risks = {
+        "likely_valid_chained_continuation",
+        "possible_overmerge",
+        "structure_boundary_risk",
+        "page_furniture_risk",
+        "needs_visual_review",
+    }
     add_check("audit_has_chained_cross_page_continuation_experiment", "Chained Cross-Page Continuation Experiment" in audit_html)
     add_check("chained_experiment_keeps_active_policy", chained_cross_page_experiment.get("active_policy") == manifest.get("paragraph_merge_policy"))
     add_check("chained_experiment_policy_recorded", chained_cross_page_experiment.get("experimental_policy") == CHAINED_CROSS_PAGE_CONTINUATION_POLICY)
     add_check("chained_experiment_does_not_change_active_policy", bool(chained_cross_page_experiment.get("does_not_change_active_policy")))
     add_check("chained_experiment_targets_confirmed_defect", chained_target.get("canonical_paragraph_id") == "cp_000103")
     add_check("chained_experiment_acceptance_fields_present", all(key in chained_acceptance for key in ["cp_000103_fixed", "gold_score_improved", "over_merges_not_increased", "object_label_accuracy_not_worsened", "adoption_recommendation"]))
+    add_check("audit_has_chained_join_review_queue", "Chained Join Side-Effect Review Queue" in audit_html)
+    add_check("chained_join_review_queue_is_review_only", bool(chained_join_review_queue.get("does_not_apply_decisions")) and bool(chained_join_review_queue.get("does_not_change_active_policy")))
+    add_check(
+        "chained_join_review_queue_count_matches_experiment",
+        chained_queue_summary.get("total_unscored_chained_joins") == len(chained_queue_rows) == (chained_cross_page_experiment.get("side_effects") or {}).get("joins_not_covered_by_gold"),
+    )
+    add_check("chained_join_review_queue_risks_valid", all(row.get("likely_risk") in valid_chained_queue_risks for row in chained_queue_rows))
+    add_check("chained_join_review_queue_fields_present", all(all(row.get(field) is not None for field in ["chained_join_id", "affected_pages", "source_candidate_ids", "likely_risk", "recommended_review_action"]) for row in chained_queue_rows))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -6261,6 +6417,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "visual_review_cases_report": "visual_review_cases_report.json",
             "narrow_grouping_correction_design": "narrow_grouping_correction_design.json",
             "chained_cross_page_continuation_experiment": "chained_cross_page_continuation_experiment.json",
+            "chained_join_review_queue": "chained_join_review_queue.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -6394,6 +6551,11 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         chained_experiment_details,
         narrow_grouping_correction_design,
     )
+    chained_join_review_queue = build_chained_join_review_queue(
+        book_id,
+        run_id,
+        chained_cross_page_continuation_experiment,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -6459,6 +6621,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "visual_review_cases_report.json", visual_review_cases_report)
     write_json(output_dir / "narrow_grouping_correction_design.json", narrow_grouping_correction_design)
     write_json(output_dir / "chained_cross_page_continuation_experiment.json", chained_cross_page_continuation_experiment)
+    write_json(output_dir / "chained_join_review_queue.json", chained_join_review_queue)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

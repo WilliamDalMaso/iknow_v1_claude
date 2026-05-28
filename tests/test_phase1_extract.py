@@ -961,6 +961,17 @@ def test_validation_rejects_malformed_review_override_row() -> None:
             ),
             encoding="utf-8",
         )
+        (output_dir / "chained_join_review_queue.json").write_text(
+            json.dumps(
+                {
+                    "does_not_change_active_policy": True,
+                    "does_not_apply_decisions": True,
+                    "summary": {"total_unscored_chained_joins": 0},
+                    "queue": [],
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "gold_evaluation_report.json").write_text(
             json.dumps(
                 {
