@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guarded Chained Continuation Experiment</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Guarded Chained Continuation Experiment</h1>
+  <p><strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Purpose</h2>
+  <p>
+    The previous chained-continuation side-effect review found a real false join:
+    <code>chained_join_review_0004</code> on pages <code>59-61</code>. The unguarded
+    <code>v3_chained_cross_page_continuation</code> policy skipped intervening poem/prose content
+    on page <code>60</code>. This checkpoint tested a tightened experiment-only policy:
+    <code>v3_chained_cross_page_continuation_guarded</code>.
+  </p>
+
+  <div class="rule">
+    This checkpoint did not adopt the guarded policy, did not make it active, did not change
+    canonical promotion rules, and did not add OCR, model review, retrieval, embeddings, graph work,
+    user-facing answers, or structure promotion.
+  </div>
+
+  <h2>Guard Rule</h2>
+  <p>
+    A chained continuation must not skip later non-furniture paragraph content on the terminal page
+    of the existing cross-page joined candidate. If such body content exists before the proposed
+    next-page candidate, the chain is rejected as a side-effect risk.
+  </p>
+
+  <h2>Result</h2>
+  <ol>
+    <li><code>cp_000103</code> remains fixed.</li>
+    <li><code>chained_join_review_0004</code> is blocked.</li>
+    <li>Prior curated accepted joins preserved: <code>7/7</code>.</li>
+    <li>Prior curated rejected joins blocked: <code>1/1</code>.</li>
+    <li>Guarded proposed chained joins: <code>8</code>.</li>
+    <li>Guarded rejected chained candidates: <code>59</code>.</li>
+    <li>Gold paragraph precision/recall: <code>0.941 -> 1.000</code>.</li>
+    <li>Over-split paragraphs: <code>1 -> 0</code>.</li>
+    <li>Over-merged paragraphs: <code>0 -> 0</code>.</li>
+    <li>Warning count delta: <code>-14</code>.</li>
+    <li>BBox/span risk delta: <code>-1</code>.</li>
+  </ol>
+
+  <div class="warn">
+    The guarded policy passes the experiment gate and is eligible for a formal adoption checkpoint,
+    but it is not active yet. Adoption must remain a separate documented decision.
+  </div>
+
+  <h2>Artifacts</h2>
+  <ol>
+    <li>Added <code>guarded_chained_cross_page_continuation_experiment.json</code>.</li>
+    <li>Updated <code>phase1_audit.html</code> with a guarded chained-continuation section.</li>
+    <li>Updated validation to require the guarded experiment artifact and gate checks.</li>
+    <li>Added a unit test for the false-join class: do not skip terminal-page body content.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>

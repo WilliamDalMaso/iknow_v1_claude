@@ -64,6 +64,7 @@
     <li>Use <code>chained_cross_page_continuation_experiment.json</code> before considering chained continuation adoption; it fixed <code>cp_000103</code> but leaves unscored joins that require side-effect review.</li>
     <li>Use <code>chained_join_review_queue.json</code> to review unscored chained joins; do not adopt <code>v3</code> while any queued side effects remain unresolved.</li>
     <li>Use <code>chained_join_decisions_applied.json</code> before changing <code>v3</code>; current curated decisions include <code>7</code> accepted joins and <code>1</code> rejected false join caused by skipped intervening page content.</li>
+    <li>Use <code>guarded_chained_cross_page_continuation_experiment.json</code> before any chained-continuation adoption checkpoint; it must preserve accepted decisions, block rejected decisions, keep <code>cp_000103</code> fixed, and remain experiment-only until formally adopted.</li>
     <li>Do not add OCR, model review, retrieval, or graph work just because the audit UI improved.</li>
   </ol>
 

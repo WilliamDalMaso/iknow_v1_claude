@@ -121,9 +121,11 @@
     unscored joins as <code>5</code> likely valid continuations, <code>2</code> needs visual review,
     and <code>1</code> structure-boundary risk. Curated review accepted <code>7</code> joins and
     rejected <code>1</code> false join on pages <code>59-61</code>, where the proposed chain skipped
-    intervening poem/prose content on page <code>60</code>. <code>v3</code> is not active and should
-    not be adopted as-is; the next experiment must block chained joins when intervening body content
-    exists between the already joined candidate and the next-page candidate.
+    intervening poem/prose content on page <code>60</code>. The guarded experiment
+    <code>v3_chained_cross_page_continuation_guarded</code> blocks that false-join class, preserves
+    all <code>7</code> prior accepted decisions, keeps <code>cp_000103</code> fixed, and improves
+    paragraph precision/recall to <code>1.000</code>. It is still not active; the next step must be a
+    formal adoption checkpoint, not casual activation.
   </p>
 
   <h2>Phase 1 Evidence Stack</h2>

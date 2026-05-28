@@ -35,11 +35,11 @@ former 6 gold-set gap cases. The front-matter/metadata review found 7 valid Pref
 paragraphs and 2 valid Chapter I paragraphs caught by an overbroad early-page warning. Downstream is
 still blocked. The visual-review queue found 7 valid canonical paragraphs and 1 true grouping defect
 on page 109. The `v3_chained_cross_page_continuation` experiment fixed that defect and improved gold
-paragraph precision/recall to 1.000 without object-label regression, but it proposed 9 chained joins
-and 8 are outside authoritative gold coverage. The review queue classifies those 8 as 5 likely valid
-continuations, 2 visual-review cases, and 1 structure-boundary risk. Curated review accepted 7 and
-rejected 1 false join where v3 skipped intervening page content. It is not active; the next step is a
-tighter experiment, not adoption.
+paragraph precision/recall to 1.000 without object-label regression, but side-effect review rejected
+1 false join where v3 skipped intervening page content. The guarded experiment
+`v3_chained_cross_page_continuation_guarded` blocks that false-join class, preserves all 7 prior
+accepted chained-join decisions, keeps `cp_000103` fixed, and passes the experiment gate. It is not
+active; the next step is a formal guarded-v3 adoption checkpoint.
 
 ## Documentation Model
 

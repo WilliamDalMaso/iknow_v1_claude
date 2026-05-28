@@ -8,6 +8,7 @@ from pathlib import Path
 import src.phase1_extract as phase1_extract
 from src.phase1_extract import (
     CID_PATTERN,
+    apply_chained_cross_page_continuation_experiment,
     apply_cross_page_continuation_experiment,
     build_cross_page_join_review_report,
     build_audit_html,
@@ -182,6 +183,84 @@ def test_cross_page_continuation_experiment_joins_incomplete_page_boundary() -> 
     assert paragraph_rows[0]["source_line_ids"] == ["book:p0001:line001", "book:p0002:line002"]
     assert details["joined_count"] == 1
     assert "the next page text" in clean_by_id[paragraph_rows[0]["object_id"]]["clean_text"]
+
+
+def test_guarded_chained_continuation_blocks_intervening_body_content() -> None:
+    layout = [
+        {
+            "book_id": "book",
+            "object_id": "book:p0001:obj001__xpage__obj002",
+            "page_number": 1,
+            "object_index": 1,
+            "object_type": "paragraph",
+            "classification_reasons": ["paragraph_merge_policy:v2_cross_page_continuation"],
+            "source_object_ids": ["book:p0001:obj001", "book:p0002:obj002"],
+            "source_line_ids": ["book:p0001:line001", "book:p0002:line002"],
+            "source_line_indexes": [1, 2],
+            "bbox": {"x0": 40, "x1": 300, "top": 500, "bottom": 90, "cross_page": True, "page_numbers": [1, 2]},
+            "raw_text": "This continues with\nan incomplete phrase with",
+        },
+        {
+            "book_id": "book",
+            "object_id": "book:p0002:obj003",
+            "page_number": 2,
+            "object_index": 3,
+            "object_type": "paragraph",
+            "classification_reasons": ["merged_consecutive_paragraph_lines"],
+            "source_line_ids": ["book:p0002:line003"],
+            "source_line_indexes": [3],
+            "bbox": {"x0": 40, "x1": 300, "top": 140, "bottom": 160},
+            "raw_text": "intervening body text that must not be skipped.",
+        },
+        {
+            "book_id": "book",
+            "object_id": "book:p0003:obj001",
+            "page_number": 3,
+            "object_index": 1,
+            "object_type": "paragraph",
+            "classification_reasons": ["merged_consecutive_paragraph_lines"],
+            "source_line_ids": ["book:p0003:line001"],
+            "source_line_indexes": [1],
+            "bbox": {"x0": 40, "x1": 300, "top": 80, "bottom": 100},
+            "raw_text": "the next page continuation.",
+        },
+    ]
+    clean = [
+        {
+            "book_id": "book",
+            "object_id": "book:p0001:obj001__xpage__obj002",
+            "page_number": 1,
+            "object_type": "paragraph",
+            "clean_text": "This continues with an incomplete phrase with",
+            "cleanup_operations": ["cross_page_paragraph_continuation_join"],
+        },
+        {
+            "book_id": "book",
+            "object_id": "book:p0002:obj003",
+            "page_number": 2,
+            "object_type": "paragraph",
+            "clean_text": "intervening body text that must not be skipped.",
+            "cleanup_operations": [],
+        },
+        {
+            "book_id": "book",
+            "object_id": "book:p0003:obj001",
+            "page_number": 3,
+            "object_type": "paragraph",
+            "clean_text": "the next page continuation.",
+            "cleanup_operations": [],
+        },
+    ]
+
+    unguarded_layout, _, unguarded_details = apply_chained_cross_page_continuation_experiment(layout, clean)
+    guarded_layout, _, guarded_details = apply_chained_cross_page_continuation_experiment(layout, clean, guarded=True)
+
+    assert unguarded_details["joined_count"] == 1
+    assert any(row["object_id"].endswith("__chain__obj001") for row in unguarded_layout)
+    assert guarded_details["joined_count"] == 0
+    assert guarded_details["rejected_count"] == 1
+    assert "intervening_terminal_page_body_content_present" in guarded_details["rejected_chained_cross_page_candidates"][0]["rejection_reasons"]
+    assert guarded_details["rejected_chained_cross_page_candidates"][0]["intervening_body_object_ids"] == ["book:p0002:obj003"]
 
 
 def test_cross_page_join_review_report_counts_all_joins() -> None:
@@ -982,6 +1061,26 @@ def test_validation_rejects_malformed_review_override_row() -> None:
                         "adoption_remains_separate_checkpoint": True,
                     },
                     "decisions": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (output_dir / "guarded_chained_cross_page_continuation_experiment.json").write_text(
+            json.dumps(
+                {
+                    "active_policy": "v1_consecutive_lines",
+                    "guarded_experimental_policy": "v3_chained_cross_page_continuation_guarded",
+                    "does_not_change_active_policy": True,
+                    "does_not_adopt_guarded_policy": True,
+                    "decision_replay": {
+                        "accepted_prior_decisions": 0,
+                        "accepted_prior_decisions_preserved": 0,
+                        "rejected_prior_decisions": 0,
+                        "rejected_prior_decisions_blocked": 0,
+                        "chained_join_review_0004_blocked": False,
+                    },
+                    "acceptance_rule": {"cp_000103_remains_fixed": False},
+                    "side_effects": {"proposed_chained_joins": 0, "rejected_chained_joins": 0},
                 }
             ),
             encoding="utf-8",
