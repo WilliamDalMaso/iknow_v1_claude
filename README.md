@@ -33,8 +33,9 @@ retrieval, embeddings, reasoning, and graph work remain blocked until canonical 
 safe. The current post-adoption blocker is `bbox_span_risk`; gold coverage has been expanded for the
 former 6 gold-set gap cases. The front-matter/metadata review found 7 valid Preface/Letter
 paragraphs and 2 valid Chapter I paragraphs caught by an overbroad early-page warning. Downstream is
-still blocked; the current order is visual-review cases, then any narrow promotion or grouping
-correction.
+still blocked. The visual-review queue found 7 valid canonical paragraphs and 1 true grouping defect
+on page 109, so the next correction should be narrow grouping work, not a broad metadata or
+promotion block.
 
 ## Documentation Model
 

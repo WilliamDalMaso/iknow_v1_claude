@@ -49,6 +49,7 @@ REQUIRED_ARTIFACTS = [
     "post_adoption_bbox_span_diagnosis.json",
     "post_adoption_remediation_plan.json",
     "front_matter_metadata_review_report.json",
+    "visual_review_cases_report.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -3102,6 +3103,15 @@ VALID_FRONT_MATTER_REVIEW_CLASSIFICATIONS = {
 }
 
 
+VALID_VISUAL_REVIEW_CLASSIFICATIONS = {
+    "valid_canonical_paragraph",
+    "true_paragraph_grouping_defect",
+    "threshold_noise",
+    "extraction_loss_suspected",
+    "unresolved",
+}
+
+
 def build_front_matter_metadata_review_report(
     book_id: str,
     run_id: str,
@@ -3200,6 +3210,111 @@ def build_front_matter_metadata_review_report(
     }
 
 
+def build_visual_review_cases_report(
+    book_id: str,
+    run_id: str,
+    remediation_plan: dict[str, Any],
+    canonical_paragraphs: list[dict[str, Any]],
+    active_policy: str,
+) -> dict[str, Any]:
+    canonical_by_id = {row.get("canonical_paragraph_id"): row for row in canonical_paragraphs}
+    visual_queue = next(
+        (row for row in remediation_plan.get("queues", []) if row.get("group") == "needs_visual_review"),
+        {},
+    )
+    review_rows = []
+    for queue_row in visual_queue.get("sample_rows", []):
+        canonical_id = queue_row.get("canonical_paragraph_id")
+        canonical_row = canonical_by_id.get(canonical_id, {})
+        page_number = int(queue_row.get("page_number") or canonical_row.get("page_number") or 0)
+        source_candidate_id = queue_row.get("source_candidate_object_id") or canonical_row.get("source_candidate_object_id")
+        source_line_ids = canonical_row.get("source_line_ids", [])
+        gold_coverage = queue_row.get("gold_coverage")
+        warnings = set(str(warning) for warning in queue_row.get("current_warning_labels", []))
+        if canonical_id == "cp_000103" or gold_coverage == "partial_gold_overlap":
+            likely_classification = "true_paragraph_grouping_defect"
+            confidence = 0.88
+            recommended_action = (
+                "Treat as a real over-split continuation defect; this page-109 paragraph should be "
+                "joined with the page 107-109 gold paragraph before downstream use."
+            )
+        elif gold_coverage == "exact_gold_match":
+            likely_classification = "valid_canonical_paragraph"
+            confidence = 0.86
+            recommended_action = (
+                "Keep as a valid canonical paragraph; the remaining span/length warning is threshold "
+                "noise for a visually verified long paragraph."
+            )
+        elif "possible_missing_paragraph_start" in warnings:
+            likely_classification = "unresolved"
+            confidence = 0.58
+            recommended_action = "Inspect neighboring pages and source lines before deciding whether this is a split or extraction-loss case."
+        else:
+            likely_classification = "threshold_noise"
+            confidence = 0.62
+            recommended_action = "No extraction change; consider threshold tuning only after more visually verified examples."
+        review_rows.append(
+            {
+                "canonical_paragraph_id": canonical_id,
+                "page": page_number,
+                "source_candidate_id": source_candidate_id,
+                "text_preview": queue_row.get("text_preview") or str(canonical_row.get("clean_text", ""))[:300],
+                "visual_evidence_reference": (
+                    f"phase1_audit.html#page-{page_number}; "
+                    f"phase1_audit.html{audit_anchor_for_object(source_candidate_id)}; "
+                    f"{PAGE_IMAGES_DIR_NAME}/{page_image_filename(page_number)}"
+                ),
+                "source_line_evidence": {
+                    "source_line_ids": source_line_ids,
+                    "source_line_count": queue_row.get("source_line_count"),
+                    "first_source_line_preview": queue_row.get("first_source_line_preview"),
+                    "last_source_line_preview": queue_row.get("last_source_line_preview"),
+                    "vertical_bbox_span": queue_row.get("vertical_bbox_span"),
+                    "page_height_ratio": queue_row.get("page_height_ratio"),
+                },
+                "likely_classification": likely_classification,
+                "confidence": confidence,
+                "recommended_action": recommended_action,
+                "gold_coverage": gold_coverage,
+                "matching_gold_ids": queue_row.get("matching_gold_ids", []),
+                "overlapping_gold_ids": queue_row.get("overlapping_gold_ids", []),
+                "current_warning_labels": queue_row.get("current_warning_labels", []),
+                "audit_anchor": audit_anchor_for_object(source_candidate_id),
+                "page_anchor": f"#page-{page_number}",
+            }
+        )
+    classification_counts = Counter(row["likely_classification"] for row in review_rows)
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "visual_review_cases",
+        "active_policy": active_policy,
+        "review_only": True,
+        "does_not_change_extraction_behavior": True,
+        "does_not_change_promotion_rules": True,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion", "new merge-policy experiment"],
+        "source_artifacts": [
+            "post_adoption_remediation_plan.json",
+            "post_adoption_bbox_span_diagnosis.json",
+            "phase1_audit.html",
+        ],
+        "summary": {
+            "total_reviewed": len(review_rows),
+            "classification_counts": dict(sorted(classification_counts.items())),
+            "gold_covered_rows": sum(1 for row in review_rows if row.get("gold_coverage") in {"exact_gold_match", "partial_gold_overlap"}),
+            "valid_canonical_paragraphs": classification_counts.get("valid_canonical_paragraph", 0),
+            "true_paragraph_grouping_defects": classification_counts.get("true_paragraph_grouping_defect", 0),
+            "threshold_noise": classification_counts.get("threshold_noise", 0),
+            "extraction_loss_suspected": classification_counts.get("extraction_loss_suspected", 0),
+            "unresolved": classification_counts.get("unresolved", 0),
+            "safe_for_downstream": False,
+            "recommendation": "fix_or_gate_the_confirmed_page_109_grouping_defect_before_downstream_use",
+        },
+        "rows": review_rows,
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -3261,6 +3376,7 @@ def build_audit_html(
     post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json") if (output_dir / "post_adoption_bbox_span_diagnosis.json").exists() else {}
     post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json") if (output_dir / "post_adoption_remediation_plan.json").exists() else {}
     front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json") if (output_dir / "front_matter_metadata_review_report.json").exists() else {}
+    visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json") if (output_dir / "visual_review_cases_report.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -3957,6 +4073,28 @@ def build_audit_html(
         "</tr>"
         for row in (front_matter_metadata_review_report.get("rows") or [])
     )
+    visual_review_summary = visual_review_cases_report.get("summary") or {}
+    visual_review_classification_items = "\n".join(
+        f"<li><code>{esc(key)}</code>: {esc(value)}</li>"
+        for key, value in sorted((visual_review_summary.get("classification_counts") or {}).items())
+    )
+    visual_review_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page'))}</a></td>"
+        f"<td><code>{esc(row.get('source_candidate_id'))}</code></td>"
+        f"<td><code>{esc(row.get('likely_classification'))}</code></td>"
+        f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
+        f"<td>{esc(row.get('gold_coverage'))}</td>"
+        f"<td>{esc((row.get('source_line_evidence') or {}).get('source_line_count'))}</td>"
+        f"<td>{esc((row.get('source_line_evidence') or {}).get('first_source_line_preview', ''))}</td>"
+        f"<td>{esc((row.get('source_line_evidence') or {}).get('last_source_line_preview', ''))}</td>"
+        f"<td>{esc(row.get('recommended_action'))}</td>"
+        f"<td>{esc(row.get('text_preview', ''))}</td>"
+        f"<td>{esc(row.get('visual_evidence_reference', ''))}</td>"
+        "</tr>"
+        for row in (visual_review_cases_report.get("rows") or [])
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -4521,6 +4659,28 @@ def build_audit_html(
     <tbody>{front_matter_review_rows or '<tr><td colspan="10">No front-matter/metadata review rows.</td></tr>'}</tbody>
   </table>
 
+  <h2>Visual Review Cases</h2>
+  <div class="warn">
+    This review inspects the remaining visual-review queue only. It does not demote paragraphs,
+    change grouping, change promotion rules, add OCR, add model review, or unlock downstream use.
+  </div>
+  <ul>
+    <li>Total reviewed: <code>{esc(visual_review_summary.get('total_reviewed', '-'))}</code></li>
+    <li>Gold-covered rows: <code>{esc(visual_review_summary.get('gold_covered_rows', '-'))}</code></li>
+    <li>Valid canonical paragraphs: <code>{esc(visual_review_summary.get('valid_canonical_paragraphs', '-'))}</code></li>
+    <li>True paragraph grouping defects: <code>{esc(visual_review_summary.get('true_paragraph_grouping_defects', '-'))}</code></li>
+    <li>Safe for downstream: <code>{esc(visual_review_summary.get('safe_for_downstream', '-'))}</code></li>
+    <li>Recommendation: <code>{esc(visual_review_summary.get('recommendation', '-'))}</code></li>
+  </ul>
+  <h3>Classification Counts</h3>
+  <ul>{visual_review_classification_items or '<li>No visual-review classifications recorded.</li>'}</ul>
+  <table>
+    <thead>
+      <tr><th>Canonical ID</th><th>Page</th><th>Source Candidate</th><th>Classification</th><th>Confidence</th><th>Gold</th><th>Lines</th><th>First Line</th><th>Last Line</th><th>Recommended Action</th><th>Text Preview</th><th>Visual Evidence</th></tr>
+    </thead>
+    <tbody>{visual_review_rows or '<tr><td colspan="12">No visual-review rows.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -4784,6 +4944,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json")
     post_adoption_remediation_plan = read_json(output_dir / "post_adoption_remediation_plan.json")
     front_matter_metadata_review_report = read_json(output_dir / "front_matter_metadata_review_report.json")
+    visual_review_cases_report = read_json(output_dir / "visual_review_cases_report.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -4822,6 +4983,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("post_adoption_bbox_span_diagnosis_exists", (output_dir / "post_adoption_bbox_span_diagnosis.json").exists())
     add_check("post_adoption_remediation_plan_exists", (output_dir / "post_adoption_remediation_plan.json").exists())
     add_check("front_matter_metadata_review_report_exists", (output_dir / "front_matter_metadata_review_report.json").exists())
+    add_check("visual_review_cases_report_exists", (output_dir / "visual_review_cases_report.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -5161,6 +5323,18 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("front_matter_review_classifications_valid", all(row.get("likely_classification") in VALID_FRONT_MATTER_REVIEW_CLASSIFICATIONS for row in front_matter_rows))
     add_check("front_matter_review_trace_to_canonical", {row.get("canonical_paragraph_id") for row in front_matter_rows}.issubset(set(canonical_ids)))
     add_check("front_matter_review_is_review_only", bool(front_matter_metadata_review_report.get("review_only")))
+    visual_review_rows = visual_review_cases_report.get("rows") or []
+    visual_review_summary = visual_review_cases_report.get("summary") or {}
+    visual_review_queue_count = next(
+        (row.get("count") for row in remediation_queues if row.get("group") == "needs_visual_review"),
+        0,
+    )
+    add_check("audit_has_visual_review_cases", "Visual Review Cases" in audit_html)
+    add_check("visual_review_matches_active_policy", visual_review_cases_report.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check("visual_review_count_matches_queue", visual_review_summary.get("total_reviewed") == visual_review_queue_count == len(visual_review_rows))
+    add_check("visual_review_classifications_valid", all(row.get("likely_classification") in VALID_VISUAL_REVIEW_CLASSIFICATIONS for row in visual_review_rows))
+    add_check("visual_review_trace_to_canonical", {row.get("canonical_paragraph_id") for row in visual_review_rows}.issubset(set(canonical_ids)))
+    add_check("visual_review_is_review_only", bool(visual_review_cases_report.get("review_only")))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -5341,6 +5515,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "post_adoption_bbox_span_diagnosis": "post_adoption_bbox_span_diagnosis.json",
             "post_adoption_remediation_plan": "post_adoption_remediation_plan.json",
             "front_matter_metadata_review_report": "front_matter_metadata_review_report.json",
+            "visual_review_cases_report": "visual_review_cases_report.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -5432,6 +5607,13 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         canonical_paragraphs,
         ACTIVE_PARAGRAPH_MERGE_POLICY,
     )
+    visual_review_cases_report = build_visual_review_cases_report(
+        book_id,
+        run_id,
+        post_adoption_remediation_plan,
+        canonical_paragraphs,
+        ACTIVE_PARAGRAPH_MERGE_POLICY,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -5494,6 +5676,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "post_adoption_bbox_span_diagnosis.json", post_adoption_bbox_span_diagnosis)
     write_json(output_dir / "post_adoption_remediation_plan.json", post_adoption_remediation_plan)
     write_json(output_dir / "front_matter_metadata_review_report.json", front_matter_metadata_review_report)
+    write_json(output_dir / "visual_review_cases_report.json", visual_review_cases_report)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

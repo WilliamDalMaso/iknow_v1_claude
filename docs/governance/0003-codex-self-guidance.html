@@ -56,9 +56,10 @@
     <li>Store reviewed cross-page join decisions under <code>reviews/&lt;book_id&gt;/cross_page_join_decisions.jsonl</code>.</li>
     <li>Do not confuse policy adoption with downstream readiness; canonical paragraph review can still block retrieval and graph work.</li>
     <li>Use <code>post_adoption_canonical_safety_report.json</code> to identify the next blocker after policy adoption; currently that blocker is <code>bbox_span_risk</code>.</li>
-    <li>Use <code>post_adoption_bbox_span_diagnosis.json</code> before changing rules; current remaining cases include likely true grouping defects and visual-review cases. The gold-set gap queue has been expanded to <code>0</code>, and the front-matter/metadata review found valid front-matter prose plus an overbroad early-page warning on Chapter I body paragraphs.</li>
+    <li>Use <code>post_adoption_bbox_span_diagnosis.json</code> before changing rules; current remaining cases are dominated by likely true grouping defects. The gold-set gap queue has been expanded to <code>0</code>, the front-matter/metadata review found valid prose, and visual review confirmed one page 109 grouping defect.</li>
     <li>Use <code>post_adoption_remediation_plan.json</code> to choose the right class of fix; do not apply one broad merge fix to all remaining bbox/span cases.</li>
     <li>Use <code>front_matter_metadata_review_report.json</code> before changing front-matter promotion behavior; it is a review-only report, not a demotion or promotion rule.</li>
+    <li>Use <code>visual_review_cases_report.json</code> before changing grouping behavior; it confirms which visual warnings are valid paragraphs and which are real grouping defects.</li>
     <li>Do not add OCR, model review, retrieval, or graph work just because the audit UI improved.</li>
   </ol>
 

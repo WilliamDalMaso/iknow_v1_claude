@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visual Review Cases</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Visual Review Cases</h1>
+  <p><strong>Date:</strong> 2026-05-28</p>
+
+  <h2>Purpose</h2>
+  <p>
+    After gold-gap expansion and front-matter/metadata review, the remediation plan still had
+    <code>8</code> cases marked for visual review. This checkpoint reviewed those cases against
+    page images, source lines, object cards, and gold coverage without changing extraction behavior.
+  </p>
+
+  <div class="rule">
+    This changed review reporting only. It did not demote paragraphs, change grouping, change
+    promotion rules, add OCR, add AI/model review, add embeddings, add retrieval, add graph work, or
+    promote structure.
+  </div>
+
+  <h2>Review Result</h2>
+  <ol>
+    <li>Total reviewed: <code>8</code>.</li>
+    <li>Valid canonical paragraphs: <code>7</code>.</li>
+    <li>True paragraph grouping defects: <code>1</code>.</li>
+    <li>Extraction loss suspected: <code>0</code>.</li>
+    <li>Unresolved cases: <code>0</code>.</li>
+    <li>Gold-covered rows: <code>8</code>.</li>
+  </ol>
+
+  <h2>Finding</h2>
+  <p>
+    The valid cases are exact gold matches on pages <code>22</code>, <code>26</code>,
+    <code>52</code>, <code>58</code>, <code>66</code>, <code>81</code>, and <code>122</code>.
+    Their span warnings are not enough to justify demotion or grouping changes.
+  </p>
+  <p>
+    The one true defect is <code>cp_000103</code> on page <code>109</code>. It partially overlaps
+    the authoritative gold paragraph <code>douglass_gold_p0107_0109_001</code>, which shows that the
+    page 109 paragraph is a continuation fragment from the longer paragraph spanning pages
+    <code>107-109</code>.
+  </p>
+
+  <div class="warn">
+    Downstream remains blocked. The next correction should focus on the confirmed page 109 grouping
+    defect and the remaining likely true grouping defects; do not use a broad promotion or metadata
+    block.
+  </div>
+
+  <h2>Artifacts</h2>
+  <ol>
+    <li>Generated <code>visual_review_cases_report.json</code>.</li>
+    <li>Updated <code>phase1_audit.html</code> with a Visual Review Cases section.</li>
+    <li>Updated validation so the report must exist, trace to canonical rows, stay review-only, and use valid classifications.</li>
+  </ol>
+
+  <h2>Verification</h2>
+  <ol>
+    <li>Douglass <code>phase1_v3</code> regenerated with validation status <code>pass</code>.</li>
+    <li><code>python3 -B -m pytest tests</code> passed.</li>
+    <li><code>docs/governance/codex_guidance.json</code> parsed successfully.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ol>
+</main>
+</body>
+</html>

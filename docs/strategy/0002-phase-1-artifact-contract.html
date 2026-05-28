@@ -209,6 +209,11 @@
         <td>Separates real prefatory prose, true metadata pollution, overbroad early-page warnings, and promotion-rule questions before any demotion or rule change.</td>
       </tr>
       <tr>
+        <td><code>visual_review_cases_report.json</code></td>
+        <td>Review-only classification of the visual-review remediation queue, including canonical id, page, source candidate id, text preview, visual evidence reference, source-line evidence, likely classification, confidence, recommended action, and gold coverage.</td>
+        <td>Separates valid canonical paragraphs from true grouping defects, threshold noise, suspected extraction loss, and unresolved cases before any grouping correction.</td>
+      </tr>
+      <tr>
         <td><code>paragraph_merge_failure_taxonomy_report.json</code></td>
         <td>Deterministic sample of likely true accidental merge rows with provisional category, confidence, recommended next action, source-line previews, bbox metrics, page anchors, and summary counts.</td>
         <td>Identifies the specific merge failure pattern before another merge-rule correction is attempted.</td>
