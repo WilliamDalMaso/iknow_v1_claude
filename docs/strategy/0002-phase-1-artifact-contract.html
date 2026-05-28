@@ -194,6 +194,11 @@
         <td>Identifies the next blocker after policy adoption without changing extraction behavior or unlocking downstream intelligence.</td>
       </tr>
       <tr>
+        <td><code>post_adoption_bbox_span_diagnosis.json</code></td>
+        <td>Analysis-only classification of remaining bbox/span warning cases under the adopted active policy, including likely cause, confidence, recommended action, gold coverage, page grouping, high-severity cases, likely true defects, and likely false positives or threshold noise.</td>
+        <td>Separates real paragraph grouping defects from front-matter artifacts, threshold noise, and gold-set gaps before another extraction rule is changed.</td>
+      </tr>
+      <tr>
         <td><code>paragraph_merge_failure_taxonomy_report.json</code></td>
         <td>Deterministic sample of likely true accidental merge rows with provisional category, confidence, recommended next action, source-line previews, bbox metrics, page anchors, and summary counts.</td>
         <td>Identifies the specific merge failure pattern before another merge-rule correction is attempted.</td>

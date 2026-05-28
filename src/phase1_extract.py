@@ -46,6 +46,7 @@ REQUIRED_ARTIFACTS = [
     "xpage_join_0032_investigation.json",
     "policy_adoption_decision.json",
     "post_adoption_canonical_safety_report.json",
+    "post_adoption_bbox_span_diagnosis.json",
     "gold_evaluation_report.json",
     "cleanup_log.jsonl",
     "validation_report.json",
@@ -2844,6 +2845,151 @@ def build_post_adoption_canonical_safety_report(
     }
 
 
+def post_adoption_bbox_likely_cause(
+    decision: dict[str, Any],
+    canonical_row: dict[str, Any],
+    gold_coverage: str,
+) -> tuple[str, float, str]:
+    warnings = set(str(warning) for warning in canonical_row.get("warnings", []))
+    page_number = int(decision.get("page_number") or 0)
+    existing_cause = str(decision.get("likely_cause", ""))
+    confidence = float(decision.get("confidence") or 0.55)
+    if "possible_metadata_or_structure_leakage" in warnings or page_number <= 20:
+        return "front_matter_or_metadata_artifact", max(confidence, 0.72), "inspect front matter and keep out of downstream body use until structure policy is defined"
+    if existing_cause == "normal_long_paragraph":
+        return "normal_long_paragraph", max(confidence, 0.66), "no extraction change; consider tuning review threshold after visual confirmation"
+    if existing_cause == "threshold_too_strict":
+        return "threshold_noise", max(confidence, 0.64), "adjust review threshold only after visual spot check confirms false positive"
+    if existing_cause == "true_accidental_merge":
+        return "true_paragraph_grouping_defect", max(confidence, 0.70), "inspect visually and consider a narrow paragraph grouping correction only after examples are classified"
+    if gold_coverage == "uncovered":
+        return "gold_set_gap", 0.60, "add authoritative gold rows for this page or case before adopting another rule"
+    return "needs_visual_review", 0.56, "inspect page image, overlay, and source lines before changing rules"
+
+
+def build_post_adoption_bbox_span_diagnosis(
+    book_id: str,
+    run_id: str,
+    canonical_paragraphs: list[dict[str, Any]],
+    canonical_review_report: dict[str, Any],
+    active_policy: str,
+) -> dict[str, Any]:
+    canonical_by_id = {row.get("canonical_paragraph_id"): row for row in canonical_paragraphs}
+    diagnostics_by_id = {
+        row.get("canonical_paragraph_id"): row
+        for row in canonical_review_report.get("bbox_span_risk_diagnostics", [])
+    }
+    gold_sets = authoritative_gold_line_sets(book_id)
+    gold_pages = {int(row.get("page") or 0) for row in gold_sets}
+    diagnosis_rows: list[dict[str, Any]] = []
+
+    for decision in canonical_review_report.get("bbox_span_decisions", []):
+        canonical_id = decision.get("canonical_paragraph_id")
+        canonical_row = canonical_by_id.get(canonical_id, {})
+        diagnostic = diagnostics_by_id.get(canonical_id, {})
+        source_lines = set(canonical_row.get("source_line_ids", []))
+        exact_gold_ids = [
+            str(row.get("gold_id"))
+            for row in gold_sets
+            if source_lines and source_lines == row.get("source_line_ids")
+        ]
+        partial_gold_ids = [
+            str(row.get("gold_id"))
+            for row in gold_sets
+            if source_lines and source_lines.intersection(row.get("source_line_ids", set())) and str(row.get("gold_id")) not in exact_gold_ids
+        ]
+        page_number = int(decision.get("page_number") or canonical_row.get("page_number") or 0)
+        if exact_gold_ids:
+            gold_coverage = "exact_gold_match"
+        elif partial_gold_ids:
+            gold_coverage = "partial_gold_overlap"
+        elif page_number in gold_pages:
+            gold_coverage = "gold_page_without_line_match"
+        else:
+            gold_coverage = "uncovered"
+        diagnosis_input = {**canonical_row, "warnings": diagnostic.get("all_warnings", [])}
+        likely_cause, confidence, recommended_action = post_adoption_bbox_likely_cause(decision, diagnosis_input, gold_coverage)
+        diagnosis_rows.append(
+            {
+                "canonical_paragraph_id": canonical_id,
+                "page_number": page_number,
+                "source_candidate_object_id": decision.get("source_candidate_object_id"),
+                "text_preview": str(canonical_row.get("clean_text", ""))[:300],
+                "source_line_count": decision.get("source_line_count"),
+                "vertical_bbox_span": decision.get("vertical_bbox_span"),
+                "page_height_ratio": decision.get("page_height_ratio"),
+                "first_source_line_preview": decision.get("first_source_line_preview"),
+                "last_source_line_preview": decision.get("last_source_line_preview"),
+                "current_warning_labels": diagnostic.get("all_warnings", []),
+                "existing_bbox_likely_cause": decision.get("likely_cause"),
+                "likely_cause": likely_cause,
+                "confidence": confidence,
+                "recommended_action": recommended_action,
+                "severity": decision.get("severity"),
+                "gold_coverage": gold_coverage,
+                "matching_gold_ids": exact_gold_ids,
+                "overlapping_gold_ids": partial_gold_ids,
+                "audit_anchor": decision.get("audit_anchor"),
+                "page_anchor": decision.get("page_anchor"),
+            }
+        )
+
+    def grouped_rows(key: str) -> list[dict[str, Any]]:
+        grouped: dict[Any, list[dict[str, Any]]] = {}
+        for row in diagnosis_rows:
+            grouped.setdefault(row.get(key), []).append(row)
+        return [
+            {
+                key: group_key,
+                "count": len(rows),
+                "sample_canonical_paragraph_ids": first_unique([row.get("canonical_paragraph_id") for row in rows], 8),
+                "affected_pages": first_unique([row.get("page_number") for row in rows], 16),
+            }
+            for group_key, rows in sorted(grouped.items(), key=lambda item: (-len(item[1]), str(item[0])))
+        ]
+
+    top_pages = sorted(
+        grouped_rows("page_number"),
+        key=lambda row: (-int(row.get("count") or 0), int(row.get("page_number") or 0)),
+    )[:12]
+    high_severity = [row for row in diagnosis_rows if row.get("severity") == "high"]
+    likely_true_defects = [row for row in diagnosis_rows if row.get("likely_cause") == "true_paragraph_grouping_defect"]
+    likely_false_positive_or_noise = [
+        row
+        for row in diagnosis_rows
+        if row.get("likely_cause") in {"normal_long_paragraph", "threshold_noise", "front_matter_or_metadata_artifact"}
+    ]
+    return {
+        "book_id": book_id,
+        "run_id": run_id,
+        "created_at": utc_now(),
+        "scope": "post_adoption_bbox_span_diagnosis",
+        "active_policy": active_policy,
+        "does_not_change_extraction_behavior": True,
+        "does_not_add": ["OCR", "AI/model review", "embeddings", "retrieval", "graph work", "structure promotion", "new merge-policy experiment"],
+        "summary": {
+            "total_bbox_span_cases": len(diagnosis_rows),
+            "high_severity_cases": len(high_severity),
+            "likely_true_defects": len(likely_true_defects),
+            "likely_false_positive_or_noise": len(likely_false_positive_or_noise),
+            "covered_by_gold": sum(1 for row in diagnosis_rows if row.get("gold_coverage") == "exact_gold_match"),
+            "partially_covered_by_gold": sum(1 for row in diagnosis_rows if row.get("gold_coverage") == "partial_gold_overlap"),
+            "gold_page_without_line_match": sum(1 for row in diagnosis_rows if row.get("gold_coverage") == "gold_page_without_line_match"),
+            "not_covered_by_gold": sum(1 for row in diagnosis_rows if row.get("gold_coverage") == "uncovered"),
+        },
+        "by_likely_cause": grouped_rows("likely_cause"),
+        "by_page": top_pages,
+        "by_recommended_action": grouped_rows("recommended_action"),
+        "by_gold_coverage": grouped_rows("gold_coverage"),
+        "high_severity_cases": high_severity[:30],
+        "top_pages_needing_visual_review": top_pages,
+        "likely_true_defects": likely_true_defects[:30],
+        "likely_false_positives_or_threshold_noise": likely_false_positive_or_noise[:30],
+        "diagnoses": diagnosis_rows,
+        "recommendation": "review_remaining_bbox_span_cases_before_changing_extraction_behavior",
+    }
+
+
 def review_flags(text: str, image_count: int, table_count: int) -> list[str]:
     flags: list[str] = []
     if not text.strip():
@@ -2902,6 +3048,7 @@ def build_audit_html(
     xpage_join_0032_investigation = read_json(output_dir / "xpage_join_0032_investigation.json") if (output_dir / "xpage_join_0032_investigation.json").exists() else {}
     policy_adoption_decision = read_json(output_dir / "policy_adoption_decision.json") if (output_dir / "policy_adoption_decision.json").exists() else {}
     post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json") if (output_dir / "post_adoption_canonical_safety_report.json").exists() else {}
+    post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json") if (output_dir / "post_adoption_bbox_span_diagnosis.json").exists() else {}
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json") if (output_dir / "gold_evaluation_report.json").exists() else {}
     promoted_object_ids = {row.get("source_candidate_object_id") for row in canonical_paragraphs}
     blocker_by_object_id = {row.get("object_id"): row for row in promotion_blockers if row.get("object_id")}
@@ -3512,6 +3659,54 @@ def build_audit_html(
         "</tr>"
         for row in (post_adoption_safety_report.get("sample_risky_paragraphs") or [])[:12]
     )
+    bbox_diagnosis_summary = post_adoption_bbox_diagnosis.get("summary") or {}
+    bbox_diagnosis_cause_items = "\n".join(
+        f"<li><code>{esc(row.get('likely_cause'))}</code>: {esc(row.get('count'))}</li>"
+        for row in (post_adoption_bbox_diagnosis.get("by_likely_cause") or [])
+    )
+    bbox_diagnosis_page_items = "\n".join(
+        f"<li>Page <code>{esc(row.get('page_number'))}</code>: {esc(row.get('count'))} cases; samples <code>{esc(', '.join(str(item) for item in row.get('sample_canonical_paragraph_ids', [])))}</code></li>"
+        for row in (post_adoption_bbox_diagnosis.get("top_pages_needing_visual_review") or [])[:10]
+    )
+    bbox_diagnosis_true_defect_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page_number'))}</a></td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('page_height_ratio'), 3))}</td>"
+        f"<td>{esc(row.get('gold_coverage'))}</td>"
+        f"<td>{esc(row.get('recommended_action'))}</td>"
+        f"<td>{esc(row.get('text_preview', ''))}</td>"
+        "</tr>"
+        for row in (post_adoption_bbox_diagnosis.get("likely_true_defects") or [])[:20]
+    )
+    bbox_diagnosis_noise_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page_number'))}</a></td>"
+        f"<td><code>{esc(row.get('likely_cause'))}</code></td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('page_height_ratio'), 3))}</td>"
+        f"<td>{esc(row.get('gold_coverage'))}</td>"
+        f"<td>{esc(row.get('text_preview', ''))}</td>"
+        "</tr>"
+        for row in (post_adoption_bbox_diagnosis.get("likely_false_positives_or_threshold_noise") or [])[:20]
+    )
+    bbox_diagnosis_all_rows = "\n".join(
+        "<tr>"
+        f"<td><a href=\"{esc(row.get('audit_anchor', '#'))}\"><code>{esc(row.get('canonical_paragraph_id'))}</code></a></td>"
+        f"<td><a href=\"{esc(row.get('page_anchor', '#'))}\">{esc(row.get('page_number'))}</a></td>"
+        f"<td>{esc(row.get('source_line_count'))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('vertical_bbox_span'), 1))}</td>"
+        f"<td>{esc(fmt_decimal(row.get('page_height_ratio'), 3))}</td>"
+        f"<td><code>{esc(row.get('likely_cause'))}</code></td>"
+        f"<td>{esc(fmt_decimal(row.get('confidence'), 2))}</td>"
+        f"<td>{esc(row.get('gold_coverage'))}</td>"
+        f"<td>{esc(row.get('recommended_action'))}</td>"
+        f"<td>{esc(', '.join(row.get('current_warning_labels', [])))}</td>"
+        "</tr>"
+        for row in (post_adoption_bbox_diagnosis.get("diagnoses") or [])[:80]
+    )
     bucket_options = "\n".join(
         f"<option value=\"{esc(value)}\">{esc(value)}</option>"
         for value in sorted({bucket_label(row) for row in candidate_rows})
@@ -3996,6 +4191,45 @@ def build_audit_html(
     <tbody>{post_adoption_sample_rows or '<tr><td colspan="5">No post-adoption risky paragraph samples.</td></tr>'}</tbody>
   </table>
 
+  <h2>Post-Adoption BBox Span Diagnosis</h2>
+  <div class="warn">
+    This diagnosis classifies remaining bbox/span warnings under the adopted active policy. It is
+    analysis-only and does not change extraction behavior.
+  </div>
+  <ul>
+    <li>Total bbox/span cases: <code>{esc(bbox_diagnosis_summary.get('total_bbox_span_cases', '-'))}</code></li>
+    <li>High-severity cases: <code>{esc(bbox_diagnosis_summary.get('high_severity_cases', '-'))}</code></li>
+    <li>Likely true defects: <code>{esc(bbox_diagnosis_summary.get('likely_true_defects', '-'))}</code></li>
+    <li>Likely false positives or noise: <code>{esc(bbox_diagnosis_summary.get('likely_false_positive_or_noise', '-'))}</code></li>
+    <li>Exact gold-covered cases: <code>{esc(bbox_diagnosis_summary.get('covered_by_gold', '-'))}</code></li>
+    <li>Not covered by gold: <code>{esc(bbox_diagnosis_summary.get('not_covered_by_gold', '-'))}</code></li>
+  </ul>
+  <h3>By Likely Cause</h3>
+  <ul>{bbox_diagnosis_cause_items or '<li>No bbox/span diagnoses.</li>'}</ul>
+  <h3>Top Pages Needing Visual Review</h3>
+  <ul>{bbox_diagnosis_page_items or '<li>No top pages recorded.</li>'}</ul>
+  <h3>Likely True Defects</h3>
+  <table>
+    <thead>
+      <tr><th>Canonical ID</th><th>Page</th><th>Lines</th><th>Page Ratio</th><th>Gold Coverage</th><th>Recommended Action</th><th>Text Preview</th></tr>
+    </thead>
+    <tbody>{bbox_diagnosis_true_defect_rows or '<tr><td colspan="7">No likely true defects classified.</td></tr>'}</tbody>
+  </table>
+  <h3>Likely False Positives Or Threshold Noise</h3>
+  <table>
+    <thead>
+      <tr><th>Canonical ID</th><th>Page</th><th>Likely Cause</th><th>Lines</th><th>Page Ratio</th><th>Gold Coverage</th><th>Text Preview</th></tr>
+    </thead>
+    <tbody>{bbox_diagnosis_noise_rows or '<tr><td colspan="7">No likely false positives or noise classified.</td></tr>'}</tbody>
+  </table>
+  <h3>All BBox Span Diagnoses</h3>
+  <table>
+    <thead>
+      <tr><th>Canonical ID</th><th>Page</th><th>Lines</th><th>BBox Span</th><th>Page Ratio</th><th>Likely Cause</th><th>Confidence</th><th>Gold Coverage</th><th>Recommended Action</th><th>Warnings</th></tr>
+    </thead>
+    <tbody>{bbox_diagnosis_all_rows or '<tr><td colspan="10">No bbox/span diagnosis rows.</td></tr>'}</tbody>
+  </table>
+
   <h2>Repeated Artifact Pattern Review</h2>
   <table>
     <thead>
@@ -4256,6 +4490,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     xpage_join_0032_investigation = read_json(output_dir / "xpage_join_0032_investigation.json")
     policy_adoption_decision = read_json(output_dir / "policy_adoption_decision.json")
     post_adoption_safety_report = read_json(output_dir / "post_adoption_canonical_safety_report.json")
+    post_adoption_bbox_diagnosis = read_json(output_dir / "post_adoption_bbox_span_diagnosis.json")
     gold_evaluation_report = read_json(output_dir / "gold_evaluation_report.json")
     reconstruction_map = read_json(output_dir / "reconstruction_map_candidate.json")
     reading_order = read_json(output_dir / "reading_order_candidate.json")
@@ -4291,6 +4526,7 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
     add_check("xpage_join_0032_investigation_exists", (output_dir / "xpage_join_0032_investigation.json").exists())
     add_check("policy_adoption_decision_exists", (output_dir / "policy_adoption_decision.json").exists())
     add_check("post_adoption_canonical_safety_report_exists", (output_dir / "post_adoption_canonical_safety_report.json").exists())
+    add_check("post_adoption_bbox_span_diagnosis_exists", (output_dir / "post_adoption_bbox_span_diagnosis.json").exists())
     add_check("gold_evaluation_report_exists", (output_dir / "gold_evaluation_report.json").exists())
     merge_counts = paragraph_merge_experiment_report.get("counts", {})
     taxonomy_summary = paragraph_merge_failure_taxonomy_report.get("summary", {})
@@ -4585,6 +4821,24 @@ def validate_phase1_run(output_dir: Path) -> dict[str, Any]:
         and post_adoption_state.get("warning_count") == canonical_review_counts.get("warning_count"),
     )
     add_check("post_adoption_top_risk_present", bool(post_adoption_top_risk.get("cluster")) or canonical_review_counts.get("warning_count", 0) == 0)
+    bbox_diagnosis_summary = post_adoption_bbox_diagnosis.get("summary") or {}
+    bbox_diagnoses = post_adoption_bbox_diagnosis.get("diagnoses") or []
+    valid_post_adoption_bbox_causes = {
+        "true_paragraph_grouping_defect",
+        "normal_long_paragraph",
+        "front_matter_or_metadata_artifact",
+        "threshold_noise",
+        "gold_set_gap",
+        "needs_visual_review",
+    }
+    add_check("audit_has_post_adoption_bbox_span_diagnosis", "Post-Adoption BBox Span Diagnosis" in audit_html)
+    add_check("post_adoption_bbox_diagnosis_matches_active_policy", post_adoption_bbox_diagnosis.get("active_policy") == manifest.get("paragraph_merge_policy"))
+    add_check(
+        "post_adoption_bbox_diagnosis_count_matches_review",
+        bbox_diagnosis_summary.get("total_bbox_span_cases") == len(bbox_span_decisions) == len(bbox_diagnoses),
+    )
+    add_check("post_adoption_bbox_diagnosis_causes_valid", all(row.get("likely_cause") in valid_post_adoption_bbox_causes for row in bbox_diagnoses))
+    add_check("post_adoption_bbox_diagnosis_trace_to_canonical", {row.get("canonical_paragraph_id") for row in bbox_diagnoses}.issubset(set(canonical_ids)))
     add_check("audit_has_merge_failure_taxonomy", "Merge Failure Taxonomy" in audit_html)
     add_check("audit_has_bbox_span_diagnostics", "BBox Span Risk Diagnostics" in audit_html)
     add_check("audit_has_bbox_span_decision_summary", "BBox Span Decision Summary" in audit_html)
@@ -4762,6 +5016,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
             "xpage_join_0032_investigation": "xpage_join_0032_investigation.json",
             "policy_adoption_decision": "policy_adoption_decision.json",
             "post_adoption_canonical_safety_report": "post_adoption_canonical_safety_report.json",
+            "post_adoption_bbox_span_diagnosis": "post_adoption_bbox_span_diagnosis.json",
             "gold_evaluation_report": "gold_evaluation_report.json",
         },
     }
@@ -4833,6 +5088,13 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
         paragraph_merge_experiment_report,
         policy_adoption_decision,
     )
+    post_adoption_bbox_span_diagnosis = build_post_adoption_bbox_span_diagnosis(
+        book_id,
+        run_id,
+        canonical_paragraphs,
+        canonical_paragraph_review_report,
+        ACTIVE_PARAGRAPH_MERGE_POLICY,
+    )
     paragraph_merge_failure_taxonomy_report = build_paragraph_merge_failure_taxonomy_report(
         book_id, run_id, canonical_paragraphs, canonical_paragraph_review_report
     )
@@ -4892,6 +5154,7 @@ def run_phase1(pdf_path: Path, book_id: str, run_id: str = "phase1_v3") -> Path:
     write_json(output_dir / "xpage_join_0032_investigation.json", xpage_join_0032_investigation)
     write_json(output_dir / "policy_adoption_decision.json", policy_adoption_decision)
     write_json(output_dir / "post_adoption_canonical_safety_report.json", post_adoption_canonical_safety_report)
+    write_json(output_dir / "post_adoption_bbox_span_diagnosis.json", post_adoption_bbox_span_diagnosis)
     write_json(output_dir / "gold_evaluation_report.json", gold_evaluation_report)
     write_jsonl(output_dir / "cleanup_log.jsonl", cleanup_log)
     pending_validation = {

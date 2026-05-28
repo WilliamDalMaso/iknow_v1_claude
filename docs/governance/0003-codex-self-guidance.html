@@ -56,6 +56,7 @@
     <li>Store reviewed cross-page join decisions under <code>reviews/&lt;book_id&gt;/cross_page_join_decisions.jsonl</code>.</li>
     <li>Do not confuse policy adoption with downstream readiness; canonical paragraph review can still block retrieval and graph work.</li>
     <li>Use <code>post_adoption_canonical_safety_report.json</code> to identify the next blocker after policy adoption; currently that blocker is <code>bbox_span_risk</code>.</li>
+    <li>Use <code>post_adoption_bbox_span_diagnosis.json</code> before changing rules; current remaining cases include likely true grouping defects, front-matter artifacts, gold-set gaps, and visual-review cases.</li>
     <li>Do not add OCR, model review, retrieval, or graph work just because the audit UI improved.</li>
   </ol>
 
