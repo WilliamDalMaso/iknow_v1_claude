@@ -10,3 +10,6 @@ data/runs/**/tmp/
 data/runs/*
 !data/runs/.gitkeep
 data/books/*.pdf
+
+# Local Claude Code settings (machine-specific; never push)
+.claude/settings.local.json
