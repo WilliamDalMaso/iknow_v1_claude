@@ -155,6 +155,61 @@ def phase1_run_summaries() -> list[dict]:
     return summaries
 
 
+RUN_STREAMS = {
+    "main_paragraph_candidates.jsonl": "main_paragraph",
+    "structure_candidates.jsonl": "structure",
+    "page_artifacts_candidates.jsonl": "page_artifact",
+    "unknown_objects.jsonl": "unknown",
+}
+
+
+def latest_run_dir(book: str | None = None, run: str | None = None) -> Path | None:
+    if book and run:
+        candidate = RUNS_DIR / book / run
+        return candidate if candidate.is_dir() else None
+    runs = [p for p in sorted(RUNS_DIR.glob("*/phase1_v*")) if p.is_dir()]
+    return runs[-1] if runs else None
+
+
+def page_object_breakdown(run_dir: Path) -> list[dict]:
+    """Per-page object map that makes cross-page (spanning) paragraphs explicit.
+
+    A paragraph spanning pages is attributed to its START page, so a page that
+    only continues a prior paragraph shows fewer 'starts'. This surfaces both
+    'starts' (objects beginning on the page) and 'continued_from' (objects begun
+    earlier that flow into the page), explaining per-page object counts.
+    """
+    objs: list[dict] = []
+    for fname, otype in RUN_STREAMS.items():
+        for o in read_jsonl(run_dir / fname):
+            pg = o.get("page_number")
+            if pg is None:
+                continue
+            bbox = o.get("bbox") or {}
+            spans = sorted({int(p) for p in (bbox.get("page_numbers") or [pg]) if p is not None}) or [int(pg)]
+            text = o.get("clean_text") or o.get("raw_text") or o.get("text") or ""
+            objs.append({"id": o.get("object_id"), "type": otype, "start_page": int(pg), "spans": spans, "preview": text[:140]})
+    pages = sorted({p for o in objs for p in o["spans"]})
+    out: list[dict] = []
+    for pg in pages:
+        starts = [o for o in objs if o["start_page"] == pg]
+        continued = [
+            {"id": o["id"], "type": o["type"], "from_page": o["start_page"], "preview": o["preview"]}
+            for o in objs if pg in o["spans"] and o["start_page"] < pg
+        ]
+        out.append({
+            "page": pg,
+            "object_count": len(starts),
+            "starts": [
+                {"id": o["id"], "type": o["type"], "preview": o["preview"],
+                 "spans_to": [p for p in o["spans"] if p > pg]}
+                for o in starts
+            ],
+            "continued_from": continued,
+        })
+    return out
+
+
 def dashboard_html() -> bytes:
     return DASHBOARD.encode("utf-8")
 
@@ -216,6 +271,10 @@ DASHBOARD = r"""<!doctype html>
     .meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
     pre { white-space: pre-wrap; margin: 6px 0 0; color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; }
     .empty { color: var(--muted); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+    .pom-obj { display: flex; gap: 10px; align-items: baseline; padding: 7px 14px; border-top: 1px solid var(--line); font-size: 13px; }
+    .pom-text { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .span-to { color: var(--milestone); white-space: nowrap; }
+    .span-from { color: var(--warning); white-space: nowrap; }
     a { color: var(--accent); }
     @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, 1fr); } .event { grid-template-columns: 1fr; } }
   </style>
@@ -255,6 +314,12 @@ DASHBOARD = r"""<!doctype html>
   <section>
     <h2>Phase 1 runs</h2>
     <div class="runs" id="runs"></div>
+  </section>
+
+  <section>
+    <h2>Per-page object map <span class="hint" id="pomRun"></span></h2>
+    <p class="hint">A paragraph spanning a page break is attributed to the page it starts on, so a page may show fewer "starts" than paragraphs you see. "continues to / continued from" markers make spanning explicit.</p>
+    <div id="pageObjects"></div>
   </section>
 
   <section>
@@ -382,11 +447,27 @@ document.addEventListener("keydown", e=>{
   if (e.key==="r"){ refresh(); }
 });
 
+function renderPageObjects(data){
+  const host=$("pageObjects");
+  $("pomRun").textContent = data.run ? `(${data.run})` : "";
+  if(!data.pages || !data.pages.length){ host.innerHTML=`<div class="empty">No run objects found.</div>`; return; }
+  host.innerHTML = data.pages.map(p=>{
+    const starts=(p.starts||[]).map(s=>`<div class="pom-obj"><span class="tag">${esc(s.type)}</span>${(s.spans_to&&s.spans_to.length)?`<span class="span-to">&rarr; continues to p${s.spans_to.join(",")}</span>`:""}<span class="pom-text">${esc(s.preview)}</span></div>`).join("");
+    const cont=(p.continued_from||[]).map(c=>`<div class="pom-obj"><span class="span-from">&#8617; continued from p${c.from_page}</span><span class="pom-text">${esc(c.preview)}</span></div>`).join("");
+    const meta=`${p.object_count} start${p.object_count===1?"":"s"}${p.continued_from.length?` &middot; +${p.continued_from.length} continued`:""}`;
+    return `<details class="group"><summary><span>Page ${p.page}</span><span class="hint">${meta}</span></summary>${starts}${cont}</details>`;
+  }).join("");
+}
+function loadPageObjects(){
+  fetch("/api/page-objects",{cache:"no-store"}).then(r=>r.json()).then(renderPageObjects).catch(()=>{});
+}
+
 fetch("/api/meta",{cache:"no-store"}).then(r=>r.json()).then(m=>{
   STATE.meta=m; $("sub").innerHTML = `Claude-lane monitor on <code>${esc(m.host)}:${esc(m.port)}</code> &middot; schema <code>${esc(m.schema)}</code> &middot; 8765 is the legacy/Codex dashboard.`;
 }).catch(()=>{});
 
 refresh();
+loadPageObjects();
 setInterval(()=>{ if(!$("f-pause").checked) refresh(); }, 2000);
 </script>
 </body>
@@ -404,6 +485,14 @@ class Handler(BaseHTTPRequestHandler):
             self.json(summarize_events(read_events()))
         elif path == "/api/phase1-runs":
             self.json(phase1_run_summaries())
+        elif path == "/api/page-objects":
+            from urllib.parse import parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            run_dir = latest_run_dir(q.get("book", [None])[0], q.get("run", [None])[0])
+            self.json({
+                "run": run_dir.parent.name + "/" + run_dir.name if run_dir else None,
+                "pages": page_object_breakdown(run_dir) if run_dir else [],
+            })
         elif path == "/api/meta":
             self.json({"host": self.server.server_address[0], "port": self.server.server_address[1], "schema": "iknow.observe/2"})
         elif path.startswith("/runs/"):
