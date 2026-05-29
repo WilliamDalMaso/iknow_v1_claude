@@ -106,7 +106,10 @@ def _strip_volatile(obj: object) -> object:
 def _neutralize_text(text: str, run_dir: Path) -> str:
     text = text.replace(str(run_dir.resolve()), "<run_dir>")
     text = text.replace(str(ROOT), "<root>")
-    text = text.replace(run_dir.name, "<run_id>")
+    # Neutralize the run_id only where it appears as a path segment ("/<run_id>"),
+    # never as a bare substring -- a bare replace corrupts real content when the
+    # run_id happens to occur inside a word (e.g. run_id "ca" inside "candidate").
+    text = text.replace("/" + run_dir.name, "/<run_id>")
     return _TIMESTAMP.sub("<ts>", text)
 
 

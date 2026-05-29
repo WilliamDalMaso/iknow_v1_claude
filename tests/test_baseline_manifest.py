@@ -76,10 +76,33 @@ def test_canonical_content_neutralizes_text_timestamps_and_paths(tmp_path):
     run = tmp_path / "phase1_vX"
     run.mkdir()
     html = run / "phase1_audit.html"
-    html.write_text(f"built 2026-05-28T17:43:59Z at {run.resolve()} run phase1_vX", encoding="utf-8")
+    html.write_text(f"built 2026-05-28T17:43:59Z at {run.resolve()}/page_images/p1.jpg", encoding="utf-8")
     out = bm.canonical_content(html, run).decode("utf-8")
-    assert "<ts>" in out and "<run_dir>" in out and "<run_id>" in out
+    assert "<ts>" in out and "<run_dir>" in out
     assert "2026-05-28T17:43:59Z" not in out
+
+
+def test_canonical_content_does_not_corrupt_words_colliding_with_run_id(tmp_path):
+    # Regression: a bare run_id that is a substring of real content (e.g. "ca"
+    # inside "candidate") must NOT be mangled. The run_id is neutralized only as
+    # a path segment, so two runs whose ids collide with content still match.
+    run_ca = tmp_path / "ca"
+    run_ok = tmp_path / "zz"
+    for run in (run_ca, run_ok):
+        run.mkdir()
+        (run / "phase1_audit.html").write_text("main_paragraph_candidates: 262\n", encoding="utf-8")
+    out_ca = bm.canonical_content(run_ca / "phase1_audit.html", run_ca)
+    out_ok = bm.canonical_content(run_ok / "phase1_audit.html", run_ok)
+    assert b"candidates" in out_ca  # not corrupted into "<run_id>ndidates"
+    assert out_ca == out_ok  # run-id choice does not change normalized content
+
+
+def test_canonical_content_neutralizes_run_id_as_path_segment(tmp_path):
+    run = tmp_path / "myrun"
+    run.mkdir()
+    (run / "phase1_audit.html").write_text("see data/runs/book/myrun/page_images/p1.jpg\n", encoding="utf-8")
+    out = bm.canonical_content(run / "phase1_audit.html", run).decode("utf-8")
+    assert "/myrun/" not in out and "<run_id>" in out
 
 
 def test_content_fingerprint_changed_detected(tmp_path):
