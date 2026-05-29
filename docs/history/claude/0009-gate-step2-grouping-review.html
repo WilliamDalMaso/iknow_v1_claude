@@ -45,18 +45,19 @@
     <strong>Finding (course-correction).</strong> Every inspected case is a valid, correctly bounded
     <em>long</em> paragraph — not an accidental merge. The bbox/vertical-span heuristic over-flags
     Douglass's long prose. Splitting them, as the original remediation plan assumed, would
-    <em>damage</em> correct output. After adding the gold rows the evaluation shows 22/22 matched,
+    <em>damage</em> correct output. After adding the gold rows the evaluation shows 37/37 matched,
     precision = recall = 1.000, zero over-merges/over-splits — the policy already matches the gold.
   </div>
 
   <h2>Result / status</h2>
   <ul>
-    <li>7 of 23 firmly confirmed valid (6 visual + 1 existing gold); 16 strongly indicated by triage
-      but not yet individually viewed.</li>
-    <li>The gate is likely much closer than "23 defects" implied: the blocker appears to be
-      <em>audit over-sensitivity</em>, not bad extraction. The corrected path is to finish the visual
-      pass, then refine the risk heuristic (review-side, gold-gated, needs authorization) and
-      re-evaluate <code>safe_for_downstream</code>.</li>
+    <li><strong>All 23 confirmed valid</strong> (21 single-page visual + 1 existing gold + 1 cross-page
+      tail with no internal merge). <strong>Zero actual grouping defects</strong> in this cluster.</li>
+    <li>Authored 20 authoritative gold rows across two passes; gold set <strong>17 → 37</strong>;
+      evaluation 37/37 matched, precision = recall = 1.000.</li>
+    <li>The gate is much closer than "23 defects" implied: the blocker is <em>audit
+      over-sensitivity</em>, not bad extraction. Next: refine the risk heuristic (review-side,
+      gold-gated, needs authorization) and re-evaluate <code>safe_for_downstream</code>.</li>
     <li>Full findings: <a href="../../proposals/claude/grouping_defect_review_findings.html">grouping_defect_review_findings.html</a>.</li>
   </ul>
 

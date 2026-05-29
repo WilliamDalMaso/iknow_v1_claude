@@ -34,59 +34,62 @@
 
   <h2>What I did</h2>
   <ul>
-    <li><strong>Visually inspected 6</strong> of the 23 against the rendered page images, chosen to
-      cover the riskiest shapes: the largest spans (<code>cp_000056</code> p46, 19 lines/43%), a
-      two-flagged-paragraph page (<code>cp_000045</code>/<code>cp_000046</code> p41), and the
-      quote/document lead-in endings (<code>cp_000032</code> p29 song; <code>cp_000099</code> p112
-      certificate). All six are single, indented, correctly terminated paragraphs.</li>
-    <li><strong>1 more</strong> (<code>cp_000034</code> p30) was already covered by an existing
-      authoritative gold row as a single paragraph.</li>
-    <li><strong>Text-triage of all 23:</strong> 20 end in terminal punctuation (a complete sentence);
-      the other 3 end in <code>":—"</code> (lead-ins to a song/document that are correctly excluded
-      from the paragraph). Consistent with "long but valid".</li>
-    <li><strong>Authored 5 new authoritative gold rows</strong> (reviewer <code>claude_visual_audit</code>)
-      certifying the verified paragraphs as single. The gold set grew 17 → 22 authoritative rows.</li>
+    <li><strong>Visually inspected all 22 single-page cases</strong> against the rendered page images
+      (pages 21, 29, 30*, 33, 37, 41×2, 42, 45, 46, 50, 73, 74, 84, 88, 89, 92, 93, 95, 97, 98, 112,
+      118), including the largest spans (<code>cp_000056</code> p46 and <code>cp_000090</code> p93,
+      ~19–20 lines) and every quote/document lead-in (song p29, apostrophe p74, certificate p112).
+      Every one is a single, correctly bounded paragraph. (*p30 / <code>cp_000034</code> was already
+      covered by existing authoritative gold.)</li>
+    <li><strong>1 case is a cross-page tail</strong> (<code>cp_000082</code> p88): the page-88
+      continuation of a paragraph beginning on p87 — valid, no internal over-merge. Left out of gold
+      pending the separate cross-page boundary question.</li>
+    <li><strong>Authored 20 authoritative gold rows total</strong> (reviewer
+      <code>claude_visual_audit</code>) across the two passes, certifying the verified paragraphs as
+      single. The gold set grew <strong>17 → 37</strong> authoritative rows.</li>
     <li><strong>Recorded all 23 adjudications</strong> in
       <code>reviews/douglass_narrative/grouping_defect_review.jsonl</code>.</li>
   </ul>
 
   <h2>Evidence it is correct (not a guess)</h2>
   <p>
-    After adding the gold rows, the gold evaluation reports <strong>22/22 paragraphs matched,
+    After adding the gold rows, the gold evaluation reports <strong>37/37 paragraphs matched,
     precision = recall = 1.000, zero over-merges, zero over-splits.</strong> The extraction policy
     already groups these exactly as the gold says they should be — formal confirmation that the
     flagged paragraphs are correct and the warnings are false alarms.
   </p>
 
-  <h2>Adjudication summary</h2>
+  <h2>Adjudication summary (all 23)</h2>
   <table>
     <tr><th>Status</th><th>Count</th><th>Basis</th></tr>
-    <tr><td>Confirmed valid single paragraph</td><td>6</td><td>Claude visual audit of page images</td></tr>
-    <tr><td>Confirmed valid single paragraph</td><td>1</td><td>Existing authoritative gold</td></tr>
-    <tr><td>Provisional false alarm</td><td>16</td><td>Ending-punctuation triage; not yet individually eyeballed</td></tr>
+    <tr><td>Confirmed valid single paragraph</td><td>21</td><td>Claude visual audit of page images</td></tr>
+    <tr><td>Confirmed valid single paragraph</td><td>1</td><td>Existing authoritative gold (<code>cp_000034</code>)</td></tr>
+    <tr><td>Confirmed valid (cross-page tail, no internal merge)</td><td>1</td><td>Claude visual audit (<code>cp_000082</code>)</td></tr>
   </table>
 
   <div class="warn">
-    <strong>Honesty note.</strong> 7 of 23 are firmly confirmed (6 visual + 1 gold). The remaining 16
-    are strongly indicated as false alarms by the same pattern but have not yet been individually
-    viewed. They should be eyeballed and gold-rowed before any final claim.
+    <strong>Result:</strong> 23 of 23 confirmed valid. <strong>Zero actual grouping defects</strong> in
+    this cluster — every "likely-true defect" was a false alarm of the vertical-span heuristic.
   </div>
 
   <h2>What this means for the gate</h2>
   <p>The original remediation plan assumed a "narrow grouping correction" (a paragraph <em>split</em>).
   The visual evidence says that would be wrong. The corrected path to <code>safe_for_downstream</code>:</p>
   <ol>
-    <li>Finish visually confirming the remaining 16 and add gold rows (review-only).</li>
-    <li>Refine the <strong>audit/risk heuristic</strong> so a long-but-gold-confirmed paragraph is not
+    <li><strong>[DONE]</strong> Visually confirm the cluster and add gold rows (review-only) — all 23
+      reviewed; gold set 17 → 37; evaluation 37/37 matched at precision = recall = 1.000.</li>
+    <li>Refine the <strong>audit/risk heuristic</strong> so a long, gold-confirmed paragraph is not
       counted as "risky" — this is a <em>review-side</em> change, not an extraction change, and must
       itself be gold-gated and side-effect reviewed (needs explicit authorization).</li>
-    <li>Re-evaluate <code>safe_for_downstream</code> once the risk count reflects real defects (which
-      so far appear to be none in this cluster).</li>
+    <li>Re-evaluate <code>safe_for_downstream</code> once the risk count reflects real defects (which,
+      in this cluster, are <strong>none</strong>).</li>
   </ol>
   <p>
-    Net: the gate looks <strong>much closer</strong> than "23 defects" implied — the canonical
-    paragraphs in this cluster appear correct; the blocker is heuristic over-sensitivity, not bad
-    extraction. This must be confirmed across the remaining 16 before declaring the cluster clean.
+    Net: the gate is <strong>much closer</strong> than "23 defects" implied — the canonical paragraphs
+    in this cluster are confirmed correct; the blocker is heuristic over-sensitivity, not bad
+    extraction. The next, separately-authorized step is the review-side heuristic refinement, after
+    which <code>safe_for_downstream</code> can be reconsidered. (Note: other warning categories
+    outside this 39-case bbox/span cluster — e.g. front-matter/chapter-boundary risks — would also
+    need a pass before a full downstream-safe declaration.)
   </p>
 
   <h2>Provenance &amp; safety</h2>
