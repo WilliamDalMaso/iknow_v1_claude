@@ -51,6 +51,7 @@
     <li><a href="0006-phase-c-second-book-recon.html">0006 — Phase C: read-only second-book (Hobbit) reconnaissance</a></li>
     <li><a href="0007-gate-closing-plan.html">0007 — Douglass gate-closing plan (Step 1, diagnosis)</a></li>
     <li><a href="0008-normalizer-bug-postmortem.html">0008 — Failure post-mortem: regression-normalizer collision bug</a></li>
+    <li><a href="0009-gate-step2-grouping-review.html">0009 — Gate Step 2: grouping-defect visual review (reframing)</a></li>
   </ol>
 
   <h2>Complete commit timeline</h2>
@@ -70,6 +71,8 @@
     <tr><td>11</td><td><code>13d61c6</code></td><td>05-28 23:05</td><td>0006</td><td>Phase C recon: read-only Hobbit dry-run findings (docs)</td><td class="ok">42</td></tr>
     <tr><td>12</td><td><code>c7a2e54</code></td><td>05-29 12:52</td><td>0007</td><td>Douglass gate-closing plan (docs)</td><td class="fail">regression red*</td></tr>
     <tr><td>13</td><td><code>3724a13</code></td><td>05-29 13:48</td><td>0008</td><td>Fix regression-normalizer collision bug; regen baseline</td><td class="ok">44</td></tr>
+    <tr><td>14</td><td><code>2b497fe</code></td><td>05-29 14:xx</td><td>—</td><td>Document full Claude-lane work history (index + 8 entries)</td><td class="ok">44</td></tr>
+    <tr><td>15</td><td>(this commit)</td><td>05-29</td><td>0009</td><td>Gate Step 2: grouping-defect review; +5 gold rows; reframing</td><td class="ok">44</td></tr>
   </table>
   <p>* Commit 12 was pushed while the phase1 regression test was red. The failure was a latent bug in
   the regression <em>normalizer</em> (not the pipeline) plus a stale baseline hash; it was diagnosed

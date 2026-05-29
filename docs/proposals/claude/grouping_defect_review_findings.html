@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Grouping-Defect Review Findings (Step 2)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    .big { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 9px; text-align: left; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Grouping-Defect Review Findings (Gate-Closing Step 2)</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-29 &middot; <strong>Mode:</strong> review-only (no extraction behavior changed)</p>
+
+  <div class="big">
+    <strong>Headline reframing.</strong> The 23 cases the diagnostics labeled "likely-true paragraph
+    grouping defects" are, on inspection, <strong>not defects</strong> — they are valid, correctly
+    bounded <em>long</em> paragraphs that the bbox/vertical-span heuristic over-flags. Douglass writes
+    long paragraphs; the heuristic treats large vertical span as a probable accidental merge, which is
+    a false signal for this text. <strong>Splitting them would damage correct output.</strong>
+  </div>
+
+  <h2>What I did</h2>
+  <ul>
+    <li><strong>Visually inspected 6</strong> of the 23 against the rendered page images, chosen to
+      cover the riskiest shapes: the largest spans (<code>cp_000056</code> p46, 19 lines/43%), a
+      two-flagged-paragraph page (<code>cp_000045</code>/<code>cp_000046</code> p41), and the
+      quote/document lead-in endings (<code>cp_000032</code> p29 song; <code>cp_000099</code> p112
+      certificate). All six are single, indented, correctly terminated paragraphs.</li>
+    <li><strong>1 more</strong> (<code>cp_000034</code> p30) was already covered by an existing
+      authoritative gold row as a single paragraph.</li>
+    <li><strong>Text-triage of all 23:</strong> 20 end in terminal punctuation (a complete sentence);
+      the other 3 end in <code>":—"</code> (lead-ins to a song/document that are correctly excluded
+      from the paragraph). Consistent with "long but valid".</li>
+    <li><strong>Authored 5 new authoritative gold rows</strong> (reviewer <code>claude_visual_audit</code>)
+      certifying the verified paragraphs as single. The gold set grew 17 → 22 authoritative rows.</li>
+    <li><strong>Recorded all 23 adjudications</strong> in
+      <code>reviews/douglass_narrative/grouping_defect_review.jsonl</code>.</li>
+  </ul>
+
+  <h2>Evidence it is correct (not a guess)</h2>
+  <p>
+    After adding the gold rows, the gold evaluation reports <strong>22/22 paragraphs matched,
+    precision = recall = 1.000, zero over-merges, zero over-splits.</strong> The extraction policy
+    already groups these exactly as the gold says they should be — formal confirmation that the
+    flagged paragraphs are correct and the warnings are false alarms.
+  </p>
+
+  <h2>Adjudication summary</h2>
+  <table>
+    <tr><th>Status</th><th>Count</th><th>Basis</th></tr>
+    <tr><td>Confirmed valid single paragraph</td><td>6</td><td>Claude visual audit of page images</td></tr>
+    <tr><td>Confirmed valid single paragraph</td><td>1</td><td>Existing authoritative gold</td></tr>
+    <tr><td>Provisional false alarm</td><td>16</td><td>Ending-punctuation triage; not yet individually eyeballed</td></tr>
+  </table>
+
+  <div class="warn">
+    <strong>Honesty note.</strong> 7 of 23 are firmly confirmed (6 visual + 1 gold). The remaining 16
+    are strongly indicated as false alarms by the same pattern but have not yet been individually
+    viewed. They should be eyeballed and gold-rowed before any final claim.
+  </div>
+
+  <h2>What this means for the gate</h2>
+  <p>The original remediation plan assumed a "narrow grouping correction" (a paragraph <em>split</em>).
+  The visual evidence says that would be wrong. The corrected path to <code>safe_for_downstream</code>:</p>
+  <ol>
+    <li>Finish visually confirming the remaining 16 and add gold rows (review-only).</li>
+    <li>Refine the <strong>audit/risk heuristic</strong> so a long-but-gold-confirmed paragraph is not
+      counted as "risky" — this is a <em>review-side</em> change, not an extraction change, and must
+      itself be gold-gated and side-effect reviewed (needs explicit authorization).</li>
+    <li>Re-evaluate <code>safe_for_downstream</code> once the risk count reflects real defects (which
+      so far appear to be none in this cluster).</li>
+  </ol>
+  <p>
+    Net: the gate looks <strong>much closer</strong> than "23 defects" implied — the canonical
+    paragraphs in this cluster appear correct; the blocker is heuristic over-sensitivity, not bad
+    extraction. This must be confirmed across the remaining 16 before declaring the cluster clean.
+  </p>
+
+  <h2>Provenance &amp; safety</h2>
+  <ul>
+    <li>No extraction behavior changed. Re-running Douglass after the gold edit changed only
+      review/scoring artifacts (gold evaluation, policy-decision reports, audit HTML); every
+      extraction artifact was byte-identical (verified via the regression fingerprint).</li>
+    <li>The regression baseline was deliberately regenerated to absorb the intentional gold-input
+      change, and the delta was confirmed to be review-only.</li>
+  </ul>
+</main>
+</body>
+</html>

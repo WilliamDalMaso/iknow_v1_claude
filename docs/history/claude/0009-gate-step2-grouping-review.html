@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0009 — Gate Step 2: Grouping-Defect Visual Review</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    a { color: #135f7f; }
+    .big { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 12px 16px; margin: 12px 0; }
+    nav { font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">&larr; Claude history index</a></nav>
+  <h1>0009 — Gate Step 2: Grouping-Defect Visual Review</h1>
+  <p><strong>When:</strong> 2026-05-29 &middot; <strong>Mode:</strong> review-only (no extraction behavior changed)</p>
+
+  <h2>Why</h2>
+  <p>
+    Step 1 (entry 0007) identified one blocking group on the road to
+    <code>safe_for_downstream</code>: 23 "likely-true paragraph grouping defects." Step 2 is to
+    visually confirm them and begin the gold answer-key — exactly the kind of work the gold-gated
+    method requires before changing anything.
+  </p>
+
+  <h2>What I did</h2>
+  <ul>
+    <li>Pulled all 23 with full source-line detail and cross-referenced existing gold.</li>
+    <li>Triaged by ending punctuation: 20/23 end in a complete sentence; 3 end in a quote/document
+      lead-in (<code>":—"</code>).</li>
+    <li>Opened the rendered page images and visually inspected 6 (pages 21, 29, 41×2, 46, 112),
+      chosen to cover the largest spans and the riskiest shapes.</li>
+    <li>Authored 5 new authoritative gold rows (gold set 17 → 22) and recorded all 23 adjudications in
+      <code>reviews/douglass_narrative/grouping_defect_review.jsonl</code>.</li>
+  </ul>
+
+  <div class="big">
+    <strong>Finding (course-correction).</strong> Every inspected case is a valid, correctly bounded
+    <em>long</em> paragraph — not an accidental merge. The bbox/vertical-span heuristic over-flags
+    Douglass's long prose. Splitting them, as the original remediation plan assumed, would
+    <em>damage</em> correct output. After adding the gold rows the evaluation shows 22/22 matched,
+    precision = recall = 1.000, zero over-merges/over-splits — the policy already matches the gold.
+  </div>
+
+  <h2>Result / status</h2>
+  <ul>
+    <li>7 of 23 firmly confirmed valid (6 visual + 1 existing gold); 16 strongly indicated by triage
+      but not yet individually viewed.</li>
+    <li>The gate is likely much closer than "23 defects" implied: the blocker appears to be
+      <em>audit over-sensitivity</em>, not bad extraction. The corrected path is to finish the visual
+      pass, then refine the risk heuristic (review-side, gold-gated, needs authorization) and
+      re-evaluate <code>safe_for_downstream</code>.</li>
+    <li>Full findings: <a href="../../proposals/claude/grouping_defect_review_findings.html">grouping_defect_review_findings.html</a>.</li>
+  </ul>
+
+  <h2>Safety</h2>
+  <p>
+    No extraction behavior changed. Adding gold rows altered only review/scoring artifacts; every
+    extraction artifact stayed byte-identical (confirmed via the regression fingerprint). The
+    regression baseline was deliberately regenerated to absorb the intentional gold-input change, and
+    the delta was verified review-only. Suite: 44 passed.
+  </p>
+</main>
+</body>
+</html>

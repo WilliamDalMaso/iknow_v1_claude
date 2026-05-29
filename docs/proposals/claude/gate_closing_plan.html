@@ -32,6 +32,15 @@
     needs explicit authorization plus the gold/review gates.
   </div>
 
+  <div class="warn">
+    <strong>Update (2026-05-29, after Step 2):</strong> visual review found the 23 "defects" are
+    actually valid long paragraphs (false alarms), not accidental merges &mdash; so the fix is
+    <em>not</em> a paragraph split (that would damage correct text). The corrected path is audit-side:
+    finish confirming the cluster, refine the risk heuristic, re-evaluate. See
+    <a href="grouping_defect_review_findings.html">grouping_defect_review_findings.html</a>. The
+    diagnosis below is preserved as written at Step 1.
+  </div>
+
   <h2>The goal</h2>
   <p>
     Today Douglass <code>phase1_v3</code> is <code>safe_for_downstream: false</code> with 115 promoted
