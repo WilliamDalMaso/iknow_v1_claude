@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0002 — Phase A: Reproducibility Baseline</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    pre { background: #f3f1e9; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+    li { margin: 0.35rem 0; }
+    a { color: #135f7f; }
+    .ok { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 12px 16px; margin: 12px 0; }
+    nav { font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">&larr; Claude history index</a></nav>
+  <h1>0002 — Phase A: Reproducibility Baseline + Manifest Tool</h1>
+  <p><strong>When:</strong> 2026-05-28 (commit <code>ac1d9f9</code>) &middot; <strong>Tests after:</strong> 31 passed</p>
+
+  <h2>Why</h2>
+  <p>
+    The biggest risk found in the project review (R1): the "finished" Douglass <code>phase1_v3</code>
+    run — the 115 canonical paragraphs and all reports the governance numbers cite — lived only under
+    git-ignored <code>data/runs/</code>. A fresh clone could neither reproduce nor verify it. Without a
+    trustworthy, verifiable baseline, neither automation nor refactoring rests on solid ground.
+  </p>
+
+  <h2>What I did</h2>
+  <ul>
+    <li>Wrote <code>src/baseline_manifest.py</code> — a tool that records <code>sha256</code> + size
+      for every file in a run directory, and verifies a later run against it (CLI: <code>compute</code>
+      / <code>verify</code>). It only hashes bytes; it changes no extraction behavior.</li>
+    <li>Committed a baseline under <code>docs/baselines/douglass_narrative/phase1_v3/</code>:
+      a 164-file manifest, plus a snapshot of the small decision-bearing report JSONs
+      (carrying <code>warning_count: 129</code>, <code>safe_for_downstream: false</code>), plus an
+      <code>index.html</code> explaining how to verify.</li>
+    <li>Added <code>tests/test_baseline_manifest.py</code> — self-contained contract tests (no
+      dependency on local-only run data) covering match / changed / missing / unexpected.</li>
+    <li>Wrote <code>docs/proposals/claude/automation_roadmap.html</code> framing the A→E plan.</li>
+  </ul>
+
+  <h2>How — key insight</h2>
+  <p>
+    The pipeline already had a one-shot entry point: <code>run_phase1(pdf, book_id, run_id)</code> with
+    a CLI. So the goal was never "build a pipeline" — it was to make the existing one
+    <em>verifiable, book-agnostic, repeatable</em>. Phase A delivered "verifiable."
+  </p>
+  <pre><code>python3 src/baseline_manifest.py compute \
+  data/runs/douglass_narrative/phase1_v3 \
+  docs/baselines/douglass_narrative/phase1_v3/artifact_manifest.json
+# -> wrote 164 entries; verify -> MATCH</code></pre>
+
+  <h2>Result</h2>
+  <div class="ok">
+    R1 closed: the documented run is now verifiable from version control (without committing raw PDFs
+    or bulky output). <code>pytest</code> 31 passed; manifest + guidance JSON valid; diff clean.
+  </div>
+</main>
+</body>
+</html>

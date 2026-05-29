@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0001 — Lane Setup &amp; Ownership Transfer</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    pre { background: #f3f1e9; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+    li { margin: 0.35rem 0; }
+    a { color: #135f7f; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 12px 16px; margin: 12px 0; }
+    .ok { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 12px 16px; margin: 12px 0; }
+    nav { font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">&larr; Claude history index</a></nav>
+  <h1>0001 — Lane Setup, Wrong-Remote Catch &amp; Ownership Transfer</h1>
+  <p><strong>When:</strong> 2026-05-28 (commit <code>e900caf</code>) &middot; <strong>Tests after:</strong> 27 passed</p>
+
+  <h2>Why</h2>
+  <p>
+    The task was to run <code>iknow_v1_claude</code> as an independent review/proposal lane for the
+    main project, and to make the lane "truly Claude's" — the project had been bootstrapped by Codex
+    and its governance was written as Codex's self-guidance.
+  </p>
+
+  <h2>What happened — the safety catch</h2>
+  <div class="warn">
+    On first inspection, the local repo was in the correct folder but <code>git remote -v</code>
+    showed <code>origin</code> pointing at <strong><code>WilliamDalMaso/iknow_v1</code></strong> (the
+    original repo), not the Claude copy. Any push would have landed in the wrong repository, violating
+    the hard safety rule. I stopped and reported instead of proceeding.
+  </div>
+  <p>After confirmation, the remote was repointed and the lane was seeded (option B — push current local <code>main</code> as the initial Claude-lane state):</p>
+  <pre><code>git remote set-url origin https://github.com/WilliamDalMaso/iknow_v1_claude.git
+git ls-remote --heads origin   # empty -> safe to push normally (no force)
+git push -u origin main</code></pre>
+
+  <h2>What I did — ownership transfer</h2>
+  <ul>
+    <li>Renamed the self-authored blueprint via <code>git mv</code> (history preserved):
+      <code>0003-codex-self-guidance.html → 0003-claude-self-guidance.html</code>,
+      <code>0005-codex-work-loop.html → 0005-claude-work-loop.html</code>,
+      <code>codex_guidance.json → claude_guidance.json</code>.</li>
+    <li>Rewrote the identity inside (Codex → Claude), added <code>maintained_by</code> and a lineage
+      note, and renamed the work-loop key to <code>claude_work_loop</code>.</li>
+    <li>Fixed every cross-reference in <code>README.md</code>, <code>docs/index.html</code>, and
+      <code>0002-source-of-truth.html</code>.</li>
+    <li>Created the first proposal docs under <code>docs/proposals/claude/</code>: project review,
+      refactor plan, observability upgrade plan, second-book readiness plan, consistency risk report.</li>
+  </ul>
+
+  <h2>How — method &amp; deliberate decisions</h2>
+  <ul>
+    <li><strong>Preserved <code>docs/history/</code> verbatim.</strong> The Codex history (0001–0048)
+      is an immutable audit log; rewriting it would violate the evidence-first method. Only the
+      forward-looking blueprint was re-homed. The only remaining "Codex" mentions are intentional
+      lineage attributions.</li>
+    <li><strong>HTML, not Markdown.</strong> The hard rule forbids Markdown for durable docs, so the
+      proposals are HTML even though <code>.md</code> filenames were suggested. (Confirmed by William
+      later: "html is the way now.")</li>
+    <li>Verified no source code referenced the renamed files before renaming.</li>
+  </ul>
+
+  <h2>Result</h2>
+  <div class="ok">
+    Remote correctly set to <code>iknow_v1_claude</code>; lane seeded; governance now Claude-owned;
+    5 proposal docs added. <code>pytest</code> 27 passed; <code>claude_guidance.json</code> valid;
+    <code>git diff --check</code> clean.
+  </div>
+
+  <h2>Lesson</h2>
+  <p>Always verify <code>git remote -v</code> before any push in this lane — the clone shipped with the wrong origin.</p>
+</main>
+</body>
+</html>

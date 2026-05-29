@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0003 — Phase D: Observability</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    pre { background: #f3f1e9; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+    li { margin: 0.35rem 0; }
+    a { color: #135f7f; }
+    .ok { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 12px 16px; margin: 12px 0; }
+    nav { font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">&larr; Claude history index</a></nav>
+  <h1>0003 — Phase D: Claude-Lane Observability (port 8799)</h1>
+  <p><strong>When:</strong> 2026-05-28 (commit <code>3f9269f</code>) &middot; <strong>Tests after:</strong> 38 passed</p>
+
+  <h2>Why</h2>
+  <p>
+    William noted that Codex's observability dashboard already uses
+    <code>http://127.0.0.1:8765</code>, and asked for a separate, better one for the Claude lane.
+    The legacy dashboard was also a flat <code>kind/message/details</code> stream with no severity, no
+    run correlation, and no filtering.
+  </p>
+
+  <h2>What I did</h2>
+  <ul>
+    <li>Chose a permanent Claude-lane port: <strong>8799</strong> (8765 stays Codex's, so both run at
+      once). Locked it in <code>claude_guidance.json</code>, both governance HTML docs, and the README.</li>
+    <li>Built <code>src/claude_observability_server.py</code> — a dependency-free dashboard with
+      severity colors, run correlation, client-side search, faceted filters (level/actor/book/phase),
+      issues-only, group-by-run, pause, keyboard shortcuts, summary cards, and
+      <code>/api/summary</code> + <code>/api/meta</code>. It gracefully normalizes legacy flat events.</li>
+    <li>Enriched the shared writer <code>src/observe.py</code> with a structured, backward-compatible
+      schema <code>iknow.observe/2</code>: <code>schema, timestamp, level, actor, kind, book_id,
+      run_id, phase, git_commit, message, details</code> (git commit stamped automatically). The old
+      positional <code>append_event(kind, message, details)</code> still works.</li>
+    <li>Added <code>tests/test_claude_observability.py</code> — writer schema, legacy normalization,
+      and aggregate-summary tests (no socket bound).</li>
+    <li>Left the legacy <code>src/observability_server.py</code> untouched.</li>
+  </ul>
+
+  <h2>How — verification</h2>
+  <pre><code>python3 src/claude_observability_server.py --port 8799   # live smoke test
+curl /api/meta -> {"port":8799,"schema":"iknow.observe/2"}
+curl /api/summary -> normalized 97 existing events cleanly</code></pre>
+
+  <h2>Result</h2>
+  <div class="ok">
+    A thorough, friendly dashboard on its own port; structured run-correlated events;
+    <code>pytest</code> 38 passed. This is most of Phase D; "decision linkage" (pair an event with each
+    adoption-decision artifact) is deferred until the pipeline seam from Phase B exists.
+  </div>
+
+  <h2>To run it</h2>
+  <pre><code>python3 src/claude_observability_server.py     # http://127.0.0.1:8799</code></pre>
+</main>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0007 — Douglass Gate-Closing Plan</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    a { color: #135f7f; }
+    .ok { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 12px 16px; margin: 12px 0; }
+    nav { font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">&larr; Claude history index</a></nav>
+  <h1>0007 — Douglass Gate-Closing Plan (Step 1, diagnosis only)</h1>
+  <p><strong>When:</strong> 2026-05-29 (commit <code>c7a2e54</code>)</p>
+
+  <h2>Why</h2>
+  <p>
+    To honestly claim the system "safely and cleanly extracts and prepares a book for
+    mapping/embedding/graph," Douglass must flip from <code>safe_for_downstream: false</code> to
+    <code>true</code>. This step reads the existing diagnostics and turns them into a concrete plan —
+    review-only, no behavior change.
+  </p>
+
+  <h2>What I found</h2>
+  <ul>
+    <li>Of the 39 bbox/span cases, three queues are already resolved (front-matter 9, visual 7,
+      gold-gaps 0). <strong>Only one group of 23 blocks</strong>: likely-true paragraph grouping
+      defects — two real paragraphs accidentally merged into one (e.g. <code>cp_000025</code> p21,
+      <code>cp_000032</code> p29 which runs through "…in the following words:—" into a song).</li>
+    <li>The correction-design scaffold (<code>narrow_grouping_correction_design.json</code>) is empty
+      (<code>confirmed_defects: 0</code>) — the visual confirmation + design was never completed. That
+      is the gap.</li>
+    <li>Fix class (per the remediation plan): a <strong>narrow, guarded paragraph-split</strong>, not a
+      broad merge-policy rewrite. The needed signals (line gap, indentation, terminal punctuation) are
+      already computed.</li>
+  </ul>
+
+  <h2>The plan to flip the flag</h2>
+  <ol>
+    <li>Confirm the 23 visually (review-only).</li>
+    <li>Author gold paragraph-boundary rows for the affected pages (review-only).</li>
+    <li>Design + implement the guarded split — <em>changes extraction behavior; needs explicit OK</em>.</li>
+    <li>Prove at the gates: improves vs gold, no audit-safety regression, side-effect review.</li>
+    <li>Re-run, re-verify against the regression fingerprint, flip <code>safe_for_downstream</code>.</li>
+    <li>Then downstream (mapping → embedding → graph) legitimately opens.</li>
+  </ol>
+
+  <h2>Result</h2>
+  <div class="ok">
+    Full plan at <a href="../../proposals/claude/gate_closing_plan.html">gate_closing_plan.html</a>.
+    Steps 1–2 are in-lane (no behavior change); Step 3 onward needs authorization + the gold gates.
+  </div>
+
+  <h2>Note</h2>
+  <p>
+    This commit was pushed while the phase1 regression test was red — see
+    <a href="0008-normalizer-bug-postmortem.html">entry 0008</a>. The failure was unrelated to this
+    docs-only commit (a latent regression-tooling bug), and was fixed next.
+  </p>
+</main>
+</body>
+</html>

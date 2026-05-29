@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0005 — Phase B: Monolith Decomposition</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    pre { background: #f3f1e9; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+    li { margin: 0.35rem 0; }
+    a { color: #135f7f; }
+    .ok { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 12px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 9px; text-align: left; }
+    nav { font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">&larr; Claude history index</a></nav>
+  <h1>0005 — Phase B: Monolith Decomposition (steps 1–5)</h1>
+  <p><strong>When:</strong> 2026-05-28 (commits <code>d40b2b0</code>, <code>1426fb6</code>, <code>beae78e</code>, <code>7f178ce</code>, <code>744a38b</code>, <code>dc39746</code>) &middot; <strong>Tests after each:</strong> 42 passed</p>
+
+  <h2>Why</h2>
+  <p>
+    <code>phase1_extract.py</code> was one 7,524-line file with 106 top-level functions — hard to
+    review, maintain, or generalize to new books. With the regression guard from entry 0004 in place,
+    it became safe to restructure. William explicitly authorized the decomposition.
+  </p>
+
+  <h2>The pattern (applied identically 5 times)</h2>
+  <ol>
+    <li>Move a self-contained group of functions <strong>verbatim</strong> into a new
+      <code>src/phase1/&lt;module&gt;.py</code>.</li>
+    <li>Re-import those names (constants included) back into <code>phase1_extract.py</code>, so every
+      existing call site is unchanged.</li>
+    <li>Run the full suite — the regression test re-runs Douglass and confirms the output is
+      byte-equivalent.</li>
+    <li>Commit that single step.</li>
+  </ol>
+  <p>Pure relocation only — no logic edits in a move commit. One concern per commit.</p>
+
+  <h2>Steps</h2>
+  <table>
+    <tr><th>Step</th><th>Module</th><th>Contents</th><th>Commit</th></tr>
+    <tr><td>1</td><td><code>phase1/io_utils.py</code></td><td>utc_now, sha256_file, write/read json &amp; jsonl, safe_dom_id</td><td><code>d40b2b0</code></td></tr>
+    <tr><td>2</td><td><code>phase1/text_utils.py</code></td><td>CID/ROMAN/TEXT_TOKEN patterns + pure text/line helpers (clean_line, classify_line, …)</td><td><code>1426fb6</code></td></tr>
+    <tr><td>3</td><td><code>phase1/layout_geometry.py</code></td><td>line margin/indent/height/gap helpers</td><td><code>beae78e</code></td></tr>
+    <tr><td>4</td><td><code>phase1/heuristics.py</code></td><td>TERMINAL_PUNCTUATION + paragraph-text &amp; cross-page provenance heuristics</td><td><code>7f178ce</code></td></tr>
+    <tr><td>5</td><td><code>phase1/span_metrics.py</code></td><td>bbox/span range + severity bucketing</td><td><code>744a38b</code></td></tr>
+  </table>
+
+  <h2>Result</h2>
+  <div class="ok">
+    Monolith <strong>7,524 → 7,267 lines</strong>; 5 cohesive modules under <code>src/phase1/</code>.
+    Every step verified byte-equivalent by the regression test; 42 passed throughout. No behavior
+    changed. Progress recorded in <code>refactor_plan.html</code> (commit <code>dc39746</code>).
+  </div>
+
+  <h2>What remains</h2>
+  <p>
+    The leaf-level extractions are done. The larger, more entangled seams remain (furniture detection,
+    cross-page joins, promotion, review, gold evaluation, the ~1,900-line audit-HTML renderer); they
+    reference module-level policy constants and call many siblings, so each needs dependency analysis.
+  </p>
+</main>
+</body>
+</html>
