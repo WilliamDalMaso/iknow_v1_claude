@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Douglass Gate-Closing Plan</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2.2rem; border-top: 1px solid #d8d6cc; padding-top: 1.2rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 10px; text-align: left; vertical-align: top; }
+    blockquote { border-left: 3px solid #d8d6cc; margin: 10px 0; padding: 4px 14px; color: #444; font-style: italic; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Douglass Gate-Closing Plan</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-28 &middot; <strong>Step:</strong> 1 (diagnosis &amp; plan only)</p>
+
+  <div class="rule">
+    <strong>Planning only &mdash; no behavior change.</strong> This reads the existing diagnostic
+    artifacts and turns them into a concrete plan to flip <code>safe_for_downstream</code> from
+    <code>false</code> to <code>true</code>, which is what unblocks mapping, embedding, and
+    graph/intelligence. Implementing the fixes (Steps 2&ndash;4) changes extraction behavior and
+    needs explicit authorization plus the gold/review gates.
+  </div>
+
+  <h2>The goal</h2>
+  <p>
+    Today Douglass <code>phase1_v3</code> is <code>safe_for_downstream: false</code> with 115 promoted
+    canonical paragraphs, 72 risky, and 129 warnings. The single decision that opens the downstream
+    phase is: resolve the blocking defects, confirm no audit-safety regression, and flip the flag.
+  </p>
+
+  <h2>What is already closed vs. what blocks</h2>
+  <p>The post-adoption remediation plan sorts the 39 bbox/span cases into four queues. Three are done; one blocks.</p>
+  <table>
+    <tr><th>Queue</th><th>Count</th><th>Status</th></tr>
+    <tr><td>front_matter_metadata_artifacts</td><td>9</td><td>Reviewed (<code>front_matter_metadata_review_report.json</code>)</td></tr>
+    <tr><td>needs_visual_review</td><td>7</td><td>Reviewed (<code>visual_review_cases_report.json</code>)</td></tr>
+    <tr><td>gold_set_gaps</td><td>0</td><td>Closed</td></tr>
+    <tr><td><strong>likely_true_paragraph_grouping_defects</strong></td><td><strong>23</strong></td><td><strong>BLOCKING</strong> &mdash; <code>downstream_remains_blocked_because_of_this_group: true</code></td></tr>
+  </table>
+  <p>So the gate hinges on <strong>one group of 23 defects</strong>. The remediation plan's
+  <code>recommended_order</code> is exactly: &ldquo;Review and design a narrow correction path for the
+  23 likely true paragraph grouping defects under the active policy.&rdquo; The design scaffold
+  (<code>narrow_grouping_correction_design.json</code>) exists but is empty
+  (<code>confirmed_defects: 0</code>, <code>designs: []</code>) &mdash; the visual confirmation and
+  correction design were never completed. <em>That is the gap.</em></p>
+
+  <h2>What the 23 defects actually are</h2>
+  <p>
+    They are <strong>accidental paragraph merges</strong>: two (or more) real paragraphs got combined
+    into one canonical paragraph, so its source lines span a suspicious vertical distance on the page
+    (<code>source_lines_span_suspicious_distance</code>, <code>existing_bbox_likely_cause:
+    true_accidental_merge</code>). Two confirmed-looking examples:
+  </p>
+  <blockquote>
+    <code>cp_000025</code> (p21): 12 source lines, spanning ~27% of page height. Starts
+    &ldquo;Called thus suddenly away&hellip;&rdquo; and ends &ldquo;master and father.&rdquo; &mdash;
+    two distinct paragraphs joined.
+  </blockquote>
+  <blockquote>
+    <code>cp_000032</code> (p29): 15 source lines, ~34% of page height. Ends with
+    &ldquo;words:&mdash;&rdquo;, which is the lead-in to a quoted song &mdash; a textbook
+    paragraph-break that was merged through.
+  </blockquote>
+  <p>Affected pages: 21, 29, 30, 33, 37, 41, 42, 45, 46, 50, 73, 74, 84, 88, 89, 92, 93, 95, 97, 98, 112, 118.</p>
+
+  <div class="warn">
+    <strong>Why this is the gate.</strong> A merged paragraph becomes one oversized chunk. If we
+    embedded or graphed it as-is, two unrelated ideas would share one vector / node &mdash; quietly
+    corrupting retrieval and reasoning. This is precisely the failure the &ldquo;clean first&rdquo;
+    rule exists to prevent, so the project correctly refuses to proceed until it is fixed.
+  </div>
+
+  <h2>The fix class (from the remediation plan)</h2>
+  <p>
+    A <strong>narrow, guarded paragraph-split correction</strong> &mdash; split these specific
+    over-merged candidates at their true internal paragraph boundary. Explicitly <em>not</em> a broad
+    merge-policy rewrite (the plan warns: &ldquo;do not apply one broad merge fix to all remaining
+    cases&rdquo;). The split signal is likely already computed: large intra-candidate vertical gap
+    (<code>line_gap</code>), indentation of the next line (<code>starts_new_indented_paragraph</code>),
+    and a terminal boundary before it (<code>terminal_line_boundary</code>). The work is to define a
+    conservative rule from those signals that splits the true defects without over-splitting clean
+    paragraphs.
+  </p>
+
+  <h2>The plan to close the gate</h2>
+  <ol>
+    <li><strong>Confirm (visual, review-only).</strong> Inspect the page images for the 23 candidates and label each a true defect or a false alarm. Populate <code>narrow_grouping_correction_design.json</code> with the confirmed pattern(s). <em>No behavior change.</em></li>
+    <li><strong>Author gold rows.</strong> Add authoritative gold paragraph-boundary rows for the confirmed pages, so a split correction can be <em>scored</em> rather than guessed. (Gold lives under <code>reviews/douglass_narrative/gold/</code>.) <em>No behavior change.</em></li>
+    <li><strong>Design + implement the guarded split.</strong> Encode the conservative split rule. <strong>This changes extraction behavior</strong> &rarr; needs explicit authorization.</li>
+    <li><strong>Prove it at the gates.</strong> Show it (a) improves against the gold rows, (b) does not regress audit-safety metrics (warnings, bbox-span counts must not worsen), (c) passes side-effect review (every newly created split inspected). Record an adoption decision.</li>
+    <li><strong>Re-run, re-verify, flip.</strong> Re-run Douglass, confirm the regression fingerprint still matches except the intended splits, and update <code>safe_for_downstream</code> to <code>true</code> with the evidence.</li>
+    <li><strong>Then</strong> the downstream phase legitimately opens: mapping &rarr; embedding &rarr; graph/intelligence.</li>
+  </ol>
+
+  <h2>Honest effort estimate</h2>
+  <ul>
+    <li><strong>Steps 1&ndash;2 (confirm + gold):</strong> the bulk of the human/judgment effort &mdash; 23 cases to eyeball, plus authoring gold boundaries for ~22 pages. Methodical, not hard.</li>
+    <li><strong>Step 3 (the rule):</strong> likely a small, conservative addition to the existing paragraph-segmentation logic, since the needed signals (gap, indent, terminal punctuation) are already present.</li>
+    <li><strong>Steps 4&ndash;5 (gates + flip):</strong> mechanical once the rule holds, and fully guarded by the regression test and gold evaluation.</li>
+    <li><strong>Risk:</strong> the main risk is over-splitting clean paragraphs. The gold set + side-effect review are exactly what contain that risk.</li>
+  </ul>
+
+  <h2>Authorization boundary</h2>
+  <p>
+    Steps 1&ndash;2 are review/proposal work I can do in-lane without changing behavior. Step 3 onward
+    edits extraction behavior and must clear the gold/side-effect gates &mdash; so it needs an explicit
+    go-ahead. Nothing here relaxes any gate or widens to a second book.
+  </p>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="automation_roadmap.html">automation_roadmap.html</a></li>
+    <li><a href="second_book_dryrun_findings.html">second_book_dryrun_findings.html</a></li>
+    <li><a href="consistency_risk_report.html">consistency_risk_report.html</a></li>
+  </ul>
+</main>
+</body>
+</html>
