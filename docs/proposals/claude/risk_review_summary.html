@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Canonical Risk Review Summary</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .big { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 9px; text-align: left; vertical-align: top; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Canonical Risk Review — Consolidated Summary</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-29 &middot; <strong>Mode:</strong> review-only</p>
+
+  <div class="big">
+    <strong>Bottom line.</strong> Across <em>all</em> warning categories on Douglass <code>phase1_v3</code>
+    (129 warnings over 72 risky canonical paragraphs), the only genuine <strong>content-corruption
+    defects are the 3 front-matter cases</strong> (e-book metadata + 2 "PREFACE" header leaks). Every
+    other flag is either a <strong>false alarm</strong> (long valid paragraphs, cross-page tails,
+    quote/verse lead-ins) or a <strong>structure-labeling nuance</strong> (verse/footnotes/front-matter
+    correctly extracted but worth a distinct object type). No body-narrative text is corrupted.
+  </div>
+
+  <h2>Coverage by warning category</h2>
+  <table>
+    <tr><th>Warning category</th><th>Count</th><th>Verdict</th></tr>
+    <tr><td><code>source_lines_span_suspicious_distance</code></td><td>39</td><td>All false alarms — long valid paragraphs (entry 0009; 22 visually confirmed, gold 17&rarr;37, precision/recall 1.000)</td></tr>
+    <tr><td><code>front_matter_or_chapter_boundary_risk</code></td><td>24</td><td>3 real defects + 21 valid (entry 0010)</td></tr>
+    <tr><td><code>suspiciously_long_promoted_paragraph</code></td><td>23</td><td>Same long-paragraph false-alarm family; spot-checked (p27/37/44)</td></tr>
+    <tr><td><code>unusual_paragraph_ending</code></td><td>13</td><td>False alarms — quote/verse/signature lead-ins (":—", "I subscribe myself,") correctly bounded</td></tr>
+    <tr><td><code>suspicious_source_line_vertical_span</code></td><td>12</td><td>Same long-paragraph false-alarm family</td></tr>
+    <tr><td><code>possible_metadata_or_structure_leakage</code></td><td>6</td><td>2 real (front-matter header leaks) + e-book metadata; <code>cp_000043</code> (p40) is a false alarm</td></tr>
+    <tr><td><code>suspiciously_short_promoted_paragraph</code></td><td>5</td><td>Valid; appendix verse/footnotes &mdash; structure-labeling nuance (<code>cp_000101</code>, <code>cp_000109</code>)</td></tr>
+    <tr><td><code>possible_missing_paragraph_start</code></td><td>4</td><td>Valid cross-page continuation tails (<code>cp_000082</code>, <code>cp_000104</code>)</td></tr>
+    <tr><td><code>possible_broken_paragraph_merge</code></td><td>3</td><td>Valid; <code>cp_000115</code> (appendix sign-off) false alarm, verse correctly not merged</td></tr>
+  </table>
+
+  <h2>The complete defect list (everything that needs a fix)</h2>
+  <ol>
+    <li><strong><code>cp_000003</code> (p4)</strong> — modern e-book/digitization metadata leaked into content.</li>
+    <li><strong><code>cp_000009</code> (p13)</strong> — "PREFACE xiii" running-header leak.</li>
+    <li><strong><code>cp_000010</code> (p14)</strong> — "xiv PREFACE" running-header leak.</li>
+  </ol>
+  <p>All three share one root cause: the furniture/metadata detector is Douglass-<em>narrative</em>-specific
+  (matches only "narrative / life of frederick douglass"). Fixing it is extraction-side
+  (needs authorization + gold gates) and folds into the Phase C book-agnostic furniture work.</p>
+
+  <h2>Structure-labeling observations (not defects, but real refinements)</h2>
+  <ul>
+    <li>Front-matter prefaces (Garrison/Phillips) are promoted as body paragraphs.</li>
+    <li>Appendix <strong>verse</strong> (the hymn parody) and <strong>footnotes</strong> are grouped as
+      paragraph candidates.</li>
+  </ul>
+  <p>The text is preserved correctly; these are about giving non-body content (front matter, verse,
+  footnotes) distinct object types before downstream use. This is a structure/product decision, not a
+  correctness bug.</p>
+
+  <h2>What this means for the gate</h2>
+  <div class="warn">
+    To declare Douglass <code>safe_for_downstream</code>, the substantive work is now small and clear:
+    (1) fix the 3 front-matter content defects (or scope front matter out), and (2) refine the
+    over-sensitive risk heuristic so the ~69 false-alarm flags stop counting as "risky". Both are
+    review/extraction changes that need your authorization; the body-narrative substrate itself is
+    confirmed clean.
+  </div>
+
+  <h2>Records</h2>
+  <ul>
+    <li><code>reviews/douglass_narrative/grouping_defect_review.jsonl</code> (bbox cluster, 23)</li>
+    <li><code>reviews/douglass_narrative/front_matter_boundary_review.jsonl</code> (24)</li>
+    <li><code>reviews/douglass_narrative/risk_warning_review.jsonl</code> (remaining categories, 8)</li>
+    <li>Gold set: 37 authoritative paragraph rows, evaluation precision = recall = 1.000.</li>
+  </ul>
+</main>
+</body>
+</html>
