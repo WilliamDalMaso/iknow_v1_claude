@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Lane — Front-Matter / Chapter-Boundary Review Findings</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.4rem 0; }
+    a { color: #135f7f; }
+    .rule { background: #eef4f2; border-left: 4px solid #2d6f63; padding: 14px 16px; margin: 12px 0; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 14px 16px; margin: 12px 0; }
+    table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid #d8d6cc; padding: 6px 9px; text-align: left; vertical-align: top; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Front-Matter / Chapter-Boundary Review Findings</h1>
+  <p><strong>Author:</strong> Claude &middot; <strong>Date:</strong> 2026-05-29 &middot; <strong>Mode:</strong> review-only (no extraction behavior changed, no gold changed)</p>
+
+  <div class="rule">
+    A visual review of the 24 canonical paragraphs carrying the
+    <code>front_matter_or_chapter_boundary_risk</code> warning (pages 4&ndash;20). Unlike the bbox/span
+    cluster (which was entirely false alarms), this cluster contains <strong>3 genuine defects</strong>.
+    Full per-case record: <code>reviews/douglass_narrative/front_matter_boundary_review.jsonl</code>.
+  </div>
+
+  <h2>Outcome (24 cases)</h2>
+  <table>
+    <tr><th>Classification</th><th>Count</th><th>Meaning</th></tr>
+    <tr><td><strong>Real defect — digitization metadata leak</strong></td><td>1</td><td><code>cp_000003</code></td></tr>
+    <tr><td><strong>Real defect — running-header leak</strong></td><td>2</td><td><code>cp_000009</code>, <code>cp_000010</code></td></tr>
+    <tr><td>Valid — original 1845 copyright notice</td><td>2</td><td><code>cp_000001/2</code></td></tr>
+    <tr><td>Valid — preface prose (Garrison/Phillips)</td><td>16</td><td>correctly extracted front matter</td></tr>
+    <tr><td>Valid — Chapter I narrative (false-alarm boundary)</td><td>3</td><td><code>cp_000022/23/24</code></td></tr>
+  </table>
+
+  <h2>The 3 real defects</h2>
+  <ul>
+    <li><strong><code>cp_000003</code> (p4) — digitization metadata leaked into content.</strong> Page 4
+      is a modern e-book page: "The original book is in the public domain&hellip;", an "Online Books
+      Page" link, and "This PDF ebook was created by José Menéndez." This is packaging metadata, not
+      Douglass's book, and must not be promoted downstream as book text.</li>
+    <li><strong><code>cp_000009</code> (p13) &amp; <code>cp_000010</code> (p14) — running header leaked
+      into paragraph text.</strong> Their text begins "<code>PREFACE xiii also of those who&hellip;</code>"
+      and "<code>xiv PREFACE Is it possible&hellip;</code>" — the page header ("PREFACE") and page
+      number bled into the paragraph instead of being stripped as furniture.</li>
+  </ul>
+
+  <div class="warn">
+    <strong>Root cause (one family, already known).</strong> The furniture/metadata detector is
+    Douglass-<em>narrative</em>-specific: <code>looks_like_running_page_furniture</code> matches only
+    "narrative / life of frederick douglass", so it recognizes the body-page headers but <em>not</em>
+    the "PREFACE" header, and nothing recognizes the modern e-book page as non-content. This is the
+    same single-book-hardcoding surfaced by the second-book (Hobbit) reconnaissance.
+  </div>
+
+  <h2>The 21 valid cases</h2>
+  <ul>
+    <li>The 1845 copyright notice and the Garrison/Phillips prefaces are correctly extracted front
+      matter. Whether front matter "by others" should be promoted as book intelligence is a
+      <em>product/structure</em> decision (front-matter vs body labeling), not a defect — and is
+      deliberately left open here.</li>
+    <li>The Chapter I paragraphs (<code>cp_000022/23/24</code>) are valid body prose; the boundary
+      warning is a false alarm (proximity to the chapter title).</li>
+  </ul>
+
+  <h2>What this means for the gate</h2>
+  <ol>
+    <li>This cluster does <strong>not</strong> clear cleanly like the bbox one: 3 real defects remain,
+      all in the front matter (pages 4, 13, 14).</li>
+    <li>The fixes are <strong>extraction-side</strong> (recognize the "PREFACE" running header as
+      furniture; recognize/exclude the digitization metadata page) and therefore need explicit
+      authorization plus the gold/side-effect gates.</li>
+    <li>They are naturally part of the <strong>book-agnostic furniture/front-matter handling</strong>
+      already scoped in Phase C — i.e. the same work makes the engine correct here <em>and</em> ready
+      for a second book.</li>
+    <li>Net: downstream-safe still requires either fixing these 3 (extraction change) or formally
+      scoping front matter out of the downstream substrate (structure decision). Either path needs
+      your direction.</li>
+  </ol>
+
+  <h2>Safety</h2>
+  <p>Review-only. No extraction behavior changed, no gold changed, no promotion changed. Suite 44 passed.</p>
+</main>
+</body>
+</html>
