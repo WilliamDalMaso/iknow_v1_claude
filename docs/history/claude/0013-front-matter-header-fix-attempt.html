@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0013 — Front-Matter Header-Leak Fix Attempt (not adopted)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; margin: 0; color: #17202a; background: #fbfbf8; }
+    main { max-width: 980px; margin: 0 auto; padding: 48px 24px; }
+    h1, h2 { line-height: 1.15; }
+    h2 { margin-top: 2rem; border-top: 1px solid #d8d6cc; padding-top: 1rem; }
+    code { background: #ece9df; padding: 0.1rem 0.25rem; border-radius: 4px; }
+    li { margin: 0.35rem 0; }
+    a { color: #135f7f; }
+    .warn { background: #fff1dc; border-left: 4px solid #a15c00; padding: 12px 16px; margin: 12px 0; }
+    .big { background: #e9f3ec; border-left: 4px solid #2d8a4e; padding: 12px 16px; margin: 12px 0; }
+    nav { font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">&larr; Claude history index</a></nav>
+  <h1>0013 — Front-Matter Header-Leak Fix: Attempted, Gated, Reverted</h1>
+  <p><strong>When:</strong> 2026-05-30 &middot; <strong>Outcome:</strong> not adopted (gates caught a large side-effect); working tree restored, suite 45, regression MATCH.</p>
+
+  <h2>Why</h2>
+  <p>
+    William authorized fixing the 3 front-matter content defects (entry 0010). This entry covers the
+    first attempt: the two running-header leaks (<code>cp_000009</code> "PREFACE xiii", <code>cp_000010</code>
+    "xiv PREFACE").
+  </p>
+
+  <h2>The fix (correct in isolation)</h2>
+  <p>
+    Root cause: <code>classify_line</code> only treats a header as furniture when its uppercase ratio
+    &ge; 0.75; lowercase roman page numbers ("xiii"/"xiv") on pages past the <code>page&le;12</code>
+    front-matter window drop it under threshold, so the header is classed <code>paragraph_line</code>
+    and merged into the body. I added a minimal running-header rule (short line + page-number token at
+    an edge + all-uppercase title) placed <em>after</em> the existing heading checks, so it only
+    affects lines that would otherwise be body.
+  </p>
+  <div class="big">
+    It worked surgically: "PREFACE xiii"/"xiv PREFACE" became <code>page_artifact</code>s, the leaked
+    text was removed, and <strong>all 229 body-narrative paragraphs (pages &ge;19) were byte-identical</strong>.
+    Gold evaluation stayed 37/37, precision = recall = 1.000.
+  </div>
+
+  <h2>Why it was NOT adopted</h2>
+  <div class="warn">
+    Removing the page-13 header let "also of those who committed&hellip;" rejoin its page-12 paragraph
+    &mdash; a new, correct cross-page join. But the curated cross-page join decisions
+    (<code>reviews/douglass_narrative/cross_page_join_decisions.jsonl</code>) are keyed by
+    <strong>positional</strong> <code>join_id</code> (<code>xpage_join_0001&hellip;</code>). Inserting a
+    join early renumbers every later join, so <strong>28 of 31 curated decisions no longer matched</strong>
+    their join and <code>validation</code> went pass &rarr; fail
+    (<code>cross_page_join_decision_candidate_ids_match</code>). The body text was fine; the
+    review-decision keying was destabilized.
+  </div>
+  <p>
+    Per the evidence-first method, a change that regresses validation is not force-landed. I reverted
+    the code, removed the trial run, and confirmed the lane is clean (suite 45, regression MATCH).
+  </p>
+
+  <h2>The real finding (architectural)</h2>
+  <p>
+    The curated cross-page join decisions are keyed by a <strong>positional</strong> id that is not
+    stable under any change to the join set. This is a latent fragility: <em>any</em> future extraction
+    change that adds/removes a join renumbers the decisions and breaks validation. It is worth making
+    <code>join_id</code> content-stable (derive it from the joined candidates' page + text signature)
+    independently of this header fix.
+  </p>
+
+  <h2>Options to actually land the header fix</h2>
+  <ol>
+    <li><strong>Stabilize <code>join_id</code> first</strong> (content-based), re-key the 31 curated
+      decisions once, then the header fix simply adds one new front-matter join to review. Foundational;
+      removes the fragility for all future changes. (Recommended, but a separate authorized change.)</li>
+    <li><strong>Scope front matter out</strong> of the downstream substrate &mdash; the leaked headers
+      live in front matter (prefaces by others) that may not belong in book intelligence anyway; this
+      sidesteps the fix entirely.</li>
+    <li><strong>Re-curate the 31 positional join decisions</strong> to the post-fix set &mdash; works,
+      but brittle (breaks again on the next join-set change). Not recommended.</li>
+    <li><strong>Defer</strong> &mdash; the leak is confined to 2 front-matter paragraphs; leave it
+      documented.</li>
+  </ol>
+  <p>Note: the digitization-metadata defect (<code>cp_000003</code>, page 4) was not attempted here; it does not touch the join set and can be handled independently.</p>
+</main>
+</body>
+</html>
